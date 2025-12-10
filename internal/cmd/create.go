@@ -1,0 +1,105 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/create"
+	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
+	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
+	"github.com/spf13/cobra"
+)
+
+func init() {
+	rootCmd.AddCommand(createCmd)
+	createCmd.AddCommand(goWorkerCmd)
+}
+
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a new Dibbla project",
+	Long:  `Create a new Dibbla project from a template.`,
+}
+
+var goWorkerCmd = &cobra.Command{
+	Use:   "go-worker [name]",
+	Short: "Create a new Go worker project",
+	Long: `Create a new Dibbla Go worker project from the starter template.
+
+Examples:
+  dibbla create go-worker my-worker
+  dibbla create go-worker`,
+	Args: cobra.MaximumNArgs(1),
+	Run:  runGoWorker,
+}
+
+func runGoWorker(cmd *cobra.Command, args []string) {
+	fmt.Println("🚀 Dibbla Go Worker Generator")
+	fmt.Println()
+
+	// Run pre-flight checks
+	fmt.Println("Checking prerequisites...")
+	preflight.CheckGo()
+	fmt.Println()
+
+	// Get project name (from arg or prompt)
+	var projectName string
+	if len(args) > 0 {
+		projectName = args[0]
+	} else {
+		projectName = prompt.AskProjectName()
+	}
+
+	// Check if directory exists
+	if preflight.DirectoryExists(projectName) {
+		fmt.Printf("❌ Error: Directory '%s' already exists\n", projectName)
+		os.Exit(1)
+	}
+
+	// Show full path and confirm
+	fullPath, _ := filepath.Abs(projectName)
+	fmt.Printf("\n📁 Project will be created at:\n   %s\n\n", fullPath)
+	
+	if !prompt.AskConfirm("Continue?") {
+		fmt.Println("Cancelled.")
+		os.Exit(0)
+	}
+
+	// Get API token
+	apiToken := prompt.AskAPIToken()
+
+	// Get frontend preference
+	includeFrontend := prompt.AskIncludeFrontend()
+
+	fmt.Println()
+	fmt.Println("Creating project...")
+
+	// Create the project
+	config := create.ProjectConfig{
+		Name:            projectName,
+		Token:           apiToken,
+		IncludeFrontend: includeFrontend,
+	}
+
+	if err := create.GoWorker(config); err != nil {
+		fmt.Printf("❌ Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Success message
+	fmt.Println()
+	fmt.Println("🎉 Ready! Run your worker:")
+	fmt.Printf("   cd %s\n", projectName)
+	if apiToken == "" {
+		fmt.Println("   # Don't forget to add your API token to .env first!")
+	}
+	fmt.Println("   go run ./cmd/worker")
+	
+	if includeFrontend {
+		fmt.Println()
+		fmt.Println("   Frontend (in a separate terminal):")
+		fmt.Println("   cd frontend && npm run dev")
+	}
+}
+

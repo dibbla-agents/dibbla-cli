@@ -1,0 +1,18 @@
+# Binaries (in root only)
+/dibbla
+/dibbla.exe
+*.exe
+
+# Test projects created during development
+test-*
+my-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
