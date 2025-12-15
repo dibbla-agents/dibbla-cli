@@ -18,6 +18,9 @@ type ProjectConfig struct {
 	Name            string
 	Token           string
 	IncludeFrontend bool
+	SelfHosted      bool
+	GrpcAddress     string
+	UseTLS          bool
 }
 
 // GoWorker creates a new Go worker project from the template
@@ -42,7 +45,7 @@ func GoWorker(config ProjectConfig) error {
 
 	// Step 4: Create .env file
 	fmt.Println("  Creating .env...")
-	if err := createEnvFile(config.Name, config.Token); err != nil {
+	if err := createEnvFile(config); err != nil {
 		return fmt.Errorf("failed to create .env: %w", err)
 	}
 
@@ -130,25 +133,36 @@ func replaceInFile(filePath, oldStr, newStr string) error {
 	return nil
 }
 
-func createEnvFile(projectDir, token string) error {
-	envPath := filepath.Join(projectDir, ".env")
-	examplePath := filepath.Join(projectDir, "env.example")
+func createEnvFile(config ProjectConfig) error {
+	envPath := filepath.Join(config.Name, ".env")
+	examplePath := filepath.Join(config.Name, "env.example")
 
 	// Read env.example
 	content, err := os.ReadFile(examplePath)
 	if err != nil {
 		// If env.example doesn't exist, create minimal .env
-		content = []byte("SERVER_NAME=" + projectDir + "\nSERVER_API_TOKEN=your_api_token_here\n")
+		content = []byte("SERVER_NAME=" + config.Name + "\nSERVER_API_TOKEN=your_api_token_here\n")
 	}
 
 	envContent := string(content)
 
 	// Replace SERVER_NAME
-	envContent = strings.Replace(envContent, "SERVER_NAME=my-worker", "SERVER_NAME="+projectDir, 1)
+	envContent = strings.Replace(envContent, "SERVER_NAME=my-worker", "SERVER_NAME="+config.Name, 1)
 
 	// Replace SERVER_API_TOKEN if provided
-	if token != "" {
-		envContent = strings.Replace(envContent, "SERVER_API_TOKEN=your_api_token_here", "SERVER_API_TOKEN="+token, 1)
+	if config.Token != "" {
+		envContent = strings.Replace(envContent, "SERVER_API_TOKEN=your_api_token_here", "SERVER_API_TOKEN="+config.Token, 1)
+	}
+
+	// Add self-hosted configuration if applicable
+	if config.SelfHosted {
+		envContent += "\n# Self-hosted configuration\n"
+		if config.GrpcAddress != "" {
+			envContent += "GRPC_SERVER_ADDRESS=" + config.GrpcAddress + "\n"
+		}
+		if !config.UseTLS {
+			envContent += "GRPC_USE_TLS=false\n"
+		}
 	}
 
 	return os.WriteFile(envPath, []byte(envContent), 0644)

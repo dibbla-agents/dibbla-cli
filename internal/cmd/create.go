@@ -66,8 +66,20 @@ func runGoWorker(cmd *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
-	// Get API token
-	apiToken := prompt.AskAPIToken()
+	// Get hosting type
+	hostingType := prompt.AskHostingType()
+	isSelfHosted := hostingType == prompt.HostingSelfHosted
+
+	// Self-hosted configuration
+	var grpcAddress string
+	var useTLS bool
+	if isSelfHosted {
+		grpcAddress = prompt.AskGrpcAddress()
+		useTLS = prompt.AskUseTLS()
+	}
+
+	// Get API token (with context-aware message)
+	apiToken := prompt.AskAPIToken(isSelfHosted)
 
 	// Get frontend preference
 	includeFrontend := prompt.AskIncludeFrontend()
@@ -80,6 +92,9 @@ func runGoWorker(cmd *cobra.Command, args []string) {
 		Name:            projectName,
 		Token:           apiToken,
 		IncludeFrontend: includeFrontend,
+		SelfHosted:      isSelfHosted,
+		GrpcAddress:     grpcAddress,
+		UseTLS:          useTLS,
 	}
 
 	if err := create.GoWorker(config); err != nil {
@@ -99,7 +114,7 @@ func runGoWorker(cmd *cobra.Command, args []string) {
 	if includeFrontend {
 		fmt.Println()
 		fmt.Println("   Frontend (in a separate terminal):")
-		fmt.Println("   cd frontend && npm run dev")
+		fmt.Printf("   cd %s/frontend && npm run dev\n", projectName)
 	}
 }
 
