@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.8.1
 )
 
