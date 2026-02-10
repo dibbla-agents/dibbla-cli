@@ -131,8 +131,11 @@ func Run(opts Options) (*DeployResponse, error) {
 		return nil, fmt.Errorf("archive size (%d MB) exceeds 50 MB limit", len(archive)/(1024*1024))
 	}
 
+	// Get app name from path
+	appName := filepath.Base(absPath)
+
 	// Upload to API
-	return upload(opts.APIURL, opts.APIToken, archive, opts.Force)
+	return upload(opts.APIURL, opts.APIToken, archive, opts.Force, appName)
 }
 
 // createArchive creates a tar.gz archive from the given directory
@@ -240,7 +243,7 @@ func shouldExclude(relPath string, info os.FileInfo) bool {
 }
 
 // upload sends the archive to the API
-func upload(apiURL, apiToken string, archive []byte, force bool) (*DeployResponse, error) {
+func upload(apiURL, apiToken string, archive []byte, force bool, appName string) (*DeployResponse, error) {
 	// Create multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -259,6 +262,12 @@ func upload(apiURL, apiToken string, archive []byte, force bool) (*DeployRespons
 	if force {
 		if err := writer.WriteField("force", "true"); err != nil {
 			return nil, fmt.Errorf("failed to write force field: %w", err)
+		}
+	}
+
+	if appName != "" {
+		if err := writer.WriteField("app_name", appName); err != nil {
+			return nil, fmt.Errorf("failed to write app name field: %w", err)
 		}
 	}
 
