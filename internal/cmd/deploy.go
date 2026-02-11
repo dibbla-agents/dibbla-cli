@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy"
@@ -102,6 +103,29 @@ func runDeploy(cmd *cobra.Command, args []string) {
 
 	fmt.Println("☁️  Uploading and deploying...")
 	fmt.Println()
+
+	// Show green brail spinner while deploying
+	done := make(chan struct{})
+	go func() {
+		// Green brail spinner sequence
+		spinStates := []string{
+			"\033[32m⠋\033[0m", "\033[32m⠙\033[0m", "\033[32m⠹\033[0m", "\033[32m⠸\033[0m",
+			"\033[32m⠼\033[0m", "\033[32m⠴\033[0m", "\033[32m⠦\033[0m", "\033[32m⠧\033[0m",
+			"\033[32m⠇\033[0m", "\033[32m⠏\033[0m",
+		}
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Printf("\r \r") // clear
+				return
+			default:
+				fmt.Printf("\r%s Deploying...", spinStates[i%len(spinStates)])
+				i++
+				time.Sleep(120 * time.Millisecond)
+			}
+		}
+	}()
 
 	result, err := deploy.Run(opts)
 	if err != nil {
