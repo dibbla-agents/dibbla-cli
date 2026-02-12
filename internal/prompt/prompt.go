@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
 )
 
@@ -85,13 +86,13 @@ func AskAPIToken(isSelfHosted bool) string {
 	token = strings.TrimSpace(token)
 
 	if token == "" {
-		fmt.Println("  ⚠️  Warning: No token provided. Add SERVER_API_TOKEN to .env before running.")
+		fmt.Printf("  %s Warning: No token provided. Add SERVER_API_TOKEN to .env before running.\n", platform.Icon("⚠️", "[!]"))
 		return ""
 	}
 
 	// Validate token format
 	if !preflight.ValidateToken(token) {
-		fmt.Println("  ⚠️  Warning: Token should start with 'ak_'. Using as-is.")
+		fmt.Printf("  %s Warning: Token should start with 'ak_'. Using as-is.\n", platform.Icon("⚠️", "[!]"))
 	}
 
 	return token
@@ -118,4 +119,3 @@ func AskConfirm(message string) bool {
 	survey.AskOne(prompt, &confirm)
 	return confirm
 }
-

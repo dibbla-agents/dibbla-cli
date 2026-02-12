@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
 // CheckGo checks if Go is installed and prints the version
@@ -13,7 +15,7 @@ func CheckGo() bool {
 	cmd := exec.Command("go", "version")
 	output, err := cmd.Output()
 	if err != nil {
-		fmt.Println("  ⚠️  Go: not found (install from https://go.dev/dl/)")
+		fmt.Printf("  %s Go: not found (install from https://go.dev/dl/)\n", platform.Icon("⚠️", "[!]"))
 		return false
 	}
 
@@ -21,9 +23,9 @@ func CheckGo() bool {
 	version := strings.TrimSpace(string(output))
 	parts := strings.Fields(version)
 	if len(parts) >= 3 {
-		fmt.Printf("  ✅ Go: %s\n", parts[2])
+		fmt.Printf("  %s Go: %s\n", platform.Icon("✅", "[OK]"), parts[2])
 	} else {
-		fmt.Printf("  ✅ Go: installed\n")
+		fmt.Printf("  %s Go: installed\n", platform.Icon("✅", "[OK]"))
 	}
 	return true
 }
@@ -61,4 +63,3 @@ func ValidateToken(token string) bool {
 	}
 	return strings.HasPrefix(token, "ak_")
 }
-

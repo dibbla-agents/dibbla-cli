@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/create"
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
 	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/spf13/cobra"
@@ -35,7 +36,7 @@ Examples:
 }
 
 func runGoWorker(cmd *cobra.Command, args []string) {
-	fmt.Println("🚀 Dibbla Go Worker Generator")
+	fmt.Printf("%s Dibbla Go Worker Generator\n", platform.Icon("🚀", ">>"))
 	fmt.Println()
 
 	// Run pre-flight checks
@@ -53,14 +54,14 @@ func runGoWorker(cmd *cobra.Command, args []string) {
 
 	// Check if directory exists
 	if preflight.DirectoryExists(projectName) {
-		fmt.Printf("❌ Error: Directory '%s' already exists\n", projectName)
+		fmt.Printf("%s Error: Directory '%s' already exists\n", platform.Icon("❌", "[X]"), projectName)
 		os.Exit(1)
 	}
 
 	// Show full path and confirm
 	fullPath, _ := filepath.Abs(projectName)
-	fmt.Printf("\n📁 Project will be created at:\n   %s\n\n", fullPath)
-	
+	fmt.Printf("\n%s Project will be created at:\n   %s\n\n", platform.Icon("📁", "[DIR]"), fullPath)
+
 	if !prompt.AskConfirm("Continue?") {
 		fmt.Println("Cancelled.")
 		os.Exit(0)
@@ -98,23 +99,22 @@ func runGoWorker(cmd *cobra.Command, args []string) {
 	}
 
 	if err := create.GoWorker(config); err != nil {
-		fmt.Printf("❌ Error: %v\n", err)
+		fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
 
 	// Success message
 	fmt.Println()
-	fmt.Println("🎉 Ready! Run your worker:")
+	fmt.Printf("%s Ready! Run your worker:\n", platform.Icon("🎉", "[*]"))
 	fmt.Printf("   cd %s\n", projectName)
 	if apiToken == "" {
 		fmt.Println("   # Don't forget to add your API token to .env first!")
 	}
 	fmt.Println("   go run ./cmd/worker")
-	
+
 	if includeFrontend {
 		fmt.Println()
 		fmt.Println("   Frontend (in a separate terminal):")
 		fmt.Printf("   cd %s/frontend && npm run dev\n", projectName)
 	}
 }
-

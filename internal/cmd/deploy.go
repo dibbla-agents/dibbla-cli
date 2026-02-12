@@ -8,6 +8,7 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy"
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +42,7 @@ Examples:
 }
 
 func runDeploy(cmd *cobra.Command, args []string) {
-	fmt.Println("🚀 Dibbla Deploy")
+	fmt.Printf("%s Dibbla Deploy\n", platform.Icon("🚀", ">>"))
 	fmt.Println()
 
 	// Load configuration
@@ -49,7 +50,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 
 	// Check for API token
 	if !cfg.HasToken() {
-		fmt.Println("❌ Error: DIBBLA_API_TOKEN is required")
+		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Set your API token in one of these ways:")
 		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
@@ -67,32 +68,32 @@ func runDeploy(cmd *cobra.Command, args []string) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		fmt.Printf("❌ Error: Invalid path: %v\n", err)
+		fmt.Printf("%s Error: Invalid path: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
 
 	// Check if path exists
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		fmt.Printf("❌ Error: Directory not found: %s\n", absPath)
+		fmt.Printf("%s Error: Directory not found: %s\n", platform.Icon("❌", "[X]"), absPath)
 		os.Exit(1)
 	}
 
 	// Check for docker-compose.yml
 	composePath := filepath.Join(absPath, "docker-compose.yml")
 	if _, err := os.Stat(composePath); os.IsNotExist(err) {
-		fmt.Printf("❌ Error: docker-compose.yml not found in %s\n", absPath)
+		fmt.Printf("%s Error: docker-compose.yml not found in %s\n", platform.Icon("❌", "[X]"), absPath)
 		os.Exit(1)
 	}
 
-	fmt.Printf("📁 Deploying: %s\n", absPath)
-	fmt.Printf("🌐 API: %s\n", cfg.APIURL)
+	fmt.Printf("%s Deploying: %s\n", platform.Icon("📁", "[DIR]"), absPath)
+	fmt.Printf("%s API: %s\n", platform.Icon("🌐", "[NET]"), cfg.APIURL)
 	if deployForce {
-		fmt.Println("⚠️  Force mode: will overwrite existing deployment")
+		fmt.Printf("%s Force mode: will overwrite existing deployment\n", platform.Icon("⚠️", "[!]"))
 	}
 	fmt.Println()
 
 	// Create and upload
-	fmt.Println("📦 Creating archive...")
+	fmt.Printf("%s Creating archive...\n", platform.Icon("📦", "[PKG]"))
 
 	opts := deploy.Options{
 		APIURL:   cfg.APIURL,
@@ -101,40 +102,56 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Force:    deployForce,
 	}
 
-	fmt.Println("☁️  Uploading and deploying...")
+	fmt.Printf("%s Uploading and deploying...\n", platform.Icon("☁️", "[CLOUD]"))
 	fmt.Println()
 
-	// Show green brail spinner while deploying
+	// Show spinner while deploying
 	done := make(chan struct{})
 	go func() {
-		// Green brail spinner sequence
-		spinStates := []string{
-			"\033[32m⠋\033[0m", "\033[32m⠙\033[0m", "\033[32m⠹\033[0m", "\033[32m⠸\033[0m",
-			"\033[32m⠼\033[0m", "\033[32m⠴\033[0m", "\033[32m⠦\033[0m", "\033[32m⠧\033[0m",
-			"\033[32m⠇\033[0m", "\033[32m⠏\033[0m",
-		}
-		i := 0
-		for {
-			select {
-			case <-done:
-				fmt.Printf("\r \r") // clear
-				return
-			default:
-				fmt.Printf("\r%s Deploying...", spinStates[i%len(spinStates)])
-				i++
-				time.Sleep(120 * time.Millisecond)
+		if platform.SupportsUnicode() {
+			spinStates := []string{
+				"\033[32m⠋\033[0m", "\033[32m⠙\033[0m", "\033[32m⠹\033[0m", "\033[32m⠸\033[0m",
+				"\033[32m⠼\033[0m", "\033[32m⠴\033[0m", "\033[32m⠦\033[0m", "\033[32m⠧\033[0m",
+				"\033[32m⠇\033[0m", "\033[32m⠏\033[0m",
+			}
+			i := 0
+			for {
+				select {
+				case <-done:
+					fmt.Printf("\r \r")
+					return
+				default:
+					fmt.Printf("\r%s Deploying...", spinStates[i%len(spinStates)])
+					i++
+					time.Sleep(120 * time.Millisecond)
+				}
+			}
+		} else {
+			spinStates := []string{"|", "/", "-", "\\"}
+			i := 0
+			for {
+				select {
+				case <-done:
+					fmt.Printf("\r \r")
+					return
+				default:
+					fmt.Printf("\r[%s] Deploying...", spinStates[i%len(spinStates)])
+					i++
+					time.Sleep(120 * time.Millisecond)
+				}
 			}
 		}
 	}()
 
 	result, err := deploy.Run(opts)
+	close(done)
 	if err != nil {
-		fmt.Printf("❌ Deployment failed: %v\n", err)
+		fmt.Printf("\r%s Deployment failed: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
 
 	// Success output
-	fmt.Println("✅ Deployment successful!")
+	fmt.Printf("\r%s Deployment successful!\n", platform.Icon("✅", "[OK]"))
 	fmt.Println()
 	fmt.Printf("   URL:    %s\n", result.Deployment.URL)
 	fmt.Printf("   Alias:  %s\n", result.Deployment.Alias)

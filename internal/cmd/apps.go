@@ -7,7 +7,8 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
-	"github.com/dibbla-agents/dibbla-cli/internal/prompt" // Import for confirmation prompt
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/spf13/cobra"
 )
 
@@ -35,20 +36,20 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete <alias>",
 	Short: "Delete a Dibbla application",
 	Long:  `Deletes a specific Dibbla application from the platform using its alias.`,
-	Args:  cobra.ExactArgs(1), // Requires exactly one argument: the alias
+	Args:  cobra.ExactArgs(1),
 	Run:   runAppsDelete,
 }
 
 var deleteYes bool
 
 func runAppsList(cmd *cobra.Command, args []string) {
-	fmt.Println("🌱 Retrieving Dibbla applications...")
+	fmt.Printf("%s Retrieving Dibbla applications...\n", platform.Icon("🌱", "[>]"))
 	fmt.Println()
 
 	cfg := config.Load()
 
 	if !cfg.HasToken() {
-		fmt.Println("❌ Error: DIBBLA_API_TOKEN is required")
+		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Set your API token in one of these ways:")
 		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
@@ -60,7 +61,7 @@ func runAppsList(cmd *cobra.Command, args []string) {
 
 	deployments, err := apps.ListApps(cfg.APIURL, cfg.APIToken)
 	if err != nil {
-		fmt.Printf("❌ Failed to list applications: %v\n", err)
+		fmt.Printf("%s Failed to list applications: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
 
@@ -87,13 +88,13 @@ func runAppsList(cmd *cobra.Command, args []string) {
 
 func runAppsDelete(cmd *cobra.Command, args []string) {
 	alias := args[0]
-	fmt.Printf("🗑️  Attempting to delete application '%s'...\n", alias)
+	fmt.Printf("%s Attempting to delete application '%s'...\n", platform.Icon("🗑️", "[DEL]"), alias)
 	fmt.Println()
 
 	cfg := config.Load()
 
 	if !cfg.HasToken() {
-		fmt.Println("❌ Error: DIBBLA_API_TOKEN is required")
+		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Set your API token in one of these ways:")
 		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
@@ -110,34 +111,50 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Show red brail spinner while deleting
+	// Show spinner while deleting
 	done := make(chan struct{})
 	go func() {
-		// Red brail spinner sequence
-		spinStates := []string{
-			"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
-			"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
-			"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
-		}
-		i := 0
-		for {
-			select {
-			case <-done:
-				fmt.Printf("\r \r") // clear
-				return
-			default:
-				fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
-				i++
-				time.Sleep(120 * time.Millisecond)
+		if platform.SupportsUnicode() {
+			spinStates := []string{
+				"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
+				"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
+				"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
+			}
+			i := 0
+			for {
+				select {
+				case <-done:
+					fmt.Printf("\r \r")
+					return
+				default:
+					fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
+					i++
+					time.Sleep(120 * time.Millisecond)
+				}
+			}
+		} else {
+			spinStates := []string{"|", "/", "-", "\\"}
+			i := 0
+			for {
+				select {
+				case <-done:
+					fmt.Printf("\r \r")
+					return
+				default:
+					fmt.Printf("\r[%s] Deleting...", spinStates[i%len(spinStates)])
+					i++
+					time.Sleep(120 * time.Millisecond)
+				}
 			}
 		}
 	}()
 
 	deleteResponse, err := apps.DeleteApp(cfg.APIURL, cfg.APIToken, alias)
+	close(done)
 	if err != nil {
-		fmt.Printf("❌ Failed to delete application '%s': %v\n", alias, err)
+		fmt.Printf("\r%s Failed to delete application '%s': %v\n", platform.Icon("❌", "[X]"), alias, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✅ %s\n", deleteResponse.Message)
+	fmt.Printf("\r%s %s\n", platform.Icon("✅", "[OK]"), deleteResponse.Message)
 }

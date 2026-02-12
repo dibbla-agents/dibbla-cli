@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
 const (
@@ -60,7 +62,7 @@ func GoWorker(config ProjectConfig) error {
 		fmt.Println("  Installing frontend dependencies...")
 		if err := installFrontendDeps(config.Name); err != nil {
 			// Non-fatal - warn but continue
-			fmt.Printf("  ⚠️  Warning: npm install failed: %v\n", err)
+			fmt.Printf("  %s Warning: npm install failed: %v\n", platform.Icon("⚠️", "[!]"), err)
 			fmt.Println("     Run 'cd frontend && npm install' manually.")
 		}
 	}
@@ -69,7 +71,7 @@ func GoWorker(config ProjectConfig) error {
 	fmt.Println("  Cleaning up...")
 	if err := cleanupProject(config.Name); err != nil {
 		// Non-fatal, just warn
-		fmt.Printf("  ⚠️  Warning: cleanup had issues: %v\n", err)
+		fmt.Printf("  %s Warning: cleanup had issues: %v\n", platform.Icon("⚠️", "[!]"), err)
 	}
 
 	// Step 7: Run go mod tidy
@@ -308,17 +310,16 @@ func runGoModTidy(projectDir string) error {
 
 func installFrontendDeps(projectDir string) error {
 	frontendDir := filepath.Join(projectDir, "frontend")
-	
+
 	// Check if npm is available
 	checkCmd := exec.Command("npm", "--version")
 	if err := checkCmd.Run(); err != nil {
 		return fmt.Errorf("npm not found - install Node.js from https://nodejs.org")
 	}
-	
+
 	cmd := exec.Command("npm", "install")
 	cmd.Dir = frontendDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
