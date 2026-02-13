@@ -276,7 +276,7 @@ func upload(apiURL, apiToken string, archive []byte, force bool, appName string)
 	}
 
 	// Create request
-	url := strings.TrimSuffix(apiURL, "/") + "/deploy"
+	url := strings.TrimSuffix(apiURL, "/") + "/deployments"
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
