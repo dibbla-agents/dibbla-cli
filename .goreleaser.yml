@@ -75,7 +75,7 @@ nfpms:
     package_name: dibbla
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     
-    builds:
+    ids:
       - dibbla
 
     formats:
