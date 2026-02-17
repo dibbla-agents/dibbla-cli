@@ -16,6 +16,7 @@ This file is your "Mental Model." It must be kept technically precise for other 
 - **Command Definitions:** Update the "Commands" section with precise Usage, Arguments, and Flags.
 - **Workflow Logic:** If the internal steps of a command (like `create go-worker`) change, update the numbered "Workflow" lists.
 - **Authentication:** If new auth methods or environment variables are added, update the "Authentication" section.
+- **Embedded Copy:** `internal/cmd/skill.md` is the compile-time embedded copy for `dibbla --skill-prompt`. When you update SKILL.md, run `go generate ./internal/cmd` to sync the embedded copy, or update `internal/cmd/skill.md` manually.
 
 ## Coding Standards
 - **Cobra Integration:** All commands are located in `internal/cmd/`. Ensure new commands follow the existing pattern using the Cobra library.

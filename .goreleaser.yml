@@ -70,3 +70,21 @@ brews:
     test: |
       system "#{bin}/dibbla --version"
 
+nfpms:
+  - id: dibbla-deb
+    package_name: dibbla
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    
+    builds:
+      - dibbla
+
+    formats:
+      - deb
+
+    vendor: "Dibbla Agents"
+    homepage: "https://dibbla.com"
+    description: "Dibbla CLI for managing Dibbla applications"
+
+    contents:
+      - src: ./dibbla
+        dst: /usr/bin/dibbla

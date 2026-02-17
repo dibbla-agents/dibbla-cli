@@ -178,6 +178,7 @@ dibbla-cli/
 ├── internal/
 │   ├── cmd/
 │   │   ├── root.go          # Root command + version
+│   │   ├── skill.md         # Embedded for --skill-prompt (synced from SKILL.md)
 │   │   ├── create.go        # Create commands
 │   │   ├── deploy.go        # Deploy command
 │   │   ├── apps.go          # Apps management

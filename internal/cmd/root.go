@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	_ "embed"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -11,6 +11,11 @@ import (
 var Version = "dev"
 
 var skillPrompt bool
+
+//go:embed skill.md
+var skillPromptContent string
+
+//go:generate sh -c "cp ../../SKILL.md skill.md"
 
 var rootCmd = &cobra.Command{
 	Use:     "dibbla",
@@ -22,12 +27,7 @@ Get started:
   dibbla create go-worker my-project`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if skillPrompt {
-			data, err := os.ReadFile("SKILL.md")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: could not read SKILL.md: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Print(string(data))
+			fmt.Print(skillPromptContent)
 		} else {
 			cmd.Help()
 		}
@@ -43,4 +43,3 @@ func init() {
 func Execute() error {
 	return rootCmd.Execute()
 }
-
