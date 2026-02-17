@@ -82,10 +82,8 @@ nfpms:
       - deb
       - rpm
 
+    bindir: /usr/bin
+
     vendor: "Dibbla Agents"
     homepage: "https://dibbla.com"
     description: "Dibbla CLI for managing Dibbla applications"
-
-    contents:
-      - src: ./dibbla
-        dst: /usr/bin/dibbla
