@@ -52,7 +52,7 @@ detect_arch() {
 
 # Get latest release version from GitHub API
 get_latest_version() {
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$VERSION" ]; then
         error "Failed to fetch latest version."
         exit 1
@@ -61,8 +61,22 @@ get_latest_version() {
     VERSION_NUM="${VERSION#v}"
 }
 
-# Download and install
-install() {
+# Get version from installed binary
+get_installed_version() {
+    VERSION=$($INSTALL_DIR/$BINARY --version)
+}
+
+# Install with brew
+install_with_brew() {
+    info "Homebrew detected. Installing with brew..."
+    brew tap dibbla-agents/tap
+    brew install dibbla
+    get_installed_version
+}
+
+# Download and install manually
+install_manually() {
+    get_latest_version
     ARCHIVE_NAME="${BINARY}_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
 
@@ -113,11 +127,15 @@ main() {
 
     check_deps
     detect_os
-    detect_arch
-    get_latest_version
-    install
+
+    if [ "$OS" = "darwin" ] && command -v brew >/dev/null 2>&1; then
+        install_with_brew
+    else
+        detect_arch
+        install_manually
+    fi
+
     verify
 }
 
 main
-
