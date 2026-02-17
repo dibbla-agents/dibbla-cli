@@ -4,11 +4,11 @@ You are an expert in using the `dibbla` command-line tool.
 
 ## Tool Description
 
-The `dibbla` CLI is used to scaffold new projects and manage applications and databases on the Dibbla platform.
+The `dibbla` CLI is used to scaffold new projects and manage applications, databases, and secrets on the Dibbla platform.
 
 ## Authentication
 
-Most commands that interact with the Dibbla platform require an API token. The `dibbla` tool retrieves the token from the `DIBBLA_API_TOKEN` environment variable. Before running commands like `apps`, `db`, or `deploy`, ensure the user has provided a token. If the token is missing, the tool will produce an error message prompting the user to set it. You should inform the user how to get the token from `https://app.dibbla.com/settings/api-tokens` and how to set it either in a `.env` file or as an environment variable.
+Most commands that interact with the Dibbla platform require an API token. The `dibbla` tool retrieves the token from the `DIBBLA_API_TOKEN` environment variable. Before running commands like `apps`, `db`, `secrets`, or `deploy`, ensure the user has provided a token. If the token is missing, the tool will produce an error message prompting the user to set it. You should inform the user how to get the token from `https://app.dibbla.com/settings/api-tokens` and how to set it either in a `.env` file or as an environment variable.
 
 ## Commands
 
@@ -118,6 +118,55 @@ Restores a database from a dump file.
 -   **Flags:**
     -   `--file <path>`, `-f <path>` (required): The path to the dump file to restore from.
 -   **Example:** `dibbla db restore my-staging-db --file backup.dump`
+
+### `secrets`
+
+The `secrets` command manages secrets on the Dibbla platform. Secrets can be **global** (omit `--deployment`) or **scoped to a deployment** (use `--deployment <alias>`).
+
+#### `secrets list`
+
+Lists secrets (global or for one deployment).
+
+-   **Usage:** `dibbla secrets list [--deployment <alias> | -d <alias>]`
+-   **Flags:**
+    -   `--deployment`, `-d`: List only secrets for this deployment. Omit for global secrets.
+-   **Output:** A table with name, deployment (or "(global)"), and updated-at.
+-   **Example:** `dibbla secrets list` — **Per-app:** `dibbla secrets list -d myapp`
+
+#### `secrets set`
+
+Creates or updates a secret.
+
+-   **Usage:** `dibbla secrets set <name> [value] [--deployment <alias> | -d <alias>]`
+-   **Arguments:**
+    -   `name` (required): The secret name (e.g. `API_KEY`).
+    -   `value` (optional): The secret value. If omitted, the value is read from stdin.
+-   **Flags:**
+    -   `--deployment`, `-d`: Attach the secret to this deployment. Omit for a global secret.
+-   **Example:** `dibbla secrets set API_KEY "my-secret"` — **From stdin:** `echo "secret" | dibbla secrets set API_KEY` — **Per-app:** `dibbla secrets set API_KEY "x" -d myapp`
+
+#### `secrets get`
+
+Prints a secret's value (suitable for piping).
+
+-   **Usage:** `dibbla secrets get <name> [--deployment <alias> | -d <alias>]`
+-   **Arguments:**
+    -   `name` (required): The secret name.
+-   **Flags:**
+    -   `--deployment`, `-d`: For a deployment-scoped secret.
+-   **Example:** `dibbla secrets get API_KEY` — **Per-app:** `dibbla secrets get API_KEY -d myapp`
+
+#### `secrets delete`
+
+Deletes a secret.
+
+-   **Usage:** `dibbla secrets delete <name> [--deployment <alias>] [--yes | -y]`
+-   **Arguments:**
+    -   `name` (required): The secret name to delete.
+-   **Flags:**
+    -   `--deployment`, `-d`: For a deployment-scoped secret.
+    -   `--yes`, `-y`: Skip the confirmation prompt.
+-   **Example:** `dibbla secrets delete API_KEY --yes` — **Per-app:** `dibbla secrets delete API_KEY -d myapp -y`
 
 ### `deploy`
 
