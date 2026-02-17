@@ -1,6 +1,6 @@
 #!/bin/sh
 # Dibbla CLI installer for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/dibbla-agents/dibbla-cli/main/install.sh | sh
+# Usage: curl https://install.dibbla.com -fsS | sh
 
 set -e
 

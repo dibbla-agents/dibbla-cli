@@ -13,13 +13,13 @@ brew install dibbla-agents/dibbla/dibbla
 ### macOS / Linux (curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dibbla-agents/dibbla-cli/main/install.sh | sh
+curl https://install.dibbla.com -fsS | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/dibbla-agents/dibbla-cli/main/install.ps1 | iex
+irm https://install.dibbla.com/install.ps1 | iex
 ```
 
 ### Go developers

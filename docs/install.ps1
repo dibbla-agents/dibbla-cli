@@ -1,5 +1,5 @@
 # Dibbla CLI installer for Windows (PowerShell)
-# Usage: irm https://raw.githubusercontent.com/dibbla-agents/dibbla-cli/main/install.ps1 | iex
+# Usage: irm https://install.dibbla.com/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
