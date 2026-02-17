@@ -57,6 +57,27 @@ dibbla apps list
 dibbla apps delete my-app
 ```
 
+### Manage Databases
+
+```bash
+dibbla db list
+dibbla db create mydb
+dibbla db create --name mydb
+dibbla db delete mydb
+dibbla db delete mydb --yes
+dibbla db restore mydb --file backup.dump
+dibbla db dump mydb
+dibbla db dump mydb --output mydb.dump
+```
+
+| Command | Description |
+|---------|-------------|
+| `db list` | List all managed databases |
+| `db create [name]` | Create a new database (name via argument or `--name`) |
+| `db delete <name>` | Delete a database (`-y` to skip confirmation) |
+| `db restore <name> -f <file>` | Restore from a dump file (e.g. pg_dump custom format) |
+| `db dump <name> [-o file]` | Download a database dump (default: `<name>.dump`) |
+
 ### Prompts
 
 | Prompt | Required | Default |
@@ -128,9 +149,18 @@ dibbla-cli/
 │   │   ├── root.go          # Root command + version
 │   │   ├── create.go        # Create commands
 │   │   ├── deploy.go        # Deploy command
-│   │   └── apps.go          # Apps management
+│   │   ├── apps.go          # Apps management
+│   │   └── db.go            # Database management (list, create, delete, restore, dump)
 │   ├── create/
 │   │   └── goworker.go      # Go worker generator logic
+│   ├── db/
+│   │   └── db.go            # Database API client
+│   ├── deploy/
+│   │   └── deploy.go        # Deploy API client + archive build
+│   ├── apps/
+│   │   └── apps.go          # Apps (deployments) API client
+│   ├── config/
+│   │   └── config.go        # CLI config (env, .env)
 │   ├── platform/
 │   │   └── platform.go      # Cross-platform helpers (icons, exec)
 │   ├── preflight/
