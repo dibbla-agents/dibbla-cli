@@ -52,7 +52,7 @@ detect_arch() {
 
 # Get latest release version from GitHub API
 get_latest_version() {
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$VERSION" ]; then
         error "Failed to fetch latest version."
         exit 1
