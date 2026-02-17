@@ -80,6 +80,29 @@ dibbla db dump mydb --output mydb.dump
 | `db restore <name> -f <file>` | Restore from a dump file (e.g. pg_dump custom format) |
 | `db dump <name> [-o file]` | Download a database dump (default: `<name>.dump`) |
 
+### Manage Secrets
+
+Secrets can be global or scoped to a deployment. Omit `--deployment` for global secrets.
+
+```bash
+dibbla secrets list
+dibbla secrets list --deployment myapp
+dibbla secrets set API_KEY "my-secret-value"
+echo "secret" | dibbla secrets set API_KEY
+dibbla secrets set API_KEY "value" --deployment myapp
+dibbla secrets get API_KEY
+dibbla secrets get API_KEY --deployment myapp
+dibbla secrets delete API_KEY
+dibbla secrets delete API_KEY --deployment myapp --yes
+```
+
+| Command | Description |
+|---------|-------------|
+| `secrets list [-d deployment]` | List secrets (global or for one deployment) |
+| `secrets set <name> [value] [-d deployment]` | Create or update a secret (value from arg or stdin) |
+| `secrets get <name> [-d deployment]` | Print a secret's value |
+| `secrets delete <name> [-d deployment]` | Delete a secret (`-y` to skip confirmation) |
+
 ### Prompts
 
 | Prompt | Required | Default |
@@ -152,7 +175,8 @@ dibbla-cli/
 │   │   ├── create.go        # Create commands
 │   │   ├── deploy.go        # Deploy command
 │   │   ├── apps.go          # Apps management
-│   │   └── db.go            # Database management (list, create, delete, restore, dump)
+│   │   ├── db.go            # Database management (list, create, delete, restore, dump)
+│   │   └── secrets.go       # Secrets management (list, set, get, delete)
 │   ├── create/
 │   │   └── goworker.go      # Go worker generator logic
 │   ├── db/
@@ -163,6 +187,8 @@ dibbla-cli/
 │   │   └── apps.go          # Apps (deployments) API client
 │   ├── config/
 │   │   └── config.go        # CLI config (env, .env)
+│   ├── secrets/
+│   │   └── secrets.go       # Secrets API client
 │   ├── platform/
 │   │   └── platform.go      # Cross-platform helpers (icons, exec)
 │   ├── preflight/
