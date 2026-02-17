@@ -25,11 +25,11 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
     name_template: "dibbla_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats: zip
 
 checksum:
   name_template: "checksums.txt"
@@ -49,4 +49,20 @@ release:
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
+
+brews:
+  - name: dibbla
+    repository:
+      owner: dibbla-agents
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    
+    directory: Formula
+    description: "Dibbla CLI for managing Dibbla applications"
+    homepage: "https://dibbla.com"
+
+    install: |
+      bin.install "dibbla"
+    test: |
+      system "#{bin}/dibbla --version"
 
