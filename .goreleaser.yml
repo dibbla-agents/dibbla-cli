@@ -80,6 +80,7 @@ nfpms:
 
     formats:
       - deb
+      - rpm
 
     vendor: "Dibbla Agents"
     homepage: "https://dibbla.com"
