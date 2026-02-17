@@ -22,6 +22,8 @@ func init() {
 	dbCmd.AddCommand(dbDumpCmd)
 
 	dbDeleteCmd.Flags().BoolVarP(&dbDeleteYes, "yes", "y", false, "Skip confirmation prompt")
+	dbDeleteCmd.Flags().BoolVarP(&dbDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
+	dbListCmd.Flags().BoolVarP(&dbListQuiet, "quiet", "q", false, "Only print database names, one per line (for scripting)")
 	dbCreateCmd.Flags().StringVar(&dbCreateName, "name", "", "Name of the database to create")
 	dbRestoreCmd.Flags().StringVarP(&dbRestoreFile, "file", "f", "", "Path to the dump file to restore (required)")
 	dbRestoreCmd.MarkFlagRequired("file")
@@ -75,6 +77,8 @@ var dbDumpCmd = &cobra.Command{
 
 var (
 	dbDeleteYes   bool
+	dbDeleteQuiet bool
+	dbListQuiet   bool
 	dbCreateName  string
 	dbRestoreFile string
 	dbDumpOutput  string
@@ -94,8 +98,10 @@ func requireToken(cfg *config.Config) {
 }
 
 func runDbList(cmd *cobra.Command, args []string) {
-	fmt.Printf("%s Retrieving databases...\n", platform.Icon("🌱", "[>]"))
-	fmt.Println()
+	if !dbListQuiet {
+		fmt.Printf("%s Retrieving databases...\n", platform.Icon("🌱", "[>]"))
+		fmt.Println()
+	}
 
 	cfg := config.Load()
 	requireToken(cfg)
@@ -107,7 +113,16 @@ func runDbList(cmd *cobra.Command, args []string) {
 	}
 
 	if list.Total == 0 {
-		fmt.Println("No databases found.")
+		if !dbListQuiet {
+			fmt.Println("No databases found.")
+		}
+		return
+	}
+
+	if dbListQuiet {
+		for _, name := range list.Databases {
+			fmt.Println(name)
+		}
 		return
 	}
 
@@ -146,64 +161,78 @@ func runDbCreate(cmd *cobra.Command, args []string) {
 
 func runDbDelete(cmd *cobra.Command, args []string) {
 	name := args[0]
-	fmt.Printf("%s Attempting to delete database '%s'...\n", platform.Icon("🗑️", "[DEL]"), name)
-	fmt.Println()
+	if !dbDeleteQuiet {
+		fmt.Printf("%s Attempting to delete database '%s'...\n", platform.Icon("🗑️", "[DEL]"), name)
+		fmt.Println()
+	}
 
 	cfg := config.Load()
 	requireToken(cfg)
 
 	if !dbDeleteYes {
 		if !prompt.AskConfirm(fmt.Sprintf("Are you sure you want to delete database '%s'? This action cannot be undone.", name)) {
-			fmt.Println("Deletion cancelled.")
+			if !dbDeleteQuiet {
+				fmt.Println("Deletion cancelled.")
+			}
 			os.Exit(0)
 		}
 	}
 
-	done := make(chan struct{})
-	go func() {
-		if platform.SupportsUnicode() {
-			spinStates := []string{
-				"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
-				"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
-				"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
-			}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
+	var done chan struct{}
+	if !dbDeleteQuiet {
+		done = make(chan struct{})
+		go func() {
+			if platform.SupportsUnicode() {
+				spinStates := []string{
+					"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
+					"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
+					"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
+				}
+				i := 0
+				for {
+					select {
+					case <-done:
+						fmt.Printf("\r \r")
+						return
+					default:
+						fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
+						i++
+						time.Sleep(120 * time.Millisecond)
+					}
+				}
+			} else {
+				spinStates := []string{"|", "/", "-", "\\"}
+				i := 0
+				for {
+					select {
+					case <-done:
+						fmt.Printf("\r \r")
+						return
+					default:
+						fmt.Printf("\r[%s] Deleting...", spinStates[i%len(spinStates)])
+						i++
+						time.Sleep(120 * time.Millisecond)
+					}
 				}
 			}
-		} else {
-			spinStates := []string{"|", "/", "-", "\\"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r[%s] Deleting...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		}
-	}()
+		}()
+	}
 
 	del, err := db.DeleteDatabase(cfg.APIURL, cfg.APIToken, name)
-	close(done)
+	if !dbDeleteQuiet {
+		close(done)
+	}
 	if err != nil {
-		fmt.Printf("\r%s Failed to delete database '%s': %v\n", platform.Icon("❌", "[X]"), name, err)
+		if !dbDeleteQuiet {
+			fmt.Printf("\r")
+		}
+		fmt.Printf("%s Failed to delete database '%s': %v\n", platform.Icon("❌", "[X]"), name, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\r%s %s\n", platform.Icon("✅", "[OK]"), del.Message)
+	if !dbDeleteQuiet {
+		fmt.Printf("\r%s %s\n", platform.Icon("✅", "[OK]"), del.Message)
+	}
 }
 
 func runDbRestore(cmd *cobra.Command, args []string) {

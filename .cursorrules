@@ -1,0 +1,27 @@
+# Dibbla CLI Development Rules
+
+You are an expert Go developer working on the Dibbla CLI. You must maintain strict synchronization between the codebase and documentation.
+
+## Mandatory Documentation Sync
+Whenever you modify, add, or remove CLI commands, arguments, flags, or project logic, you MUST update the following files in the same session:
+
+### 1. README.md Updates
+- **Usage Section:** Update example command strings if flags or arguments change.
+- **Command Table:** Keep the summary table under "Manage Databases" or other sections accurate.
+- **Example Session:** If the interactive prompt flow (internal/prompt) changes, reflect the new transcript in the "Example Session" block.
+- **Project Structure:** If you add new directories or move files in `internal/`, update the tree visualization at the bottom of the README.
+
+### 2. SKILL.md Updates
+This file is your "Mental Model." It must be kept technically precise for other AI instances.
+- **Command Definitions:** Update the "Commands" section with precise Usage, Arguments, and Flags.
+- **Workflow Logic:** If the internal steps of a command (like `create go-worker`) change, update the numbered "Workflow" lists.
+- **Authentication:** If new auth methods or environment variables are added, update the "Authentication" section.
+
+## Coding Standards
+- **Cobra Integration:** All commands are located in `internal/cmd/`. Ensure new commands follow the existing pattern using the Cobra library.
+- **Internal Logic:** Keep API clients in their respective folders (`internal/db/`, `internal/deploy/`, etc.).
+- **Consistency:** Ensure that error messages and interactive prompts remain consistent with the existing style in `internal/platform/` and `internal/prompt/`.
+
+## Enforcement
+- Do not ask for permission to update documentation. 
+- Propose the documentation changes immediately alongside the code changes in the Composer or Chat window.

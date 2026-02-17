@@ -69,8 +69,10 @@ The `db` command manages managed databases on the Dibbla platform.
 
 Lists all available databases.
 
--   **Usage:** `dibbla db list`
--   **Example:** `dibbla db list`
+-   **Usage:** `dibbla db list [--quiet | -q]`
+-   **Flags:**
+    -   `--quiet`, `-q`: Only print database names, one per line (for scripting; no "Retrieving...", no "Found N...").
+-   **Example:** `dibbla db list` — **Quiet (scripting):** `dibbla db list -q`
 
 #### `db create`
 
@@ -87,12 +89,13 @@ Creates a new database.
 
 Deletes a database.
 
--   **Usage:** `dibbla db delete <name>`
+-   **Usage:** `dibbla db delete <name> [--yes] [--quiet]`
 -   **Arguments:**
     -   `name` (required): The name of the database to delete.
 -   **Flags:**
     -   `--yes`, `-y`: Skip the confirmation prompt.
--   **Example:** `dibbla db delete my-old-db --yes`
+    -   `--quiet`, `-q`: Suppress progress and success output (errors only; for scripting).
+-   **Example:** `dibbla db delete my-old-db --yes` — **Quiet (scripting):** `dibbla db delete my-old-db --yes -q`
 
 #### `db dump`
 

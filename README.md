@@ -61,10 +61,12 @@ dibbla apps delete my-app
 
 ```bash
 dibbla db list
+dibbla db list -q              # names only, one per line (for scripting)
 dibbla db create mydb
 dibbla db create --name mydb
 dibbla db delete mydb
 dibbla db delete mydb --yes
+dibbla db delete mydb --yes -q # quiet: no progress or success output
 dibbla db restore mydb --file backup.dump
 dibbla db dump mydb
 dibbla db dump mydb --output mydb.dump
@@ -72,9 +74,9 @@ dibbla db dump mydb --output mydb.dump
 
 | Command | Description |
 |---------|-------------|
-| `db list` | List all managed databases |
+| `db list` | List all managed databases (`-q`: names only, one per line) |
 | `db create [name]` | Create a new database (name via argument or `--name`) |
-| `db delete <name>` | Delete a database (`-y` to skip confirmation) |
+| `db delete <name>` | Delete a database (`-y` skip confirmation, `-q` quiet output) |
 | `db restore <name> -f <file>` | Restore from a dump file (e.g. pg_dump custom format) |
 | `db dump <name> [-o file]` | Download a database dump (default: `<name>.dump`) |
 
