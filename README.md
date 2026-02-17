@@ -4,7 +4,13 @@ A command-line tool to scaffold and manage Dibbla worker projects.
 
 ## Installation
 
-### macOS / Linux
+### Homebrew (macOS / Linux)
+
+```bash
+brew install dibbla-agents/dibbla/dibbla
+```
+
+### macOS / Linux (curl)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dibbla-agents/dibbla-cli/main/install.sh | sh

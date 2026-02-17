@@ -2,6 +2,10 @@
 
 You are an expert in using the `dibbla` command-line tool.
 
+## Installation
+
+The `dibbla` CLI can be installed via Homebrew (on macOS or Linux), `curl` (macOS/Linux), PowerShell (Windows), or by using `go install`. For detailed, up-to-date installation instructions, refer to the project's `README.md` file.
+
 ## Tool Description
 
 The `dibbla` CLI is used to scaffold new projects and manage applications, databases, and secrets on the Dibbla platform.

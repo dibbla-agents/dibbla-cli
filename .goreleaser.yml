@@ -63,6 +63,10 @@ brews:
 
     install: |
       bin.install "dibbla"
+      # Generate and install shell completions
+      (bash_completion/"dibbla").write `#{bin}/dibbla completion bash`
+      (zsh_completion/"_dibbla").write `#{bin}/dibbla completion zsh`
+      (fish_completion/"dibbla.fish").write `#{bin}/dibbla completion fish`
     test: |
       system "#{bin}/dibbla --version"
 
