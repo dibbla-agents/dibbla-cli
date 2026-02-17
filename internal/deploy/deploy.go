@@ -114,12 +114,6 @@ func Run(opts Options) (*DeployResponse, error) {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
 
-	// Check if docker-compose.yml exists
-	composePath := filepath.Join(absPath, "docker-compose.yml")
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("docker-compose.yml not found in %s", absPath)
-	}
-
 	// Create archive
 	archive, err := createArchive(absPath)
 	if err != nil {

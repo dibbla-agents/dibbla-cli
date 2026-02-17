@@ -26,7 +26,6 @@ var deployCmd = &cobra.Command{
 	Short: "Deploy an application to dibbla.app",
 	Long: `Deploy a containerized application to the dibbla.app platform.
 
-The target directory must contain a valid docker-compose.yml file.
 Your application will be available at https://<alias>.dibbla.app
 
 Configuration:
@@ -75,13 +74,6 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	// Check if path exists
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		fmt.Printf("%s Error: Directory not found: %s\n", platform.Icon("❌", "[X]"), absPath)
-		os.Exit(1)
-	}
-
-	// Check for docker-compose.yml
-	composePath := filepath.Join(absPath, "docker-compose.yml")
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
-		fmt.Printf("%s Error: docker-compose.yml not found in %s\n", platform.Icon("❌", "[X]"), absPath)
 		os.Exit(1)
 	}
 
