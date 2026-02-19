@@ -54,6 +54,8 @@ dibbla create go-worker
 dibbla deploy
 dibbla deploy ./myapp
 dibbla deploy --force
+dibbla deploy --cpu 500m --memory 512Mi --port 3000
+dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 ```
 
 ### Manage Applications

@@ -69,6 +69,11 @@ type Options struct {
 	APIToken string
 	Path     string
 	Force    bool
+	// Optional deploy API params
+	Env    []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
+	CPU    string   // e.g. 500m
+	Memory string   // e.g. 512Mi
+	Port   string   // e.g. 3000
 }
 
 // excludedPaths are paths that should not be included in the archive
@@ -129,7 +134,7 @@ func Run(opts Options) (*DeployResponse, error) {
 	appName := filepath.Base(absPath)
 
 	// Upload to API
-	return upload(opts.APIURL, opts.APIToken, archive, opts.Force, appName)
+	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Env, opts.CPU, opts.Memory, opts.Port)
 }
 
 // createArchive creates a tar.gz archive from the given directory
@@ -236,8 +241,29 @@ func shouldExclude(relPath string, info os.FileInfo) bool {
 	return false
 }
 
+// envPairsToJSON converts Docker-style KEY=value pairs into a JSON object string for the API.
+// Splits on the first "=" so values may contain "=".
+func envPairsToJSON(pairs []string) string {
+	if len(pairs) == 0 {
+		return ""
+	}
+	m := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		idx := strings.Index(p, "=")
+		if idx <= 0 {
+			continue
+		}
+		m[p[:idx]] = p[idx+1:]
+	}
+	if len(m) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
 // upload sends the archive to the API
-func upload(apiURL, apiToken string, archive []byte, force bool, appName string) (*DeployResponse, error) {
+func upload(apiURL, apiToken string, archive []byte, appName string, force bool, envPairs []string, cpu, memory, port string) (*DeployResponse, error) {
 	// Create multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -262,6 +288,27 @@ func upload(apiURL, apiToken string, archive []byte, force bool, appName string)
 	if appName != "" {
 		if err := writer.WriteField("app_name", appName); err != nil {
 			return nil, fmt.Errorf("failed to write app name field: %w", err)
+		}
+	}
+
+	if envJSON := envPairsToJSON(envPairs); envJSON != "" {
+		if err := writer.WriteField("env_vars", envJSON); err != nil {
+			return nil, fmt.Errorf("failed to write env_vars field: %w", err)
+		}
+	}
+	if cpu != "" {
+		if err := writer.WriteField("cpu", cpu); err != nil {
+			return nil, fmt.Errorf("failed to write cpu field: %w", err)
+		}
+	}
+	if memory != "" {
+		if err := writer.WriteField("memory", memory); err != nil {
+			return nil, fmt.Errorf("failed to write memory field: %w", err)
+		}
+	}
+	if port != "" {
+		if err := writer.WriteField("port", port); err != nil {
+			return nil, fmt.Errorf("failed to write port field: %w", err)
 		}
 	}
 

@@ -13,12 +13,20 @@ import (
 )
 
 var (
-	deployForce bool
+	deployForce   bool
+	deployEnv     []string
+	deployCPU     string
+	deployMemory  string
+	deployPort    string
 )
 
 func init() {
 	rootCmd.AddCommand(deployCmd)
 	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists")
+	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
+	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
+	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
+	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
 }
 
 var deployCmd = &cobra.Command{
@@ -35,7 +43,9 @@ Configuration:
 Examples:
   dibbla deploy              # Deploy current directory
   dibbla deploy ./myapp      # Deploy specific directory
-  dibbla deploy --force      # Force redeploy existing alias`,
+  dibbla deploy --force      # Force redeploy existing alias
+  dibbla deploy --cpu 500m --memory 512Mi --port 3000
+  dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runDeploy,
 }
@@ -92,6 +102,10 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		APIToken: cfg.APIToken,
 		Path:     path,
 		Force:    deployForce,
+		Env:      deployEnv,
+		CPU:      deployCPU,
+		Memory:   deployMemory,
+		Port:     deployPort,
 	}
 
 	fmt.Printf("%s Uploading and deploying...\n", platform.Icon("☁️", "[CLOUD]"))
