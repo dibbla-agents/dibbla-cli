@@ -87,6 +87,15 @@ type DeleteResponse struct {
 	Message string `json:"message"`
 }
 
+// UpdateDeploymentRequest is the request body for PUT /deployments/{alias}.
+type UpdateDeploymentRequest struct {
+	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
+	Replicas             *int32           `json:"replicas,omitempty"`
+	CPU                  string           `json:"cpu,omitempty"`
+	Memory               string           `json:"memory,omitempty"`
+	Port                 *int             `json:"port,omitempty"`
+}
+
 // ListApps makes an API call to list all deployed applications.
 func ListApps(apiURL, apiToken string) (*DeploymentsListResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -165,4 +174,48 @@ func DeleteApp(apiURL, apiToken, alias string) (*DeleteResponse, error) {
 	}
 
 	return &deleteResponse, nil
+}
+
+// UpdateApp updates an existing deployment by alias (PUT /deployments/{alias}).
+func UpdateApp(apiURL, apiToken, alias string, req UpdateDeploymentRequest) (*Deployment, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	apiURL = strings.TrimSuffix(apiURL, "/")
+	httpReq, err := http.NewRequest("PUT", fmt.Sprintf("%s/deployments/%s", apiURL, alias), strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+apiToken)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp ErrorResponse
+		if err := json.Unmarshal(respBody, &errResp); err == nil {
+			return nil, fmt.Errorf("API error (%s): %s", errResp.Error.Code, errResp.Error.Message)
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var deployment Deployment
+	if err := json.Unmarshal(respBody, &deployment); err != nil {
+		return nil, fmt.Errorf("failed to parse API response: %w", err)
+	}
+	return &deployment, nil
 }

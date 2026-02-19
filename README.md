@@ -62,6 +62,8 @@ dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 
 ```bash
 dibbla apps list
+dibbla apps update my-app -e NODE_ENV=production --replicas 2
+dibbla apps update my-app --cpu 500m --memory 512Mi --port 3000
 dibbla apps delete my-app
 ```
 

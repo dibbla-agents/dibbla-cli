@@ -54,6 +54,22 @@ Lists all deployed applications.
 -   **Output:** A table with application alias, URL, status, and last deployment date.
 -   **Example:** `dibbla apps list`
 
+#### `apps update`
+
+Updates an existing deployment (env vars, replicas, cpu, memory, port).
+
+-   **Usage:** `dibbla apps update <alias>`
+-   **Arguments:**
+    -   `alias` (required): The deployment alias to update.
+-   **Flags:**
+    -   `--env`, `-e`: Set env var KEY=value (repeatable, Docker-style).
+    -   `--replicas`: Desired number of replicas.
+    -   `--cpu`: CPU request/limit (e.g. 500m, 1).
+    -   `--memory`: Memory request/limit (e.g. 256Mi, 512Mi).
+    -   `--port`: Container port (1-65535).
+-   At least one of `--env`, `--replicas`, `--cpu`, `--memory`, or `--port` is required.
+-   **Example:** `dibbla apps update myapp -e NODE_ENV=production` — **Replicas:** `dibbla apps update myapp --replicas 3` — **Resources:** `dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000`
+
 #### `apps delete`
 
 Deletes a deployed application.
