@@ -205,7 +205,7 @@ func RestoreDatabase(apiURL, apiToken, name, dumpPath string) (*DatabaseRestoreR
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	client := &http.Client{Timeout: requestTimeout}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/databases/"+name+"/restore"), &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
