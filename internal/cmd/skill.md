@@ -196,12 +196,13 @@ The `deploy` command deploys a project to the Dibbla platform.
 -   **Arguments:**
     -   `path` (optional): The path to the project to deploy. Defaults to the current directory.
 -   **Flags:**
+    -   `--alias`, `-a`: Custom alias name for the deployment (default: directory name).
     -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style).
     -   `--cpu <value>`: CPU request (e.g. `500m`).
     -   `--memory <value>`: Memory request (e.g. `512Mi`).
     -   `--port <value>`: Container port (e.g. `3000`).
--   **Example:** `dibbla deploy ./my-app --force` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
+-   **Example:** `dibbla deploy ./my-app --alias my-api` — **Force:** `dibbla deploy --force` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
 ## General Behavior
 

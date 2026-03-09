@@ -69,6 +69,7 @@ type Options struct {
 	APIToken string
 	Path     string
 	Force    bool
+	Alias    string // Custom alias; when empty, derived from directory name
 	// Optional deploy API params
 	Env    []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
 	CPU    string   // e.g. 500m
@@ -130,8 +131,11 @@ func Run(opts Options) (*DeployResponse, error) {
 		return nil, fmt.Errorf("archive size (%d MB) exceeds 50 MB limit", len(archive)/(1024*1024))
 	}
 
-	// Get app name from path
+	// Get app name from alias or path
 	appName := filepath.Base(absPath)
+	if opts.Alias != "" {
+		appName = opts.Alias
+	}
 
 	// Upload to API
 	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Env, opts.CPU, opts.Memory, opts.Port)

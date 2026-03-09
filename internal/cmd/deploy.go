@@ -14,6 +14,7 @@ import (
 
 var (
 	deployForce   bool
+	deployAlias   string
 	deployEnv     []string
 	deployCPU     string
 	deployMemory  string
@@ -23,6 +24,7 @@ var (
 func init() {
 	rootCmd.AddCommand(deployCmd)
 	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists")
+	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
@@ -43,6 +45,7 @@ Configuration:
 Examples:
   dibbla deploy              # Deploy current directory
   dibbla deploy ./myapp      # Deploy specific directory
+  dibbla deploy --alias my-api  # Deploy with custom alias name
   dibbla deploy --force      # Force redeploy existing alias
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info`,
@@ -88,6 +91,9 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("%s Deploying: %s\n", platform.Icon("📁", "[DIR]"), absPath)
+	if deployAlias != "" {
+		fmt.Printf("%s Alias: %s\n", platform.Icon("🏷️", "[TAG]"), deployAlias)
+	}
 	fmt.Printf("%s API: %s\n", platform.Icon("🌐", "[NET]"), cfg.APIURL)
 	if deployForce {
 		fmt.Printf("%s Force mode: will overwrite existing deployment\n", platform.Icon("⚠️", "[!]"))
@@ -102,6 +108,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		APIToken: cfg.APIToken,
 		Path:     path,
 		Force:    deployForce,
+		Alias:    deployAlias,
 		Env:      deployEnv,
 		CPU:      deployCPU,
 		Memory:   deployMemory,

@@ -53,6 +53,7 @@ dibbla create go-worker
 ```bash
 dibbla deploy
 dibbla deploy ./myapp
+dibbla deploy --alias my-api       # Custom alias (default: directory name)
 dibbla deploy --force
 dibbla deploy --cpu 500m --memory 512Mi --port 3000
 dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
@@ -177,6 +178,10 @@ This triggers GoReleaser to build binaries for all platforms and create a GitHub
 
 ```
 dibbla-cli/
+├── .claude/skills/dibbla/   # Claude Code skill (reference + examples for LLMs)
+│   ├── SKILL.md             # Skill entrypoint
+│   ├── reference.md         # Full command/flag reference
+│   └── examples.md          # Copy-paste examples
 ├── cmd/dibbla/
 │   └── main.go              # Entry point
 ├── internal/
