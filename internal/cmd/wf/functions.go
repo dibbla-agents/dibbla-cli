@@ -15,7 +15,7 @@ var functionsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available functions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "/api/wf/functions?format=json"
+		path := "/api/wf/slim/functions?format=json"
 		server, _ := cmd.Flags().GetString("server")
 		tag, _ := cmd.Flags().GetString("tag")
 		if server != "" {
@@ -62,7 +62,7 @@ var functionsGetCmd = &cobra.Command{
 	Short: "Get function details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Get("/api/wf/functions/" + args[0] + "/" + args[1] + "?format=json")
+		resp, err := getClient().Get("/api/wf/slim/functions/" + args[0] + "/" + args[1] + "?format=json")
 		if err != nil {
 			return err
 		}

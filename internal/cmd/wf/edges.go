@@ -51,7 +51,7 @@ var edgesListCmd = &cobra.Command{
 	Short: "List edges of a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Get("/api/wf/workflows/" + args[0] + "?format=json")
+		resp, err := getClient().Get("/api/wf/slim/workflows/" + args[0] + "?format=json")
 		if err != nil {
 			return err
 		}

@@ -60,7 +60,7 @@ func patchWorkflow(name string, ops []map[string]interface{}) (map[string]interf
 	body := map[string]interface{}{
 		"operations": ops,
 	}
-	resp, err := getClient().Patch("/api/wf/workflows/"+name+"?include_result=true&format=json", body)
+	resp, err := getClient().Patch("/api/wf/slim/workflows/"+name+"?include_result=true&format=json", body)
 	if err != nil {
 		return nil, err
 	}

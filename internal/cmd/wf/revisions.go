@@ -18,7 +18,7 @@ var revisionsListCmd = &cobra.Command{
 	Short: "List revisions of a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Get("/api/wf/workflows/" + args[0] + "/revisions?format=json")
+		resp, err := getClient().Get("/api/wf/slim/workflows/" + args[0] + "/revisions?format=json")
 		if err != nil {
 			return err
 		}
@@ -52,7 +52,7 @@ var revisionsCreateCmd = &cobra.Command{
 	Short: "Create a revision snapshot",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Post("/api/wf/workflows/"+args[0]+"/revisions?format=json", nil)
+		resp, err := getClient().Post("/api/wf/slim/workflows/"+args[0]+"/revisions?format=json", nil)
 		if err != nil {
 			return err
 		}
@@ -75,7 +75,7 @@ var revisionsRestoreCmd = &cobra.Command{
 	Short: "Restore a revision to HEAD",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Post("/api/wf/workflows/"+args[0]+"/revisions/"+args[1]+"/restore?format=json", nil)
+		resp, err := getClient().Post("/api/wf/slim/workflows/"+args[0]+"/revisions/"+args[1]+"/restore?format=json", nil)
 		if err != nil {
 			return err
 		}

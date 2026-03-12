@@ -20,7 +20,7 @@ var workflowsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all workflows",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := getClient().Get("/api/wf/workflows?format=json")
+		resp, err := getClient().Get("/api/wf/slim/workflows?format=json")
 		if err != nil {
 			return err
 		}
@@ -55,7 +55,7 @@ var workflowsGetCmd = &cobra.Command{
 	Short: "Get a workflow definition",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "/api/wf/workflows/" + args[0] + "?format=json"
+		path := "/api/wf/slim/workflows/" + args[0] + "?format=json"
 		revision, _ := cmd.Flags().GetString("revision")
 		if revision != "" {
 			path += "&revision=" + revision
@@ -91,7 +91,7 @@ var workflowsCreateCmd = &cobra.Command{
 		if err := parseFileContent(data, &body); err != nil {
 			return err
 		}
-		resp, err := getClient().Post("/api/wf/workflows?include_result=true&format=json", body)
+		resp, err := getClient().Post("/api/wf/slim/workflows?include_result=true&format=json", body)
 		if err != nil {
 			return err
 		}
@@ -121,7 +121,7 @@ var workflowsUpdateCmd = &cobra.Command{
 		if err := parseFileContent(data, &body); err != nil {
 			return err
 		}
-		resp, err := getClient().Put("/api/wf/workflows/"+args[0]+"?include_result=true&format=json", body)
+		resp, err := getClient().Put("/api/wf/slim/workflows/"+args[0]+"?include_result=true&format=json", body)
 		if err != nil {
 			return err
 		}
@@ -143,7 +143,7 @@ var workflowsDeleteCmd = &cobra.Command{
 		if !confirmAction(fmt.Sprintf("Delete workflow %q?", args[0]), yes) {
 			return nil
 		}
-		resp, err := getClient().Delete("/api/wf/workflows/" + args[0] + "?format=json")
+		resp, err := getClient().Delete("/api/wf/slim/workflows/" + args[0] + "?format=json")
 		if err != nil {
 			return err
 		}
@@ -172,7 +172,7 @@ var workflowsValidateCmd = &cobra.Command{
 		if err := parseFileContent(data, &body); err != nil {
 			return err
 		}
-		resp, err := getClient().Post("/api/wf/workflows/validate?format=json", body)
+		resp, err := getClient().Post("/api/wf/slim/workflows/validate?format=json", body)
 		if err != nil {
 			return err
 		}
@@ -192,7 +192,7 @@ var workflowsExecuteCmd = &cobra.Command{
 	Short: "Execute a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "/api/wf/workflows/" + args[0] + "/execute?format=json"
+		path := "/api/wf/slim/workflows/" + args[0] + "/execute?format=json"
 		node, _ := cmd.Flags().GetString("node")
 		if node != "" {
 			path += "&node=" + node
@@ -234,7 +234,7 @@ var workflowsURLCmd = &cobra.Command{
 	Short: "Get the UI URL for a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "/api/wf/workflows/" + args[0] + "/url?format=json"
+		path := "/api/wf/slim/workflows/" + args[0] + "/url?format=json"
 		revision, _ := cmd.Flags().GetString("revision")
 		if revision != "" {
 			path += "&revision=" + revision
@@ -263,7 +263,7 @@ var workflowsAPIDocsCmd = &cobra.Command{
 	Short: "Show API endpoint documentation for a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path := "/api/wf/workflows/" + args[0] + "/api-docs?format=json"
+		path := "/api/wf/slim/workflows/" + args[0] + "/api-docs?format=json"
 		revision, _ := cmd.Flags().GetString("revision")
 		if revision != "" {
 			path += "&revision=" + revision
