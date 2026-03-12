@@ -74,17 +74,156 @@ dibbla secrets get API_KEY -d myapp
 dibbla secrets delete API_KEY -d myapp -y
 ```
 
-**Scripting:**
+---
+
+## Workflows
 
 ```bash
-export API_KEY=$(dibbla secrets get API_KEY -d myapp)
-for db in $(dibbla db list -q); do echo "$db"; done
+# List and inspect
+dibbla workflows list
+dibbla workflows list -o json
+dibbla wf list                        # alias
+
+# Get a workflow definition
+dibbla workflows get my-workflow
+dibbla workflows get my-workflow -o json
+dibbla workflows get my-workflow --revision abc123
+
+# Create, update, validate
+dibbla workflows create -f workflow.yaml
+dibbla workflows update my-workflow -f workflow.yaml
+dibbla workflows validate -f workflow.yaml
+
+# Delete
+dibbla workflows delete my-workflow
+dibbla workflows delete my-workflow --yes
+
+# Execute
+dibbla workflows execute my-workflow
+dibbla workflows execute my-workflow --data '{"query": "hello"}'
+dibbla workflows execute my-workflow -f input.json
+dibbla workflows execute my-workflow --node api_node_1
+
+# URL and API docs
+dibbla workflows url my-workflow
+dibbla workflows api-docs my-workflow
+dibbla workflows api-docs my-workflow -o json
+```
+
+---
+
+## Nodes
+
+```bash
+# Add a node from a file
+dibbla nodes add my-workflow -f node.yaml
+
+# Add a node inline
+dibbla nodes add my-workflow --inline '{"id":"transform","type":"code","code":"return input"}'
+
+# Remove a node
+dibbla nodes remove my-workflow transform
+dibbla nodes remove my-workflow transform --yes
+```
+
+---
+
+## Edges
+
+```bash
+# Add an edge between nodes
+dibbla edges add my-workflow "input.output -> transform.input"
+
+# Remove an edge
+dibbla edges remove my-workflow "input.output -> transform.input"
+
+# List all edges
+dibbla edges list my-workflow
+dibbla edges list my-workflow -o json
+```
+
+---
+
+## Inputs
+
+```bash
+# Set a node input value
+dibbla inputs set my-workflow agent1 system_prompt "You are a helpful assistant"
+dibbla inputs set my-workflow agent1 temperature 0.7
+
+# Set to null
+dibbla inputs set my-workflow agent1 max_tokens ignored --null
+```
+
+---
+
+## Tools
+
+```bash
+# Add a tool to an agent node
+dibbla tools add my-workflow agent1 web_search
+dibbla tools add my-workflow agent1 calculator
+
+# Remove a tool
+dibbla tools remove my-workflow agent1 web_search
+```
+
+---
+
+## Revisions
+
+```bash
+# List revisions
+dibbla revisions list my-workflow
+dibbla rev list my-workflow           # alias
+dibbla revisions list my-workflow -o json
+
+# Create a snapshot
+dibbla revisions create my-workflow
+dibbla revisions create my-workflow -q   # prints only the revision ID
+
+# Restore
+dibbla revisions restore my-workflow abc123
+```
+
+---
+
+## Functions
+
+```bash
+# List available functions
+dibbla functions list
+dibbla fn list                        # alias
+dibbla functions list --server my-server
+dibbla functions list --tag search
+dibbla functions list -o json
+
+# Get function details
+dibbla functions get my-server web_search
+dibbla functions get my-server web_search -o json
 ```
 
 ---
 
 ## Scripting tips
 
-- Use `-y` / `--yes` to skip confirmations: `apps delete`, `db delete`, `secrets delete`.
-- Use `-q` / `--quiet` on `db list` and `db delete` for minimal output.
+- Use `-y` / `--yes` to skip confirmations: `apps delete`, `db delete`, `secrets delete`, `workflows delete`, `nodes remove`.
+- Use `-q` / `--quiet` on `db list`, `db delete`, and workflow commands for minimal output.
+- Use `-o json` on workflow commands for machine-readable output.
 - Pipe `secrets get` into env or other commands; use `db list -q` for name-only loops.
+- `revisions create -q` prints only the revision ID for scripting.
+
+```bash
+# Save a revision and capture the ID
+REV=$(dibbla revisions create my-workflow -q)
+echo "Created revision: $REV"
+
+# Export a secret
+export API_KEY=$(dibbla secrets get API_KEY -d myapp)
+
+# Loop over databases
+for db in $(dibbla db list -q); do echo "$db"; done
+
+# Validate before deploying a workflow
+dibbla workflows validate -f workflow.yaml && dibbla workflows update my-workflow -f workflow.yaml
+```

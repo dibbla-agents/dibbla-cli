@@ -99,7 +99,7 @@ type UpdateDeploymentRequest struct {
 // ListApps makes an API call to list all deployed applications.
 func ListApps(apiURL, apiToken string) (*DeploymentsListResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/deployments", apiURL), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/deploy/deployments", apiURL), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -141,7 +141,7 @@ func DeleteApp(apiURL, apiToken, alias string) (*DeleteResponse, error) {
 	if strings.HasSuffix(apiURL, "/") {
 		apiURL = strings.TrimRight(apiURL, "/")
 	}
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/deployments/%s", apiURL, alias), nil)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/deploy/deployments/%s", apiURL, alias), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -185,7 +185,7 @@ func UpdateApp(apiURL, apiToken, alias string, req UpdateDeploymentRequest) (*De
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	apiURL = strings.TrimSuffix(apiURL, "/")
-	httpReq, err := http.NewRequest("PUT", fmt.Sprintf("%s/deployments/%s", apiURL, alias), strings.NewReader(string(body)))
+	httpReq, err := http.NewRequest("PUT", fmt.Sprintf("%s/api/deploy/deployments/%s", apiURL, alias), strings.NewReader(string(body)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

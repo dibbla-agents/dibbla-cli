@@ -17,7 +17,7 @@ const requestTimeout = 60 * time.Second
 // DatabasesListResponse is the response for listing databases.
 type DatabasesListResponse struct {
 	Databases []string `json:"databases"`
-	Total     int     `json:"total"`
+	Total     int      `json:"total"`
 }
 
 // DatabaseCreateResponse is the response for creating a database.
@@ -88,7 +88,7 @@ func parseError(body []byte, statusCode int) error {
 // ListDatabases returns all managed databases.
 func ListDatabases(apiURL, apiToken string) (*DatabasesListResponse, error) {
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/databases"), nil)
+	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/databases"), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -121,7 +121,7 @@ func ListDatabases(apiURL, apiToken string) (*DatabasesListResponse, error) {
 func CreateDatabase(apiURL, apiToken, name string) (*DatabaseCreateResponse, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	payload, _ := json.Marshal(map[string]string{"name": name})
-	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/databases"), bytes.NewReader(payload))
+	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/api/deploy/databases"), bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -154,7 +154,7 @@ func CreateDatabase(apiURL, apiToken, name string) (*DatabaseCreateResponse, err
 // DeleteDatabase deletes a database by name.
 func DeleteDatabase(apiURL, apiToken, name string) (*DeleteResponse, error) {
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("DELETE", makeAPIURL(apiURL, "/databases/"+name), nil)
+	req, err := http.NewRequest("DELETE", makeAPIURL(apiURL, "/api/deploy/databases/"+name), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -206,7 +206,7 @@ func RestoreDatabase(apiURL, apiToken, name, dumpPath string) (*DatabaseRestoreR
 	}
 
 	client := &http.Client{Timeout: 10 * time.Minute}
-	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/databases/"+name+"/restore"), &body)
+	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/api/deploy/databases/"+name+"/restore"), &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -239,7 +239,7 @@ func RestoreDatabase(apiURL, apiToken, name, dumpPath string) (*DatabaseRestoreR
 // DumpDatabase downloads a database dump and writes it to out. Caller closes out.
 func DumpDatabase(apiURL, apiToken, name string, out io.Writer) error {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/databases/"+name+"/dump"), nil)
+	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/databases/"+name+"/dump"), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

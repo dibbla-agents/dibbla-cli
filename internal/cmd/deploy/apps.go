@@ -1,4 +1,4 @@
-package cmd
+package deploy
 
 import (
 	"fmt"
@@ -9,22 +9,8 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/spf13/cobra"
 )
-
-func init() {
-	rootCmd.AddCommand(appsCmd)
-	appsCmd.AddCommand(listCmd)
-	appsCmd.AddCommand(deleteCmd)
-	appsCmd.AddCommand(updateCmd)
-	deleteCmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation prompt")
-	updateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
-	updateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
-	updateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
-	updateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
-	updateCmd.Flags().IntVar(&updatePort, "port", -1, "Container port (1-65535)")
-}
 
 var appsCmd = &cobra.Command{
 	Use:   "apps",
@@ -32,14 +18,14 @@ var appsCmd = &cobra.Command{
 	Long:  `Provides commands to list and manage your Dibbla applications.`,
 }
 
-var listCmd = &cobra.Command{
+var appsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all deployed Dibbla applications",
 	Long:  `Fetches and displays a list of all applications deployed to the Dibbla platform.`,
 	Run:   runAppsList,
 }
 
-var deleteCmd = &cobra.Command{
+var appsDeleteCmd = &cobra.Command{
 	Use:   "delete <alias>",
 	Short: "Delete a Dibbla application",
 	Long:  `Deletes a specific Dibbla application from the platform using its alias.`,
@@ -47,7 +33,7 @@ var deleteCmd = &cobra.Command{
 	Run:   runAppsDelete,
 }
 
-var updateCmd = &cobra.Command{
+var appsUpdateCmd = &cobra.Command{
 	Use:   "update <alias>",
 	Short: "Update a deployment",
 	Long:  `Updates an existing deployment (env vars, replicas, cpu, memory, port).`,
@@ -55,29 +41,33 @@ var updateCmd = &cobra.Command{
 	Run:   runAppsUpdate,
 }
 
-var deleteYes bool
-var updateEnv      []string
-var updateReplicas int
-var updateCPU      string
-var updateMemory   string
-var updatePort     int
+var (
+	deleteYes      bool
+	updateEnv      []string
+	updateReplicas int
+	updateCPU      string
+	updateMemory   string
+	updatePort     int
+)
+
+func init() {
+	appsCmd.AddCommand(appsListCmd)
+	appsCmd.AddCommand(appsDeleteCmd)
+	appsCmd.AddCommand(appsUpdateCmd)
+	appsDeleteCmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation prompt")
+	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
+	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
+	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
+	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
+	appsUpdateCmd.Flags().IntVar(&updatePort, "port", -1, "Container port (1-65535)")
+}
 
 func runAppsList(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Retrieving Dibbla applications...\n", platform.Icon("🌱", "[>]"))
 	fmt.Println()
 
 	cfg := config.Load()
-
-	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
-		fmt.Println()
-		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
-		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
-		os.Exit(1)
-	}
+	requireToken(cfg)
 
 	deployments, err := apps.ListApps(cfg.APIURL, cfg.APIToken)
 	if err != nil {
@@ -93,7 +83,6 @@ func runAppsList(cmd *cobra.Command, args []string) {
 	fmt.Printf("Found %d applications:\n", deployments.Total)
 	fmt.Println()
 
-	// Print header
 	fmt.Printf("%-20s %-40s %-15s %s\n", "ALIAS", "URL", "STATUS", "LAST DEPLOYED")
 	fmt.Printf("%-20s %-40s %-15s %s\n", "-----", "---", "------", "-------------")
 
@@ -112,26 +101,15 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 	fmt.Println()
 
 	cfg := config.Load()
-
-	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
-		fmt.Println()
-		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
-		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
-		os.Exit(1)
-	}
+	requireToken(cfg)
 
 	if !deleteYes {
-		if !prompt.AskConfirm(fmt.Sprintf("Are you sure you want to delete '%s'? This action cannot be undone.", alias)) {
+		if !askConfirm(fmt.Sprintf("Are you sure you want to delete '%s'? This action cannot be undone.", alias)) {
 			fmt.Println("Deletion cancelled.")
 			os.Exit(0)
 		}
 	}
 
-	// Show spinner while deleting
 	done := make(chan struct{})
 	go func() {
 		if platform.SupportsUnicode() {
@@ -182,17 +160,7 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 func runAppsUpdate(cmd *cobra.Command, args []string) {
 	alias := args[0]
 	cfg := config.Load()
-
-	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
-		fmt.Println()
-		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
-		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
-		os.Exit(1)
-	}
+	requireToken(cfg)
 
 	envMap := envPairsToMap(updateEnv)
 	var replicas *int32
@@ -246,7 +214,6 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 	}
 }
 
-// envPairsToMap converts KEY=value pairs into a map (splits on first "=").
 func envPairsToMap(pairs []string) map[string]string {
 	if len(pairs) == 0 {
 		return nil

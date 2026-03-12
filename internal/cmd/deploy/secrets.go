@@ -1,4 +1,4 @@
-package cmd
+package deploy
 
 import (
 	"bufio"
@@ -8,24 +8,9 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/dibbla-agents/dibbla-cli/internal/secrets"
 	"github.com/spf13/cobra"
 )
-
-func init() {
-	rootCmd.AddCommand(secretsCmd)
-	secretsCmd.AddCommand(secretsListCmd)
-	secretsCmd.AddCommand(secretsSetCmd)
-	secretsCmd.AddCommand(secretsGetCmd)
-	secretsCmd.AddCommand(secretsDeleteCmd)
-
-	secretsListCmd.Flags().StringVarP(&secretsDeployment, "deployment", "d", "", "List secrets for this deployment only (omit for global)")
-	secretsSetCmd.Flags().StringVarP(&secretsSetDeployment, "deployment", "d", "", "Attach secret to this deployment (omit for global)")
-	secretsGetCmd.Flags().StringVarP(&secretsGetDeployment, "deployment", "d", "", "Get deployment-scoped secret")
-	secretsDeleteCmd.Flags().StringVarP(&secretsDeleteDeployment, "deployment", "d", "", "Delete deployment-scoped secret")
-	secretsDeleteCmd.Flags().BoolVarP(&secretsDeleteYes, "yes", "y", false, "Skip confirmation prompt")
-}
 
 var secretsCmd = &cobra.Command{
 	Use:   "secrets",
@@ -65,12 +50,25 @@ var secretsDeleteCmd = &cobra.Command{
 }
 
 var (
-	secretsDeployment      string
-	secretsSetDeployment   string
-	secretsGetDeployment  string
+	secretsDeployment       string
+	secretsSetDeployment    string
+	secretsGetDeployment    string
 	secretsDeleteDeployment string
-	secretsDeleteYes      bool
+	secretsDeleteYes        bool
 )
+
+func init() {
+	secretsCmd.AddCommand(secretsListCmd)
+	secretsCmd.AddCommand(secretsSetCmd)
+	secretsCmd.AddCommand(secretsGetCmd)
+	secretsCmd.AddCommand(secretsDeleteCmd)
+
+	secretsListCmd.Flags().StringVarP(&secretsDeployment, "deployment", "d", "", "List secrets for this deployment only (omit for global)")
+	secretsSetCmd.Flags().StringVarP(&secretsSetDeployment, "deployment", "d", "", "Attach secret to this deployment (omit for global)")
+	secretsGetCmd.Flags().StringVarP(&secretsGetDeployment, "deployment", "d", "", "Get deployment-scoped secret")
+	secretsDeleteCmd.Flags().StringVarP(&secretsDeleteDeployment, "deployment", "d", "", "Delete deployment-scoped secret")
+	secretsDeleteCmd.Flags().BoolVarP(&secretsDeleteYes, "yes", "y", false, "Skip confirmation prompt")
+}
 
 func runSecretsList(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Retrieving secrets...\n", platform.Icon("🌱", "[>]"))
@@ -117,7 +115,6 @@ func runSecretsSet(cmd *cobra.Command, args []string) {
 	if len(args) == 2 {
 		value = args[1]
 	} else {
-		// Read from stdin
 		scanner := bufio.NewScanner(os.Stdin)
 		var lines []string
 		for scanner.Scan() {
@@ -186,7 +183,7 @@ func runSecretsDelete(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	if !secretsDeleteYes {
-		if !prompt.AskConfirm(fmt.Sprintf("Are you sure you want to delete secret '%s'?", name)) {
+		if !askConfirm(fmt.Sprintf("Are you sure you want to delete secret '%s'?", name)) {
 			fmt.Println("Deletion cancelled.")
 			os.Exit(0)
 		}

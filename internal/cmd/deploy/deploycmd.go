@@ -1,4 +1,4 @@
-package cmd
+package deploy
 
 import (
 	"fmt"
@@ -7,29 +7,19 @@ import (
 	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
-	"github.com/dibbla-agents/dibbla-cli/internal/deploy"
+	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/spf13/cobra"
 )
 
 var (
-	deployForce   bool
-	deployAlias   string
-	deployEnv     []string
-	deployCPU     string
-	deployMemory  string
-	deployPort    string
+	deployForce  bool
+	deployAlias  string
+	deployEnv    []string
+	deployCPU    string
+	deployMemory string
+	deployPort   string
 )
-
-func init() {
-	rootCmd.AddCommand(deployCmd)
-	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists")
-	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
-	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
-	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
-	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
-	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
-}
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy [path]",
@@ -53,26 +43,22 @@ Examples:
 	Run:  runDeploy,
 }
 
+func init() {
+	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists")
+	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
+	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
+	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
+	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
+	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
+}
+
 func runDeploy(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Dibbla Deploy\n", platform.Icon("🚀", ">>"))
 	fmt.Println()
 
-	// Load configuration
 	cfg := config.Load()
+	requireToken(cfg)
 
-	// Check for API token
-	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
-		fmt.Println()
-		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
-		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
-		os.Exit(1)
-	}
-
-	// Get path
 	path := "."
 	if len(args) > 0 {
 		path = args[0]
@@ -84,7 +70,6 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Check if path exists
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		fmt.Printf("%s Error: Directory not found: %s\n", platform.Icon("❌", "[X]"), absPath)
 		os.Exit(1)
@@ -100,10 +85,9 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println()
 
-	// Create and upload
 	fmt.Printf("%s Creating archive...\n", platform.Icon("📦", "[PKG]"))
 
-	opts := deploy.Options{
+	opts := deploypkg.Options{
 		APIURL:   cfg.APIURL,
 		APIToken: cfg.APIToken,
 		Path:     path,
@@ -118,7 +102,6 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Uploading and deploying...\n", platform.Icon("☁️", "[CLOUD]"))
 	fmt.Println()
 
-	// Show spinner while deploying
 	done := make(chan struct{})
 	go func() {
 		if platform.SupportsUnicode() {
@@ -156,14 +139,13 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	result, err := deploy.Run(opts)
+	result, err := deploypkg.Run(opts)
 	close(done)
 	if err != nil {
 		fmt.Printf("\r%s Deployment failed: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
 
-	// Success output
 	fmt.Printf("\r%s Deployment successful!\n", platform.Icon("✅", "[OK]"))
 	fmt.Println()
 	fmt.Printf("   URL:    %s\n", result.Deployment.URL)

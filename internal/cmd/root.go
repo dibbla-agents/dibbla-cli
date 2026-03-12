@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"fmt"
 
+	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/spf13/cobra"
 )
 
@@ -37,6 +39,8 @@ Get started:
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("dibbla version %s\n", Version))
 	rootCmd.Flags().BoolVar(&skillPrompt, "skill-prompt", false, "Show detailed instructions for LLM-based tools")
+	deploycmd.Register(rootCmd)
+	wf.Register(rootCmd)
 }
 
 // Execute runs the root command

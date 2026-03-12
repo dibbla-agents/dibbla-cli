@@ -105,7 +105,7 @@ func ListSecrets(apiURL, apiToken, deployment string) (*SecretsListResponse, err
 		query.Set("deployment", deployment)
 	}
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/secrets", query), nil)
+	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/secrets", query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -143,7 +143,7 @@ func CreateSecret(apiURL, apiToken, name, value, deploymentAlias string) (*Secre
 	raw, _ := json.Marshal(payload)
 
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/secrets", nil), bytes.NewReader(raw))
+	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/api/deploy/secrets", nil), bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -180,7 +180,7 @@ func GetSecret(apiURL, apiToken, name, deployment string) (*SecretResponse, erro
 		query.Set("deployment", deployment)
 	}
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/secrets/"+url.PathEscape(name), query), nil)
+	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/secrets/"+url.PathEscape(name), query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -216,7 +216,7 @@ func DeleteSecret(apiURL, apiToken, name, deployment string) (*DeleteResponse, e
 		query.Set("deployment", deployment)
 	}
 	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("DELETE", makeAPIURL(apiURL, "/secrets/"+url.PathEscape(name), query), nil)
+	req, err := http.NewRequest("DELETE", makeAPIURL(apiURL, "/api/deploy/secrets/"+url.PathEscape(name), query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

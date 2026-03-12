@@ -1,4 +1,4 @@
-package cmd
+package deploy
 
 import (
 	"fmt"
@@ -9,26 +9,8 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/db"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/spf13/cobra"
 )
-
-func init() {
-	rootCmd.AddCommand(dbCmd)
-	dbCmd.AddCommand(dbListCmd)
-	dbCmd.AddCommand(dbCreateCmd)
-	dbCmd.AddCommand(dbDeleteCmd)
-	dbCmd.AddCommand(dbRestoreCmd)
-	dbCmd.AddCommand(dbDumpCmd)
-
-	dbDeleteCmd.Flags().BoolVarP(&dbDeleteYes, "yes", "y", false, "Skip confirmation prompt")
-	dbDeleteCmd.Flags().BoolVarP(&dbDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
-	dbListCmd.Flags().BoolVarP(&dbListQuiet, "quiet", "q", false, "Only print database names, one per line (for scripting)")
-	dbCreateCmd.Flags().StringVar(&dbCreateName, "name", "", "Name of the database to create")
-	dbRestoreCmd.Flags().StringVarP(&dbRestoreFile, "file", "f", "", "Path to the dump file to restore (required)")
-	dbRestoreCmd.MarkFlagRequired("file")
-	dbDumpCmd.Flags().StringVarP(&dbDumpOutput, "output", "o", "", "Output file path (default: <name>.dump)")
-}
 
 var dbCmd = &cobra.Command{
 	Use:   "db",
@@ -84,17 +66,20 @@ var (
 	dbDumpOutput  string
 )
 
-func requireToken(cfg *config.Config) {
-	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
-		fmt.Println()
-		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
-		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
-		os.Exit(1)
-	}
+func init() {
+	dbCmd.AddCommand(dbListCmd)
+	dbCmd.AddCommand(dbCreateCmd)
+	dbCmd.AddCommand(dbDeleteCmd)
+	dbCmd.AddCommand(dbRestoreCmd)
+	dbCmd.AddCommand(dbDumpCmd)
+
+	dbDeleteCmd.Flags().BoolVarP(&dbDeleteYes, "yes", "y", false, "Skip confirmation prompt")
+	dbDeleteCmd.Flags().BoolVarP(&dbDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
+	dbListCmd.Flags().BoolVarP(&dbListQuiet, "quiet", "q", false, "Only print database names, one per line (for scripting)")
+	dbCreateCmd.Flags().StringVar(&dbCreateName, "name", "", "Name of the database to create")
+	dbRestoreCmd.Flags().StringVarP(&dbRestoreFile, "file", "f", "", "Path to the dump file to restore (required)")
+	dbRestoreCmd.MarkFlagRequired("file")
+	dbDumpCmd.Flags().StringVarP(&dbDumpOutput, "output", "o", "", "Output file path (default: <name>.dump)")
 }
 
 func runDbList(cmd *cobra.Command, args []string) {
@@ -170,7 +155,7 @@ func runDbDelete(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	if !dbDeleteYes {
-		if !prompt.AskConfirm(fmt.Sprintf("Are you sure you want to delete database '%s'? This action cannot be undone.", name)) {
+		if !askConfirm(fmt.Sprintf("Are you sure you want to delete database '%s'? This action cannot be undone.", name)) {
 			if !dbDeleteQuiet {
 				fmt.Println("Deletion cancelled.")
 			}
