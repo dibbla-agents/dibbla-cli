@@ -2,6 +2,8 @@ package credential
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/99designs/keyring"
@@ -15,10 +17,23 @@ const (
 
 var errKeyNotFound = keyring.ErrKeyNotFound
 
+// fileKeyringDir returns a directory for the file keyring backend when no OS keychain is available.
+func fileKeyringDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "~/.config/dibbla"
+	}
+	return filepath.Join(dir, "dibbla")
+}
+
 func openKeyring() (keyring.Keyring, error) {
-	return keyring.Open(keyring.Config{
+	cfg := keyring.Config{
 		ServiceName: serviceName,
-	})
+		// When the file backend is used (e.g. Linux without Secret Service), these are required.
+		FileDir:         fileKeyringDir(),
+		FilePasswordFunc: keyring.TerminalPrompt,
+	}
+	return keyring.Open(cfg)
 }
 
 // GetCredentials returns both stored API token and API URL with a single keyring open,
