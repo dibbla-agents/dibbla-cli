@@ -20,11 +20,11 @@ func Register(root *cobra.Command) {
 
 func requireToken(cfg *config.Config) {
 	if !cfg.HasToken() {
-		fmt.Printf("%s Error: DIBBLA_API_TOKEN is required\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: API token is required\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Set your API token in one of these ways:")
-		fmt.Println("  1. Create a .env file with: DIBBLA_API_TOKEN=your_token")
-		fmt.Println("  2. Export environment variable: export DIBBLA_API_TOKEN=your_token")
+		fmt.Println("  1. Run: dibbla login")
+		fmt.Println("  2. Set DIBBLA_API_TOKEN in your environment or .env file")
 		fmt.Println()
 		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
 		os.Exit(1)

@@ -36,6 +36,24 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 
 ## Usage
 
+### Authentication
+
+For local use, log in once; your API token is stored securely in the OS credential store (e.g. macOS Keychain):
+
+```bash
+dibbla login                    # default: https://api.dibbla.app (prompts for token)
+dibbla login --api-key TOKEN    # pass token on the command line
+dibbla login api.dibbla.net     # use a different API endpoint
+dibbla logout                   # remove stored credentials
+```
+
+In CI, set environment variables instead of using `login`:
+
+- `DIBBLA_API_TOKEN` (required for API commands)
+- `DIBBLA_API_URL` (optional; default is `https://api.dibbla.app`)
+
+Get your API token at [app.dibbla.com/settings/api-tokens](https://app.dibbla.com/settings/api-tokens).
+
 ### Create a Go Worker Project
 
 ```bash
@@ -187,12 +205,23 @@ dibbla-cli/
 ├── internal/
 │   ├── cmd/
 │   │   ├── root.go          # Root command + version
+│   │   ├── login.go         # Login command (store API token in OS keychain)
+│   │   ├── logout.go        # Logout command (remove stored credentials)
 │   │   ├── skill.md         # Embedded for --skill-prompt (synced from SKILL.md)
 │   │   ├── create.go        # Create commands
-│   │   ├── deploy.go        # Deploy command
-│   │   ├── apps.go          # Apps management
-│   │   ├── db.go            # Database management (list, create, delete, restore, dump)
-│   │   └── secrets.go       # Secrets management (list, set, get, delete)
+│   │   ├── deploy/          # Deploy-related commands
+│   │   │   ├── register.go  # Command registration + requireToken
+│   │   │   ├── deploycmd.go # Deploy command
+│   │   │   ├── apps.go      # Apps management
+│   │   │   ├── db.go        # Database management (list, create, delete, restore, dump)
+│   │   │   └── secrets.go   # Secrets management (list, set, get, delete)
+│   │   └── wf/              # Workflow commands
+│   ├── apiclient/
+│   │   └── client.go        # HTTP API client + token validation
+│   ├── config/
+│   │   └── config.go        # CLI config (env, .env, keychain)
+│   ├── credential/
+│   │   └── store.go         # OS credential store (keyring)
 │   ├── create/
 │   │   └── goworker.go      # Go worker generator logic
 │   ├── db/
@@ -201,8 +230,6 @@ dibbla-cli/
 │   │   └── deploy.go        # Deploy API client + archive build
 │   ├── apps/
 │   │   └── apps.go          # Apps (deployments) API client
-│   ├── config/
-│   │   └── config.go        # CLI config (env, .env)
 │   ├── secrets/
 │   │   └── secrets.go       # Secrets API client
 │   ├── platform/

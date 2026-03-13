@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 )
 
 // APIError represents an HTTP error response from the API.
@@ -136,4 +137,44 @@ func ExitCodeForStatus(status int) int {
 	default:
 		return 1
 	}
+}
+
+const validateTokenPath = "/api/auth/v1/tokens/validate"
+
+// ValidateToken calls the token validation endpoint and returns an error if the token is invalid.
+// baseURL should be the API base (e.g. https://api.dibbla.app) without trailing slash.
+func ValidateToken(baseURL, token string) error {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := baseURL + validateTokenPath
+
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		switch resp.StatusCode {
+		case 401:
+			msg = "invalid or expired token"
+		case 403:
+			msg = "access denied"
+		default:
+			msg = fmt.Sprintf("validation failed (HTTP %d)", resp.StatusCode)
+		}
+	}
+	return &APIError{StatusCode: resp.StatusCode, Message: msg}
 }

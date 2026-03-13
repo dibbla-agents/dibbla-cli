@@ -90,10 +90,10 @@ type DeleteResponse struct {
 // UpdateDeploymentRequest is the request body for PUT /deployments/{alias}.
 type UpdateDeploymentRequest struct {
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
-	Replicas             *int32           `json:"replicas,omitempty"`
-	CPU                  string           `json:"cpu,omitempty"`
-	Memory               string           `json:"memory,omitempty"`
-	Port                 *int             `json:"port,omitempty"`
+	Replicas             *int32            `json:"replicas,omitempty"`
+	CPU                  string            `json:"cpu,omitempty"`
+	Memory               string            `json:"memory,omitempty"`
+	Port                 *int              `json:"port,omitempty"`
 }
 
 // ListApps makes an API call to list all deployed applications.

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/joho/godotenv"
 )
 
@@ -17,20 +18,47 @@ type Config struct {
 	APIToken string
 }
 
-// Load reads configuration from environment variables and .env file
-// Environment variables take precedence over .env file values
+// isCI returns true when running in a CI environment (env vars take precedence, no keychain).
+func isCI() bool {
+	return os.Getenv("CI") != "" ||
+		os.Getenv("GITHUB_ACTIONS") != "" ||
+		os.Getenv("GITLAB_CI") != "" ||
+		os.Getenv("JENKINS_HOME") != "" ||
+		os.Getenv("BUILDKITE") != ""
+}
+
+// Load reads configuration from environment variables, .env file, and OS credential store.
+// In CI or when DIBBLA_API_TOKEN is set, only env is used. Otherwise stored credentials from
+// "dibbla login" are used.
 func Load() *Config {
 	// Load .env file if it exists (ignores error if file doesn't exist)
 	_ = godotenv.Load()
 
+	envToken := os.Getenv("DIBBLA_API_TOKEN")
+	envURL := os.Getenv("DIBBLA_API_URL")
+
 	cfg := &Config{
 		APIURL:   DefaultAPIURL,
-		APIToken: os.Getenv("DIBBLA_API_TOKEN"),
+		APIToken: envToken,
 	}
 
-	// Override API URL if set in environment
-	if url := os.Getenv("DIBBLA_API_URL"); url != "" {
-		cfg.APIURL = url
+	if envToken != "" || isCI() {
+		// Use env only; do not read keychain
+		if envURL != "" {
+			cfg.APIURL = envURL
+		}
+		return cfg
+	}
+
+	// Try credential store from "dibbla login" (single keyring read to avoid multiple OS prompts)
+	if storedToken, storedURL, err := credential.GetCredentials(); err == nil && storedToken != "" {
+		cfg.APIToken = storedToken
+		if storedURL != "" {
+			cfg.APIURL = storedURL
+		}
+	}
+	if envURL != "" {
+		cfg.APIURL = envURL
 	}
 
 	return cfg

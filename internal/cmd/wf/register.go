@@ -41,7 +41,7 @@ func Register(root *cobra.Command) {
 func initClient(cmd *cobra.Command, args []string) error {
 	cfg := config.Load()
 	if !cfg.HasToken() {
-		return fmt.Errorf("API token required: set DIBBLA_API_TOKEN or add it to .env")
+		return fmt.Errorf("API token required: run dibbla login or set DIBBLA_API_TOKEN")
 	}
 	apiClient = apiclient.NewClient(cfg.APIURL, cfg.APIToken, flagVerbose)
 	return nil

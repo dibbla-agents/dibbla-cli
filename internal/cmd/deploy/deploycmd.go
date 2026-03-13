@@ -29,8 +29,7 @@ var deployCmd = &cobra.Command{
 Your application will be available at https://<alias>.dibbla.app
 
 Configuration:
-  Set DIBBLA_API_TOKEN in your environment or .env file.
-  Optionally set DIBBLA_API_URL to use a different API endpoint.
+  Run dibbla login to store credentials, or set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) in your environment or .env file.
 
 Examples:
   dibbla deploy              # Deploy current directory

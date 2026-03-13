@@ -12,11 +12,35 @@ The `dibbla` CLI is used to scaffold new projects and manage applications, datab
 
 ## Authentication
 
-Most commands that interact with the Dibbla platform require an API token. The `dibbla` tool retrieves the token from the `DIBBLA_API_TOKEN` environment variable. Before running commands like `apps`, `db`, `secrets`, or `deploy`, ensure the user has provided a token. If the token is missing, the tool will produce an error message prompting the user to set it. You should inform the user how to get the token from `https://app.dibbla.com/settings/api-tokens` and how to set it either in a `.env` file or as an environment variable.
+Most commands that interact with the Dibbla platform require an API token.
+
+- **Local use:** Run `dibbla login` to store the token securely in the OS credential store (macOS Keychain, Windows Credential Manager, etc.). Use `dibbla login [api_url]` to target a different API (e.g. `dibbla login api.dibbla.net`). Use `dibbla logout` to remove stored credentials.
+- **CI:** Set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`); the CLI uses env vars in CI and does not read the keychain.
+- **Fallback:** The token can also be provided via the `DIBBLA_API_TOKEN` environment variable or a `.env` file.
+
+If the token is missing, the tool will prompt the user to run `dibbla login` or set `DIBBLA_API_TOKEN`. Get your token at `https://app.dibbla.com/settings/api-tokens`.
 
 ## Commands
 
 Here is a breakdown of the available commands and their usage:
+
+### `login`
+
+Store your API token securely in the OS credential store. The token is validated against the API before storage.
+
+-   **Usage:** `dibbla login [api_url]`
+-   **Arguments:**
+    -   `api_url` (optional): API base host or URL (e.g. `api.dibbla.net` or `https://api.dibbla.net`). Default: `https://api.dibbla.app`.
+-   **Flags:**
+    -   `--api-key`: API token. If omitted, the user is prompted to enter it.
+-   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login api.dibbla.net`
+
+### `logout`
+
+Remove the API token and optional API URL stored by `dibbla login` from the OS credential store.
+
+-   **Usage:** `dibbla logout`
+-   **Example:** `dibbla logout`
 
 ### `create`
 
@@ -196,13 +220,12 @@ The `deploy` command deploys a project to the Dibbla platform.
 -   **Arguments:**
     -   `path` (optional): The path to the project to deploy. Defaults to the current directory.
 -   **Flags:**
-    -   `--alias`, `-a`: Custom alias name for the deployment (default: directory name).
     -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style).
     -   `--cpu <value>`: CPU request (e.g. `500m`).
     -   `--memory <value>`: Memory request (e.g. `512Mi`).
     -   `--port <value>`: Container port (e.g. `3000`).
--   **Example:** `dibbla deploy ./my-app --alias my-api` — **Force:** `dibbla deploy --force` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
+-   **Example:** `dibbla deploy ./my-app --force` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
 ## General Behavior
 

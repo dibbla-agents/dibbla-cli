@@ -39,6 +39,8 @@ Get started:
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("dibbla version %s\n", Version))
 	rootCmd.Flags().BoolVar(&skillPrompt, "skill-prompt", false, "Show detailed instructions for LLM-based tools")
+	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(logoutCmd)
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
 }
