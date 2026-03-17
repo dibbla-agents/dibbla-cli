@@ -94,6 +94,7 @@ type UpdateDeploymentRequest struct {
 	CPU                  string            `json:"cpu,omitempty"`
 	Memory               string            `json:"memory,omitempty"`
 	Port                 *int              `json:"port,omitempty"`
+	FaviconURL           *string           `json:"favicon_url,omitempty"`
 }
 
 // ListApps makes an API call to list all deployed applications.

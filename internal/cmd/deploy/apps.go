@@ -48,6 +48,7 @@ var (
 	updateCPU      string
 	updateMemory   string
 	updatePort     int
+	updateFavicon  string
 )
 
 func init() {
@@ -60,6 +61,7 @@ func init() {
 	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
 	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
 	appsUpdateCmd.Flags().IntVar(&updatePort, "port", -1, "Container port (1-65535)")
+	appsUpdateCmd.Flags().StringVar(&updateFavicon, "favicon", "", "Favicon URL (use \"\" to clear)")
 }
 
 func runAppsList(cmd *cobra.Command, args []string) {
@@ -176,14 +178,20 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil
+	var faviconURL *string
+	if cmd.Flags().Changed("favicon") {
+		faviconURL = &updateFavicon
+	}
+
+	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil
 	if !hasUpdate {
-		fmt.Printf("%s Error: specify at least one of --env (-e), --replicas, --cpu, --memory, or --port\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: specify at least one of --env (-e), --replicas, --cpu, --memory, --port, or --favicon\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  dibbla apps update myapp -e NODE_ENV=production")
 		fmt.Println("  dibbla apps update myapp --replicas 3")
 		fmt.Println("  dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000")
+		fmt.Println("  dibbla apps update myapp --favicon https://example.com/favicon.ico")
 		os.Exit(1)
 	}
 
@@ -193,6 +201,7 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		CPU:                  updateCPU,
 		Memory:               updateMemory,
 		Port:                 port,
+		FaviconURL:           faviconURL,
 	}
 
 	fmt.Printf("%s Updating deployment '%s'...\n", platform.Icon("✏️", "[UPDATE]"), alias)

@@ -18,9 +18,10 @@ var (
 	deployUpdate bool
 	deployAlias  string
 	deployEnv    []string
-	deployCPU    string
-	deployMemory string
-	deployPort   string
+	deployCPU      string
+	deployMemory   string
+	deployPort     string
+	deployFavicon  string
 )
 
 var deployCmd = &cobra.Command{
@@ -40,7 +41,8 @@ Examples:
   dibbla deploy --update     # Rolling update (zero downtime)
   dibbla deploy --force      # Force redeploy existing alias (causes downtime)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
-  dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info`,
+  dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
+  dibbla deploy --favicon https://example.com/favicon.ico`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runDeploy,
 }
@@ -53,6 +55,7 @@ func init() {
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
+	deployCmd.Flags().StringVar(&deployFavicon, "favicon", "", "Favicon URL (e.g. https://example.com/favicon.ico)")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 }
 
@@ -104,7 +107,8 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Env:      deployEnv,
 		CPU:      deployCPU,
 		Memory:   deployMemory,
-		Port:     deployPort,
+		Port:       deployPort,
+		FaviconURL: deployFavicon,
 	}
 
 	action := "Deploying"

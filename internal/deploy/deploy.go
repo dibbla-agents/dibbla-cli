@@ -73,9 +73,10 @@ type Options struct {
 	Alias    string // Custom alias; when empty, derived from directory name
 	// Optional deploy API params
 	Env    []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
-	CPU    string   // e.g. 500m
-	Memory string   // e.g. 512Mi
-	Port   string   // e.g. 3000
+	CPU        string // e.g. 500m
+	Memory     string // e.g. 512Mi
+	Port       string // e.g. 3000
+	FaviconURL string // e.g. https://example.com/favicon.ico
 }
 
 // excludedPaths are paths that should not be included in the archive
@@ -139,7 +140,7 @@ func Run(opts Options) (*DeployResponse, error) {
 	}
 
 	// Upload to API
-	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port)
+	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port, opts.FaviconURL)
 }
 
 // createArchive creates a tar.gz archive from the given directory
@@ -268,7 +269,7 @@ func envPairsToJSON(pairs []string) string {
 }
 
 // upload sends the archive to the API
-func upload(apiURL, apiToken string, archive []byte, appName string, force, update bool, envPairs []string, cpu, memory, port string) (*DeployResponse, error) {
+func upload(apiURL, apiToken string, archive []byte, appName string, force, update bool, envPairs []string, cpu, memory, port, faviconURL string) (*DeployResponse, error) {
 	// Create multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -321,6 +322,11 @@ func upload(apiURL, apiToken string, archive []byte, appName string, force, upda
 	if port != "" {
 		if err := writer.WriteField("port", port); err != nil {
 			return nil, fmt.Errorf("failed to write port field: %w", err)
+		}
+	}
+	if faviconURL != "" {
+		if err := writer.WriteField("favicon_url", faviconURL); err != nil {
+			return nil, fmt.Errorf("failed to write favicon_url field: %w", err)
 		}
 	}
 
