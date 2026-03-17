@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -14,6 +15,7 @@ import (
 
 var (
 	deployForce  bool
+	deployUpdate bool
 	deployAlias  string
 	deployEnv    []string
 	deployCPU    string
@@ -35,7 +37,8 @@ Examples:
   dibbla deploy              # Deploy current directory
   dibbla deploy ./myapp      # Deploy specific directory
   dibbla deploy --alias my-api  # Deploy with custom alias name
-  dibbla deploy --force      # Force redeploy existing alias
+  dibbla deploy --update     # Rolling update (zero downtime)
+  dibbla deploy --force      # Force redeploy existing alias (causes downtime)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info`,
 	Args: cobra.MaximumNArgs(1),
@@ -43,12 +46,14 @@ Examples:
 }
 
 func init() {
-	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists")
+	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists (causes downtime)")
+	deployCmd.Flags().BoolVarP(&deployUpdate, "update", "u", false, "Rolling update of existing deployment (zero downtime)")
 	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
+	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 }
 
 func runDeploy(cmd *cobra.Command, args []string) {
@@ -79,6 +84,9 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		fmt.Printf("%s Alias: %s\n", platform.Icon("🏷️", "[TAG]"), deployAlias)
 	}
 	fmt.Printf("%s API: %s\n", platform.Icon("🌐", "[NET]"), cfg.APIURL)
+	if deployUpdate {
+		fmt.Printf("%s Update mode: rolling update with zero downtime\n", platform.Icon("🔄", "[UPD]"))
+	}
 	if deployForce {
 		fmt.Printf("%s Force mode: will overwrite existing deployment\n", platform.Icon("⚠️", "[!]"))
 	}
@@ -91,6 +99,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		APIToken: cfg.APIToken,
 		Path:     path,
 		Force:    deployForce,
+		Update:   deployUpdate,
 		Alias:    deployAlias,
 		Env:      deployEnv,
 		CPU:      deployCPU,
@@ -98,7 +107,11 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Port:     deployPort,
 	}
 
-	fmt.Printf("%s Uploading and deploying...\n", platform.Icon("☁️", "[CLOUD]"))
+	action := "Deploying"
+	if deployUpdate {
+		action = "Updating"
+	}
+	fmt.Printf("%s Uploading and %s...\n", platform.Icon("☁️", "[CLOUD]"), strings.ToLower(action))
 	fmt.Println()
 
 	done := make(chan struct{})
@@ -116,7 +129,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 					fmt.Printf("\r \r")
 					return
 				default:
-					fmt.Printf("\r%s Deploying...", spinStates[i%len(spinStates)])
+					fmt.Printf("\r%s %s...", spinStates[i%len(spinStates)], action)
 					i++
 					time.Sleep(120 * time.Millisecond)
 				}
@@ -130,7 +143,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 					fmt.Printf("\r \r")
 					return
 				default:
-					fmt.Printf("\r[%s] Deploying...", spinStates[i%len(spinStates)])
+					fmt.Printf("\r[%s] %s...", spinStates[i%len(spinStates)], action)
 					i++
 					time.Sleep(120 * time.Millisecond)
 				}
@@ -145,7 +158,11 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("\r%s Deployment successful!\n", platform.Icon("✅", "[OK]"))
+	if deployUpdate {
+		fmt.Printf("\r%s Update successful!\n", platform.Icon("✅", "[OK]"))
+	} else {
+		fmt.Printf("\r%s Deployment successful!\n", platform.Icon("✅", "[OK]"))
+	}
 	fmt.Println()
 	fmt.Printf("   URL:    %s\n", result.Deployment.URL)
 	fmt.Printf("   Alias:  %s\n", result.Deployment.Alias)

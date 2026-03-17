@@ -69,6 +69,7 @@ type Options struct {
 	APIToken string
 	Path     string
 	Force    bool
+	Update   bool   // Rolling update with zero downtime (mutually exclusive with Force)
 	Alias    string // Custom alias; when empty, derived from directory name
 	// Optional deploy API params
 	Env    []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
@@ -138,7 +139,7 @@ func Run(opts Options) (*DeployResponse, error) {
 	}
 
 	// Upload to API
-	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Env, opts.CPU, opts.Memory, opts.Port)
+	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port)
 }
 
 // createArchive creates a tar.gz archive from the given directory
@@ -267,7 +268,7 @@ func envPairsToJSON(pairs []string) string {
 }
 
 // upload sends the archive to the API
-func upload(apiURL, apiToken string, archive []byte, appName string, force bool, envPairs []string, cpu, memory, port string) (*DeployResponse, error) {
+func upload(apiURL, apiToken string, archive []byte, appName string, force, update bool, envPairs []string, cpu, memory, port string) (*DeployResponse, error) {
 	// Create multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -286,6 +287,13 @@ func upload(apiURL, apiToken string, archive []byte, appName string, force bool,
 	if force {
 		if err := writer.WriteField("force", "true"); err != nil {
 			return nil, fmt.Errorf("failed to write force field: %w", err)
+		}
+	}
+
+	// Add update field if set (rolling update)
+	if update {
+		if err := writer.WriteField("update", "true"); err != nil {
+			return nil, fmt.Errorf("failed to write update field: %w", err)
 		}
 	}
 
