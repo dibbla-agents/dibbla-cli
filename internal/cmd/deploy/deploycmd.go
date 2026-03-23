@@ -26,10 +26,10 @@ var (
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy [path]",
-	Short: "Deploy an application to dibbla.app",
-	Long: `Deploy a containerized application to the dibbla.app platform.
+	Short: "Deploy an application to dibbla.com",
+	Long: `Deploy a containerized application to the dibbla.com platform.
 
-Your application will be available at https://<alias>.dibbla.app
+Your application will be available at https://<alias>.dibbla.com
 
 Configuration:
   Run dibbla login to store credentials, or set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) in your environment or .env file.

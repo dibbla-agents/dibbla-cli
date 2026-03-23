@@ -68,7 +68,7 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 	if c.http == nil {
 		c.http = &http.Client{}
 	}
-	url := c.BaseURL + path
+	url := strings.TrimSuffix(c.BaseURL, "/") + path
 
 	var reqBody io.Reader
 	if body != nil {
@@ -142,7 +142,7 @@ func ExitCodeForStatus(status int) int {
 const validateTokenPath = "/api/auth/v1/tokens/validate"
 
 // ValidateToken calls the token validation endpoint and returns an error if the token is invalid.
-// baseURL should be the API base (e.g. https://api.dibbla.app) without trailing slash.
+// baseURL should be the API base (e.g. https://api.dibbla.com) without trailing slash.
 func ValidateToken(baseURL, token string) error {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := baseURL + validateTokenPath

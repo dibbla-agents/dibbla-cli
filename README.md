@@ -41,7 +41,7 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 For local use, log in once; your API token is stored securely in the OS credential store (e.g. macOS Keychain):
 
 ```bash
-dibbla login                    # default: https://api.dibbla.app (prompts for token)
+dibbla login                    # default: https://api.dibbla.com (prompts for token)
 dibbla login --api-key TOKEN    # pass token on the command line
 dibbla login api.dibbla.net     # use a different API endpoint
 dibbla logout                   # remove stored credentials
@@ -50,7 +50,7 @@ dibbla logout                   # remove stored credentials
 In CI, set environment variables instead of using `login`:
 
 - `DIBBLA_API_TOKEN` (required for API commands)
-- `DIBBLA_API_URL` (optional; default is `https://api.dibbla.app`)
+- `DIBBLA_API_URL` (optional; default is `https://api.dibbla.com`)
 
 Get your API token at [app.dibbla.com/settings/api-tokens](https://app.dibbla.com/settings/api-tokens).
 

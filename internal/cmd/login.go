@@ -21,7 +21,7 @@ var loginCmd = &cobra.Command{
 	Short: "Log in and store API credentials securely",
 	Long: `Authenticate with the Dibbla API and store your token in the OS credential store.
 
-By default uses https://api.dibbla.app. To use a different endpoint, pass it as an argument:
+By default uses https://api.dibbla.com. To use a different endpoint, pass it as an argument:
   dibbla login api.dibbla.net
   dibbla login https://api.dibbla.net
 

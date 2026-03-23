@@ -21,6 +21,9 @@ func get(key string) (string, error) {
 		}
 		return "", err
 	}
+	// Windows Credential Manager may return values with null bytes or
+	// other invisible characters that TrimSpace does not remove.
+	val = strings.TrimRight(val, "\x00")
 	return strings.TrimSpace(val), nil
 }
 

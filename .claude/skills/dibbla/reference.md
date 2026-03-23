@@ -6,7 +6,7 @@ Complete usage, arguments, and flags for all commands.
 
 ## deploy
 
-Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.app`.
+Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.com`.
 
 | Item | Details |
 |------|---------|

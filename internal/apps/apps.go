@@ -100,6 +100,7 @@ type UpdateDeploymentRequest struct {
 // ListApps makes an API call to list all deployed applications.
 func ListApps(apiURL, apiToken string) (*DeploymentsListResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
+	apiURL = strings.TrimSuffix(apiURL, "/")
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/deploy/deployments", apiURL), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -138,10 +139,7 @@ func ListApps(apiURL, apiToken string) (*DeploymentsListResponse, error) {
 // DeleteApp makes an API call to delete a specific application by alias.
 func DeleteApp(apiURL, apiToken, alias string) (*DeleteResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	// Strip trailing slash from apiURL if present
-	if strings.HasSuffix(apiURL, "/") {
-		apiURL = strings.TrimRight(apiURL, "/")
-	}
+	apiURL = strings.TrimSuffix(apiURL, "/")
 	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/deploy/deployments/%s", apiURL, alias), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

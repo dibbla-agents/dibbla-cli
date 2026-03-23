@@ -30,7 +30,7 @@ Store your API token securely in the OS credential store. The token is validated
 
 -   **Usage:** `dibbla login [api_url]`
 -   **Arguments:**
-    -   `api_url` (optional): API base host or URL (e.g. `api.dibbla.net` or `https://api.dibbla.net`). Default: `https://api.dibbla.app`.
+    -   `api_url` (optional): API base host or URL (e.g. `api.dibbla.net` or `https://api.dibbla.net`). Default: `https://api.dibbla.com`.
 -   **Flags:**
     -   `--api-key`: API token. If omitted, the user is prompted to enter it.
 -   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login api.dibbla.net`

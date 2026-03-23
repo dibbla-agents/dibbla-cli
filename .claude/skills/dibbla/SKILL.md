@@ -5,7 +5,7 @@ description: Use the Dibbla CLI to deploy apps, manage applications, databases, 
 
 # Dibbla CLI
 
-The `dibbla` CLI scaffolds projects and manages **applications**, **databases**, **secrets**, and **workflows** on the Dibbla platform. Deployed apps are available at `https://<alias>.dibbla.app`.
+The `dibbla` CLI scaffolds projects and manages **applications**, **databases**, **secrets**, and **workflows** on the Dibbla platform. Deployed apps are available at `https://<alias>.dibbla.com`.
 
 ## Commands at a glance
 

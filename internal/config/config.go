@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/joho/godotenv"
@@ -9,7 +10,7 @@ import (
 
 const (
 	// DefaultAPIURL is the default Dibbla API endpoint
-	DefaultAPIURL = "https://api.dibbla.app"
+	DefaultAPIURL = "https://api.dibbla.com"
 )
 
 // Config holds the CLI configuration
@@ -60,6 +61,10 @@ func Load() *Config {
 	if envURL != "" {
 		cfg.APIURL = envURL
 	}
+
+	// Normalize: strip trailing slashes and null bytes that some OS credential
+	// stores (e.g. Windows Credential Manager) may introduce.
+	cfg.APIURL = strings.TrimRight(strings.TrimSuffix(cfg.APIURL, "/"), "\x00")
 
 	return cfg
 }
