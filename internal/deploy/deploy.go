@@ -54,6 +54,7 @@ type ErrorDetail struct {
 	Details       []ValidationError `json:"details,omitempty"`
 	RequestID     string            `json:"request_id,omitempty"`
 	Documentation string            `json:"documentation,omitempty"`
+	Logs          string            `json:"logs,omitempty"`
 }
 
 // ValidationError represents a validation error detail
@@ -179,8 +180,13 @@ func createArchive(dir string) ([]byte, error) {
 			return err
 		}
 
-		// Use relative path in archive
-		header.Name = relPath
+		// Use relative path in archive with POSIX separators.
+		// filepath.Rel returns OS-native separators (backslashes on Windows),
+		// but tar archives must use forward slashes for Linux/BuildKit compatibility.
+		header.Name = filepath.ToSlash(relPath)
+		if info.IsDir() {
+			header.Name += "/"
+		}
 
 		// Handle symlinks
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -188,7 +194,7 @@ func createArchive(dir string) ([]byte, error) {
 			if err != nil {
 				return err
 			}
-			header.Linkname = link
+			header.Linkname = filepath.ToSlash(link)
 		}
 
 		if err := tw.WriteHeader(header); err != nil {
@@ -231,7 +237,7 @@ func shouldExclude(relPath string, info os.FileInfo) bool {
 	// Check excluded paths
 	baseName := filepath.Base(relPath)
 	for _, excluded := range excludedPaths {
-		if baseName == excluded || strings.HasPrefix(relPath, excluded+string(os.PathSeparator)) {
+		if baseName == excluded || strings.HasPrefix(filepath.ToSlash(relPath), excluded+"/") {
 			return true
 		}
 	}
@@ -392,6 +398,10 @@ func formatAPIError(errResp *ErrorResponse) error {
 				msg += fmt.Sprintf("\n    Suggestion: %s", detail.Suggestion)
 			}
 		}
+	}
+
+	if errResp.Error.Logs != "" {
+		msg += "\n\nBuild logs:\n" + errResp.Error.Logs
 	}
 
 	return fmt.Errorf("%s", msg)
