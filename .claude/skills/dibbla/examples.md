@@ -11,8 +11,10 @@ dibbla deploy
 dibbla deploy ./my-app
 dibbla deploy --alias my-api       # Custom alias instead of directory name
 dibbla deploy --force
+dibbla deploy --update             # Rolling update (zero downtime)
 dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 dibbla deploy --cpu 500m --memory 512Mi --port 3000
+dibbla deploy --favicon https://example.com/favicon.ico
 dibbla deploy ./ --cpu 500m --memory 512Mi -e NODE_ENV=production
 ```
 
@@ -27,6 +29,8 @@ dibbla apps update myapp -e NODE_ENV=production -e LOG_LEVEL=info
 dibbla apps update myapp --replicas 3
 dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000
 dibbla apps update myapp --replicas 2 --cpu 1 --memory 512Mi -e NODE_ENV=production
+dibbla apps update myapp --favicon https://example.com/favicon.ico
+dibbla apps update myapp --favicon ""   # Clear favicon
 dibbla apps delete my-old-app
 dibbla apps delete my-old-app -y
 ```
@@ -226,4 +230,80 @@ for db in $(dibbla db list -q); do echo "$db"; done
 
 # Validate before deploying a workflow
 dibbla workflows validate -f workflow.yaml && dibbla workflows update my-workflow -f workflow.yaml
+```
+
+---
+
+## Agent workflows
+
+Step-by-step patterns for AI agents deploying and managing apps non-interactively.
+
+### Deploy a new app (first time)
+
+```bash
+# 1. Check if the app already exists
+dibbla apps list
+
+# 2. If NOT listed, deploy with all required env vars in one command
+dibbla deploy . --alias my-app \
+  -e DATABASE_URL="postgres://user:pass@host:5432/db" \
+  -e API_KEY="sk-xxx" \
+  -e NODE_ENV=production \
+  -e PORT=3000
+
+# 3. Verify it's running
+dibbla apps list
+```
+
+### Update an existing app (zero downtime)
+
+```bash
+# Rolling update — re-deploys the code, keeps existing env vars
+dibbla deploy . --alias my-app --update
+
+# To change env vars without redeploying code
+dibbla apps update my-app -e LOG_LEVEL=debug -e NEW_VAR=value
+```
+
+### Deploy-or-update pattern
+
+```bash
+# Check if app exists, then deploy or update accordingly
+if dibbla apps list 2>/dev/null | grep -q "my-app"; then
+  dibbla deploy . --alias my-app --update
+else
+  dibbla deploy . --alias my-app \
+    -e DATABASE_URL="postgres://..." \
+    -e NODE_ENV=production
+fi
+```
+
+### Full setup: app + database + secrets
+
+```bash
+# 1. Create the database
+dibbla db create my-app-db
+
+# 2. Set secrets (global or per-deployment)
+dibbla secrets set DATABASE_URL "postgres://user:pass@host:5432/my-app-db"
+dibbla secrets set API_KEY "sk-xxx"
+
+# 3. Deploy with env vars pointing to the secrets
+dibbla deploy . --alias my-app \
+  -e DATABASE_URL="postgres://user:pass@host:5432/my-app-db" \
+  -e API_KEY="sk-xxx" \
+  -e NODE_ENV=production
+
+# 4. Verify
+dibbla apps list
+dibbla secrets list -d my-app
+```
+
+### Tear down an app
+
+```bash
+# Always use --yes to avoid interactive prompt
+dibbla apps delete my-app --yes
+dibbla db delete my-app-db --yes
+dibbla secrets delete API_KEY --yes
 ```

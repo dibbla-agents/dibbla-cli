@@ -23,6 +23,36 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 | Revisions  | `revisions list <wf>`, `revisions create`, `revisions restore` |
 | Functions  | `functions list`, `functions get <server> <name>` |
 
+## Agent guidelines
+
+**Interactive prompts:** The following commands prompt for confirmation and will block if run non-interactively. Always pass `--yes` (or `-y`) when running these as an agent:
+- `dibbla apps delete <alias> --yes`
+- `dibbla db delete <name> --yes`
+- `dibbla secrets delete <name> --yes`
+- `dibbla workflows delete <name> --yes`
+- `dibbla nodes remove <wf> <id> --yes`
+
+**Deploying an app for the first time:**
+1. Check if the app already exists: `dibbla apps list`
+2. If it does **not** exist, deploy with all required environment variables included in the deploy command — there is no app to attach them to yet:
+   ```bash
+   dibbla deploy . --alias my-app -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
+   ```
+3. If it **already** exists, use `--update` for a zero-downtime rolling update:
+   ```bash
+   dibbla deploy . --alias my-app --update
+   ```
+   To change env vars on an existing app, use `apps update` instead:
+   ```bash
+   dibbla apps update my-app -e NEW_VAR=value
+   ```
+
+**Key rules:**
+- `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
+- `--force` and `--update` are mutually exclusive.
+- Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
+- Use `--quiet` / `-q` on `db list`, `db delete` for machine-readable output in scripts.
+
 ## Additional resources
 
 - **Full command and flag reference:** see [reference.md](reference.md) for usage, arguments, and all flags.

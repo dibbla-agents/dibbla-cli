@@ -91,7 +91,8 @@ Updates an existing deployment (env vars, replicas, cpu, memory, port).
     -   `--cpu`: CPU request/limit (e.g. 500m, 1).
     -   `--memory`: Memory request/limit (e.g. 256Mi, 512Mi).
     -   `--port`: Container port (1-65535).
--   At least one of `--env`, `--replicas`, `--cpu`, `--memory`, or `--port` is required.
+    -   `--favicon`: Favicon URL (use `""` to clear).
+-   At least one of `--env`, `--replicas`, `--cpu`, `--memory`, `--port`, or `--favicon` is required.
 -   **Example:** `dibbla apps update myapp -e NODE_ENV=production` — **Replicas:** `dibbla apps update myapp --replicas 3` — **Resources:** `dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000`
 
 #### `apps delete`
@@ -220,12 +221,15 @@ The `deploy` command deploys a project to the Dibbla platform.
 -   **Arguments:**
     -   `path` (optional): The path to the project to deploy. Defaults to the current directory.
 -   **Flags:**
-    -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists.
+    -   `--alias`, `-a`: Custom alias name (default: directory name).
+    -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists (causes downtime).
+    -   `--update`, `-u`: Rolling update of existing deployment (zero downtime). Mutually exclusive with `--force`.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style).
     -   `--cpu <value>`: CPU request (e.g. `500m`).
     -   `--memory <value>`: Memory request (e.g. `512Mi`).
     -   `--port <value>`: Container port (e.g. `3000`).
--   **Example:** `dibbla deploy ./my-app --force` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
+    -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
+-   **Example:** `dibbla deploy ./my-app --force` — **Rolling update:** `dibbla deploy --update` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
 ## General Behavior
 

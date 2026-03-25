@@ -13,11 +13,14 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | **Usage** | `dibbla deploy [path]` |
 | **Arguments** | `path` (optional) — directory to deploy; default `.` |
 | **Flags** | `--alias`, `-a` — custom alias name (default: directory name) |
-|| | `--force`, `-f` — force redeploy if alias exists |
+|| | `--force`, `-f` — force redeploy if alias exists (causes downtime) |
+| | `--update`, `-u` — rolling update of existing deployment (zero downtime) |
 | | `--env`, `-e` — env var `KEY=value` (repeatable) |
 | | `--cpu` — CPU request (e.g. `500m`) |
 | | `--memory` — Memory request (e.g. `512Mi`) |
 | | `--port` — Container port (e.g. `3000`) |
+| | `--favicon` — Favicon URL (e.g. `https://example.com/favicon.ico`) |
+| **Note** | `--force` and `--update` are mutually exclusive |
 
 ---
 
@@ -41,7 +44,8 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | | `--cpu` — CPU request/limit (e.g. `500m`, `1`) |
 | | `--memory` — Memory request/limit (e.g. `256Mi`, `512Mi`) |
 | | `--port` — Container port (1–65535) |
-| **Rule** | At least one of: `--env`, `--replicas`, `--cpu`, `--memory`, `--port` required |
+| | `--favicon` — Favicon URL (use `""` to clear) |
+| **Rule** | At least one of: `--env`, `--replicas`, `--cpu`, `--memory`, `--port`, `--favicon` required |
 
 ### apps delete
 
