@@ -122,11 +122,11 @@ func ListDatabases(apiURL, apiToken string) (*DatabasesListResponse, error) {
 // deploymentAlias is optional; if non-empty, the database and its auto-created secret are scoped to that deployment.
 func CreateDatabase(apiURL, apiToken, name, deploymentAlias string) (*DatabaseCreateResponse, error) {
 	client := &http.Client{Timeout: requestTimeout}
-	body := map[string]string{"name": name}
+	reqBody := map[string]string{"name": name}
 	if deploymentAlias != "" {
-		body["deployment_alias"] = deploymentAlias
+		reqBody["deployment_alias"] = deploymentAlias
 	}
-	payload, _ := json.Marshal(body)
+	payload, _ := json.Marshal(reqBody)
 	req, err := http.NewRequest("POST", makeAPIURL(apiURL, "/api/deploy/databases"), bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
