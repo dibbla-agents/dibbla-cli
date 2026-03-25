@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/joho/godotenv"
 )
 
@@ -17,15 +18,6 @@ const (
 type Config struct {
 	APIURL   string
 	APIToken string
-}
-
-// isCI returns true when running in a CI environment (env vars take precedence, no keychain).
-func isCI() bool {
-	return os.Getenv("CI") != "" ||
-		os.Getenv("GITHUB_ACTIONS") != "" ||
-		os.Getenv("GITLAB_CI") != "" ||
-		os.Getenv("JENKINS_HOME") != "" ||
-		os.Getenv("BUILDKITE") != ""
 }
 
 // Load reads configuration from environment variables, .env file, and OS credential store.
@@ -43,7 +35,7 @@ func Load() *Config {
 		APIToken: envToken,
 	}
 
-	if envToken != "" || isCI() {
+	if envToken != "" || platform.IsCI() {
 		// Use env only; do not read keychain
 		if envURL != "" {
 			cfg.APIURL = envURL

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/db"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -163,50 +163,13 @@ func runDbDelete(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	var done chan struct{}
+	stop := func() {}
 	if !dbDeleteQuiet {
-		done = make(chan struct{})
-		go func() {
-			if platform.SupportsUnicode() {
-				spinStates := []string{
-					"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
-					"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
-					"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
-				}
-				i := 0
-				for {
-					select {
-					case <-done:
-						fmt.Printf("\r \r")
-						return
-					default:
-						fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
-						i++
-						time.Sleep(120 * time.Millisecond)
-					}
-				}
-			} else {
-				spinStates := []string{"|", "/", "-", "\\"}
-				i := 0
-				for {
-					select {
-					case <-done:
-						fmt.Printf("\r \r")
-						return
-					default:
-						fmt.Printf("\r[%s] Deleting...", spinStates[i%len(spinStates)])
-						i++
-						time.Sleep(120 * time.Millisecond)
-					}
-				}
-			}
-		}()
+		stop = spinner.Start("Deleting", "\033[31m")
 	}
 
 	del, err := db.DeleteDatabase(cfg.APIURL, cfg.APIToken, name)
-	if !dbDeleteQuiet {
-		close(done)
-	}
+	stop()
 	if err != nil {
 		if !dbDeleteQuiet {
 			fmt.Printf("\r")
@@ -228,41 +191,10 @@ func runDbRestore(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	requireToken(cfg)
 
-	done := make(chan struct{})
-	go func() {
-		if platform.SupportsUnicode() {
-			spinStates := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r%s Restoring...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		} else {
-			spinStates := []string{"|", "/", "-", "\\"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r[%s] Restoring...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		}
-	}()
+	stop := spinner.Start("Restoring", "")
 
 	res, err := db.RestoreDatabase(cfg.APIURL, cfg.APIToken, name, dbRestoreFile)
-	close(done)
+	stop()
 	if err != nil {
 		fmt.Printf("\r%s Failed to restore database: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
@@ -291,41 +223,10 @@ func runDbDump(cmd *cobra.Command, args []string) {
 	}
 	defer f.Close()
 
-	done := make(chan struct{})
-	go func() {
-		if platform.SupportsUnicode() {
-			spinStates := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r%s Dumping...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		} else {
-			spinStates := []string{"|", "/", "-", "\\"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r[%s] Dumping...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		}
-	}()
+	stop := spinner.Start("Dumping", "")
 
 	err = db.DumpDatabase(cfg.APIURL, cfg.APIToken, name, f)
-	close(done)
+	stop()
 	if err != nil {
 		f.Close()
 		os.Remove(outPath)

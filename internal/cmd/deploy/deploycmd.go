@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -118,45 +118,10 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Uploading and %s...\n", platform.Icon("☁️", "[CLOUD]"), strings.ToLower(action))
 	fmt.Println()
 
-	done := make(chan struct{})
-	go func() {
-		if platform.SupportsUnicode() {
-			spinStates := []string{
-				"\033[32m⠋\033[0m", "\033[32m⠙\033[0m", "\033[32m⠹\033[0m", "\033[32m⠸\033[0m",
-				"\033[32m⠼\033[0m", "\033[32m⠴\033[0m", "\033[32m⠦\033[0m", "\033[32m⠧\033[0m",
-				"\033[32m⠇\033[0m", "\033[32m⠏\033[0m",
-			}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r%s %s...", spinStates[i%len(spinStates)], action)
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		} else {
-			spinStates := []string{"|", "/", "-", "\\"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r[%s] %s...", spinStates[i%len(spinStates)], action)
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		}
-	}()
+	stop := spinner.Start(action, "\033[32m")
 
 	result, err := deploypkg.Run(opts)
-	close(done)
+	stop()
 	if err != nil {
 		fmt.Printf("\r%s Deployment failed: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)

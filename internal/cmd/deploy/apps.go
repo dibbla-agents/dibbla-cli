@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -112,45 +112,10 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	done := make(chan struct{})
-	go func() {
-		if platform.SupportsUnicode() {
-			spinStates := []string{
-				"\033[31m⠋\033[0m", "\033[31m⠙\033[0m", "\033[31m⠹\033[0m", "\033[31m⠸\033[0m",
-				"\033[31m⠼\033[0m", "\033[31m⠴\033[0m", "\033[31m⠦\033[0m", "\033[31m⠧\033[0m",
-				"\033[31m⠇\033[0m", "\033[31m⠏\033[0m",
-			}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r%s Deleting...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		} else {
-			spinStates := []string{"|", "/", "-", "\\"}
-			i := 0
-			for {
-				select {
-				case <-done:
-					fmt.Printf("\r \r")
-					return
-				default:
-					fmt.Printf("\r[%s] Deleting...", spinStates[i%len(spinStates)])
-					i++
-					time.Sleep(120 * time.Millisecond)
-				}
-			}
-		}
-	}()
+	stop := spinner.Start("Deleting", "\033[31m")
 
 	deleteResponse, err := apps.DeleteApp(cfg.APIURL, cfg.APIToken, alias)
-	close(done)
+	stop()
 	if err != nil {
 		fmt.Printf("\r%s Failed to delete application '%s': %v\n", platform.Icon("❌", "[X]"), alias, err)
 		os.Exit(1)
