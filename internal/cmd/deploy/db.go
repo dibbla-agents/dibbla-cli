@@ -57,10 +57,28 @@ var dbDumpCmd = &cobra.Command{
 	Run:   runDbDump,
 }
 
+var dbConnectCmd = &cobra.Command{
+	Use:   "connect <name>",
+	Short: "Print the connection string for a database",
+	Long: `Prints a psql-compatible connection string for connecting to a database
+via the Dibbla database proxy (db.dibbla.com).
+
+Uses your current API token as the password. The connection is
+authenticated and encrypted via TLS.
+
+Examples:
+  dibbla db connect myapp
+  psql $(dibbla db connect myapp --quiet)
+  export DATABASE_URL=$(dibbla db connect myapp -q)`,
+	Args: cobra.ExactArgs(1),
+	Run:  runDbConnect,
+}
+
 var (
 	dbDeleteYes        bool
 	dbDeleteQuiet      bool
 	dbListQuiet        bool
+	dbConnectQuiet     bool
 	dbCreateName       string
 	dbCreateDeployment string
 	dbRestoreFile      string
@@ -73,6 +91,7 @@ func init() {
 	dbCmd.AddCommand(dbDeleteCmd)
 	dbCmd.AddCommand(dbRestoreCmd)
 	dbCmd.AddCommand(dbDumpCmd)
+	dbCmd.AddCommand(dbConnectCmd)
 
 	dbDeleteCmd.Flags().BoolVarP(&dbDeleteYes, "yes", "y", false, "Skip confirmation prompt")
 	dbDeleteCmd.Flags().BoolVarP(&dbDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
@@ -82,6 +101,7 @@ func init() {
 	dbRestoreCmd.Flags().StringVarP(&dbRestoreFile, "file", "f", "", "Path to the dump file to restore (required)")
 	dbRestoreCmd.MarkFlagRequired("file")
 	dbDumpCmd.Flags().StringVarP(&dbDumpOutput, "output", "o", "", "Output file path (default: <name>.dump)")
+	dbConnectCmd.Flags().BoolVarP(&dbConnectQuiet, "quiet", "q", false, "Only print the connection string (for scripting)")
 }
 
 func runDbList(cmd *cobra.Command, args []string) {
@@ -252,4 +272,28 @@ func runDbDump(cmd *cobra.Command, args []string) {
 
 	abs, _ := filepath.Abs(outPath)
 	fmt.Printf("\r%s Dump saved to %s\n", platform.Icon("✅", "[OK]"), abs)
+}
+
+func runDbConnect(cmd *cobra.Command, args []string) {
+	name := args[0]
+
+	cfg := config.Load()
+	requireToken(cfg)
+
+	connStr := fmt.Sprintf("postgres://dibbla:%s@db.dibbla.com:30432/%s?sslmode=require", cfg.APIToken, name)
+
+	if dbConnectQuiet {
+		fmt.Print(connStr)
+		return
+	}
+
+	fmt.Printf("%s Connection string for database '%s':\n", platform.Icon("🔗", "[>]"), name)
+	fmt.Println()
+	fmt.Printf("  %s\n", connStr)
+	fmt.Println()
+	fmt.Println("Quick connect:")
+	fmt.Printf("  psql $(dibbla db connect %s -q)\n", name)
+	fmt.Println()
+	fmt.Println("Or export as an environment variable:")
+	fmt.Printf("  export DATABASE_URL=$(dibbla db connect %s -q)\n", name)
 }

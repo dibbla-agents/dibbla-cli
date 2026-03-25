@@ -73,6 +73,7 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | **Usage** | `dibbla db create [name]` or `dibbla db create --name <name>` |
 | **Arguments** | `name` (optional as position) — database name |
 | **Flags** | `--name` — database name (alternative to argument) |
+| | `--deployment <alias>` — scope the database and its `DATABASE_URL` secret to a specific deployment (omit for global) |
 | **Rule** | Name required via argument or `--name` |
 
 ### db delete
@@ -100,6 +101,15 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | **Usage** | `dibbla db restore <name> --file <path>` or `-f <path>` |
 | **Arguments** | `name` (required) — target database |
 | **Flags** | `--file`, `-f` (required) — path to dump file |
+
+### db connect
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla db connect <name> [--quiet | -q]` |
+| **Arguments** | `name` (required) — database name |
+| **Flags** | `--quiet`, `-q` — print only the connection string (scripting) |
+| **Output** | psql-compatible connection string via Dibbla database proxy (`db.dibbla.com`). Uses API token as password; TLS encrypted. |
 
 ---
 
@@ -371,6 +381,7 @@ Alias: `fn`.
 | Db | `dibbla db delete <name>` | Delete database |
 | Db | `dibbla db dump <name> [-o file]` | Download dump |
 | Db | `dibbla db restore <name> -f <file>` | Restore from dump |
+| Db | `dibbla db connect <name> [-q]` | Print connection string |
 | Secrets | `dibbla secrets list [-d alias]` | List global or app secrets |
 | Secrets | `dibbla secrets set <name> [value] [-d alias]` | Create/update secret |
 | Secrets | `dibbla secrets get <name> [-d alias]` | Print secret value |

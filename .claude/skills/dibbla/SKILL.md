@@ -13,7 +13,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 |------------|----------|
 | Deploy     | `deploy [path] [--alias name]` — deploy from directory |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
-| Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore` |
+| Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global or `-d <alias>`) |
 | Workflows  | `workflows list`, `get`, `create`, `update`, `delete`, `validate`, `execute`, `url`, `api-docs` |
 | Nodes      | `nodes add <wf>`, `nodes remove <wf> <id>` |
@@ -51,7 +51,9 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
-- Use `--quiet` / `-q` on `db list`, `db delete` for machine-readable output in scripts.
+- Use `--quiet` / `-q` on `db list`, `db delete`, `db connect` for machine-readable output in scripts.
+- `db create --deployment <alias>` scopes the database and its auto-created `DATABASE_URL` secret to a specific deployment.
+- `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
 
 ## Additional resources
 

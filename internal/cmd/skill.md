@@ -121,14 +121,15 @@ Lists all available databases.
 
 #### `db create`
 
-Creates a new database.
+Creates a new database. Automatically creates a `DATABASE_URL` secret with the connection string.
 
 -   **Usage:** `dibbla db create [name]`
 -   **Arguments:**
     -   `name` (optional): The name for the new database.
 -   **Flags:**
     -   `--name <name>`: Alternative way to provide the database name.
--   **Example:** `dibbla db create --name my-new-db`
+    -   `--deployment <alias>`: Scope the database and its `DATABASE_URL` secret to a specific deployment. If omitted, the secret is global (available to all deployments).
+-   **Example:** `dibbla db create --name my-new-db` — **Scoped:** `dibbla db create mydb --deployment myapp`
 
 #### `db delete`
 
@@ -163,6 +164,17 @@ Restores a database from a dump file.
 -   **Flags:**
     -   `--file <path>`, `-f <path>` (required): The path to the dump file to restore from.
 -   **Example:** `dibbla db restore my-staging-db --file backup.dump`
+
+#### `db connect`
+
+Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy (`db.dibbla.com`). Uses your current API token as the password; the connection is authenticated and encrypted via TLS.
+
+-   **Usage:** `dibbla db connect <name> [--quiet | -q]`
+-   **Arguments:**
+    -   `name` (required): The name of the database to connect to.
+-   **Flags:**
+    -   `--quiet`, `-q`: Only print the connection string (no labels or tips; for scripting).
+-   **Example:** `dibbla db connect myapp` — **Quick connect:** `psql $(dibbla db connect myapp -q)` — **Export:** `export DATABASE_URL=$(dibbla db connect myapp -q)`
 
 ### `secrets`
 

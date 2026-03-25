@@ -44,6 +44,7 @@ dibbla db list
 dibbla db list -q
 dibbla db create my-new-db
 dibbla db create --name my-new-db
+dibbla db create mydb --deployment myapp   # Scope DB + DATABASE_URL secret to a deployment
 dibbla db delete my-old-db
 dibbla db delete my-old-db --yes
 dibbla db delete my-old-db --yes -q
@@ -51,6 +52,10 @@ dibbla db dump my-production-db
 dibbla db dump my-production-db -o backup.dump
 dibbla db restore my-staging-db --file backup.dump
 dibbla db restore my-staging-db -f /tmp/backup.dump
+dibbla db connect myapp                    # Print connection string with tips
+dibbla db connect myapp -q                 # Connection string only (scripting)
+psql $(dibbla db connect myapp -q)         # Quick connect
+export DATABASE_URL=$(dibbla db connect myapp -q)  # Export as env var
 ```
 
 ---
@@ -212,7 +217,7 @@ dibbla functions get my-server web_search -o json
 ## Scripting tips
 
 - Use `-y` / `--yes` to skip confirmations: `apps delete`, `db delete`, `secrets delete`, `workflows delete`, `nodes remove`.
-- Use `-q` / `--quiet` on `db list`, `db delete`, and workflow commands for minimal output.
+- Use `-q` / `--quiet` on `db list`, `db delete`, `db connect`, and workflow commands for minimal output.
 - Use `-o json` on workflow commands for machine-readable output.
 - Pipe `secrets get` into env or other commands; use `db list -q` for name-only loops.
 - `revisions create -q` prints only the revision ID for scripting.
@@ -281,22 +286,23 @@ fi
 ### Full setup: app + database + secrets
 
 ```bash
-# 1. Create the database
-dibbla db create my-app-db
+# 1. Create the database (scoped to the deployment — auto-creates DATABASE_URL secret)
+dibbla db create my-app-db --deployment my-app
 
-# 2. Set secrets (global or per-deployment)
-dibbla secrets set DATABASE_URL "postgres://user:pass@host:5432/my-app-db"
+# 2. Set additional secrets
 dibbla secrets set API_KEY "sk-xxx"
 
-# 3. Deploy with env vars pointing to the secrets
+# 3. Deploy with env vars
 dibbla deploy . --alias my-app \
-  -e DATABASE_URL="postgres://user:pass@host:5432/my-app-db" \
   -e API_KEY="sk-xxx" \
   -e NODE_ENV=production
 
 # 4. Verify
 dibbla apps list
 dibbla secrets list -d my-app
+
+# Alternative: get the connection string directly
+export DATABASE_URL=$(dibbla db connect my-app-db -q)
 ```
 
 ### Tear down an app
