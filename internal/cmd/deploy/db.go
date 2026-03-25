@@ -58,12 +58,13 @@ var dbDumpCmd = &cobra.Command{
 }
 
 var (
-	dbDeleteYes   bool
-	dbDeleteQuiet bool
-	dbListQuiet   bool
-	dbCreateName  string
-	dbRestoreFile string
-	dbDumpOutput  string
+	dbDeleteYes        bool
+	dbDeleteQuiet      bool
+	dbListQuiet        bool
+	dbCreateName       string
+	dbCreateDeployment string
+	dbRestoreFile      string
+	dbDumpOutput       string
 )
 
 func init() {
@@ -77,6 +78,7 @@ func init() {
 	dbDeleteCmd.Flags().BoolVarP(&dbDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
 	dbListCmd.Flags().BoolVarP(&dbListQuiet, "quiet", "q", false, "Only print database names, one per line (for scripting)")
 	dbCreateCmd.Flags().StringVar(&dbCreateName, "name", "", "Name of the database to create")
+	dbCreateCmd.Flags().StringVar(&dbCreateDeployment, "deployment", "", "Scope the database and its DATABASE_URL secret to a specific deployment")
 	dbRestoreCmd.Flags().StringVarP(&dbRestoreFile, "file", "f", "", "Path to the dump file to restore (required)")
 	dbRestoreCmd.MarkFlagRequired("file")
 	dbDumpCmd.Flags().StringVarP(&dbDumpOutput, "output", "o", "", "Output file path (default: <name>.dump)")
@@ -128,13 +130,17 @@ func runDbCreate(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("%s Creating database '%s'...\n", platform.Icon("🌱", "[>]"), name)
+	if dbCreateDeployment != "" {
+		fmt.Printf("%s Creating database '%s' (scoped to deployment '%s')...\n", platform.Icon("🌱", "[>]"), name, dbCreateDeployment)
+	} else {
+		fmt.Printf("%s Creating database '%s'...\n", platform.Icon("🌱", "[>]"), name)
+	}
 	fmt.Println()
 
 	cfg := config.Load()
 	requireToken(cfg)
 
-	created, err := db.CreateDatabase(cfg.APIURL, cfg.APIToken, name)
+	created, err := db.CreateDatabase(cfg.APIURL, cfg.APIToken, name, dbCreateDeployment)
 	if err != nil {
 		fmt.Printf("%s Failed to create database: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
@@ -142,6 +148,16 @@ func runDbCreate(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("%s %s\n", platform.Icon("✅", "[OK]"), created.Message)
 	fmt.Printf("  Database: %s\n", created.Database)
+	if created.SecretName != "" {
+		fmt.Printf("  Secret:   %s (auto-created)\n", created.SecretName)
+		if dbCreateDeployment != "" {
+			fmt.Printf("\n  The secret is scoped to deployment '%s'.\n", dbCreateDeployment)
+			fmt.Println("  It will be injected automatically when that deployment starts.")
+		} else {
+			fmt.Println("\n  This is a global secret available to all deployments in your org.")
+			fmt.Println("  It will be injected automatically on every deploy.")
+		}
+	}
 }
 
 func runDbDelete(cmd *cobra.Command, args []string) {
