@@ -4,6 +4,16 @@ Copy-paste examples for common workflows. For full usage and flags see [referenc
 
 ---
 
+## Complain
+
+```bash
+dibbla complain "The deploy took too long"
+dibbla complain Everything is on fire
+dibbla complain "Why does the database keep disappearing?"
+```
+
+---
+
 ## Deploy
 
 ```bash

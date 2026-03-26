@@ -11,6 +11,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 
 | Area       | Commands |
 |------------|----------|
+| Complain   | `complain <message>` — file a complaint |
 | Deploy     | `deploy [path] [--alias name]` — deploy from directory |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |

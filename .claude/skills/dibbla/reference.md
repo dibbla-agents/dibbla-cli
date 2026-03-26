@@ -4,6 +4,18 @@ Complete usage, arguments, and flags for all commands.
 
 ---
 
+## complain
+
+File a complaint with the Dibbla team.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla complain <message>` |
+| **Arguments** | `message` (required) — all arguments are joined into one message |
+| **Output** | Witty confirmation that the complaint was received |
+
+---
+
 ## deploy
 
 Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.com`.
@@ -368,10 +380,13 @@ Alias: `fn`.
 
 ---
 
+---
+
 ## Summary table
 
 | Area | Command | Purpose |
 |------|---------|---------|
+| Complain | `dibbla complain <message>` | File a complaint |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port |
