@@ -6,13 +6,28 @@ Complete usage, arguments, and flags for all commands.
 
 ## complain
 
-File a complaint with the Dibbla team.
+File, list, and manage complaints.
 
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla complain <message>` |
 | **Arguments** | `message` (required) — all arguments are joined into one message |
-| **Output** | Witty confirmation that the complaint was received |
+| **Output** | `Complaint <id> received. Thank you for your feedback!` |
+
+### complain list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla complain list` |
+| **Output** | Table: ID, USER, DATE, MESSAGE |
+
+### complain delete
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla complain delete <complaint-id>` |
+| **Arguments** | `complaint-id` (required) — the complaint UUID |
+| **Flags** | `--yes`, `-y` — skip confirmation |
 
 ---
 
@@ -387,6 +402,8 @@ Alias: `fn`.
 | Area | Command | Purpose |
 |------|---------|---------|
 | Complain | `dibbla complain <message>` | File a complaint |
+| Complain | `dibbla complain list` | List complaints |
+| Complain | `dibbla complain delete <id>` | Delete a complaint |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port |

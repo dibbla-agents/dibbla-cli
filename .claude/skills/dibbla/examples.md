@@ -10,6 +10,13 @@ Copy-paste examples for common workflows. For full usage and flags see [referenc
 dibbla complain "The deploy took too long"
 dibbla complain Everything is on fire
 dibbla complain "Why does the database keep disappearing?"
+
+# List all complaints
+dibbla complain list
+
+# Delete a complaint
+dibbla complain delete 550e8400-e29b-41d4-a716-446655440000
+dibbla complain delete 550e8400-e29b-41d4-a716-446655440000 --yes
 ```
 
 ---
