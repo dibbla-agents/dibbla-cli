@@ -4,19 +4,19 @@ Copy-paste examples for common workflows. For full usage and flags see [referenc
 
 ---
 
-## Complain
+## Feedback
 
 ```bash
-dibbla complain "The deploy took too long"
-dibbla complain Everything is on fire
-dibbla complain "Why does the database keep disappearing?"
+dibbla feedback "The deploy took too long"
+dibbla feedback Everything is on fire
+dibbla feedback "Why does the database keep disappearing?"
 
-# List all complaints
-dibbla complain list
+# List all feedback
+dibbla feedback list
 
-# Delete a complaint
-dibbla complain delete 550e8400-e29b-41d4-a716-446655440000
-dibbla complain delete 550e8400-e29b-41d4-a716-446655440000 --yes
+# Delete feedback
+dibbla feedback delete 550e8400-e29b-41d4-a716-446655440000
+dibbla feedback delete 550e8400-e29b-41d4-a716-446655440000 --yes
 ```
 
 ---

@@ -12,43 +12,43 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var complainCmd = &cobra.Command{
-	Use:   "complain <message>",
-	Short: "File a complaint",
-	Long:  `Submit a complaint to the Dibbla team. All arguments are joined into a single message.`,
+var feedbackCmd = &cobra.Command{
+	Use:   "feedback <message>",
+	Short: "Send feedback",
+	Long:  `Submit feedback to the Dibbla team. All arguments are joined into a single message.`,
 	Args:  cobra.MinimumNArgs(1),
-	Run:   runComplain,
+	Run:   runFeedback,
 }
 
-var complainListCmd = &cobra.Command{
+var feedbackListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List your complaints",
-	Long:  `List all complaints filed by your organization.`,
+	Short: "List your feedback",
+	Long:  `List all feedback filed by your organization.`,
 	Args:  cobra.NoArgs,
-	Run:   runComplainList,
+	Run:   runFeedbackList,
 }
 
-var complainDeleteYes bool
+var feedbackDeleteYes bool
 
-var complainDeleteCmd = &cobra.Command{
-	Use:   "delete <complaint-id>",
-	Short: "Delete a complaint",
-	Long:  `Delete a complaint by its ID. Only your own complaints can be deleted.`,
+var feedbackDeleteCmd = &cobra.Command{
+	Use:   "delete <feedback-id>",
+	Short: "Delete feedback",
+	Long:  `Delete feedback by its ID. Only your own feedback can be deleted.`,
 	Args:  cobra.ExactArgs(1),
-	Run:   runComplainDelete,
+	Run:   runFeedbackDelete,
 }
 
 func init() {
-	complainCmd.AddCommand(complainListCmd)
-	complainCmd.AddCommand(complainDeleteCmd)
-	complainDeleteCmd.Flags().BoolVarP(&complainDeleteYes, "yes", "y", false, "Skip confirmation prompt")
+	feedbackCmd.AddCommand(feedbackListCmd)
+	feedbackCmd.AddCommand(feedbackDeleteCmd)
+	feedbackDeleteCmd.Flags().BoolVarP(&feedbackDeleteYes, "yes", "y", false, "Skip confirmation prompt")
 }
 
-type complaintResponse struct {
+type feedbackResponse struct {
 	ID string `json:"id"`
 }
 
-func runComplain(cmd *cobra.Command, args []string) {
+func runFeedback(cmd *cobra.Command, args []string) {
 	// If the first arg is a subcommand, cobra handles it. This only runs
 	// when args don't match a subcommand, so treat them as a message.
 	message := strings.Join(args, " ")
@@ -62,7 +62,7 @@ func runComplain(cmd *cobra.Command, args []string) {
 	client := apiclient.NewClient(cfg.APIURL, cfg.APIToken, false)
 
 	body := map[string]string{"message": message}
-	resp, err := client.Post("/api/complaints", body)
+	resp, err := client.Post("/api/feedback", body)
 	if err != nil {
 		if apiErr, ok := err.(*apiclient.APIError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", apiErr.Message)
@@ -72,16 +72,16 @@ func runComplain(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var complaint complaintResponse
-	if err := json.Unmarshal(resp.Body, &complaint); err != nil {
-		fmt.Println("Complaint received. Thank you for your feedback!")
+	var fb feedbackResponse
+	if err := json.Unmarshal(resp.Body, &fb); err != nil {
+		fmt.Println("Feedback received. Thank you!")
 		return
 	}
 
-	fmt.Printf("Complaint %s received. Thank you for your feedback!\n", complaint.ID)
+	fmt.Printf("Feedback %s received. Thank you!\n", fb.ID)
 }
 
-type complaintListItem struct {
+type feedbackListItem struct {
 	ID        string `json:"id"`
 	Message   string `json:"message"`
 	UserName  string `json:"user_name"`
@@ -89,7 +89,7 @@ type complaintListItem struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func runComplainList(cmd *cobra.Command, args []string) {
+func runFeedbackList(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	if cfg.APIToken == "" {
 		fmt.Fprintln(os.Stderr, "Not logged in. Run 'dibbla login' first.")
@@ -98,7 +98,7 @@ func runComplainList(cmd *cobra.Command, args []string) {
 
 	client := apiclient.NewClient(cfg.APIURL, cfg.APIToken, false)
 
-	resp, err := client.Get("/api/complaints")
+	resp, err := client.Get("/api/feedback")
 	if err != nil {
 		if apiErr, ok := err.(*apiclient.APIError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", apiErr.Message)
@@ -108,20 +108,20 @@ func runComplainList(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var complaints []complaintListItem
-	if err := json.Unmarshal(resp.Body, &complaints); err != nil {
+	var items []feedbackListItem
+	if err := json.Unmarshal(resp.Body, &items); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to parse response\n")
 		os.Exit(1)
 	}
 
-	if len(complaints) == 0 {
-		fmt.Println("No complaints found.")
+	if len(items) == 0 {
+		fmt.Println("No feedback found.")
 		return
 	}
 
 	fmt.Printf("%-38s %-20s %-30s %s\n", "ID", "USER", "DATE", "MESSAGE")
 	fmt.Printf("%-38s %-20s %-30s %s\n", "---", "----", "----", "-------")
-	for _, c := range complaints {
+	for _, c := range items {
 		msg := c.Message
 		if len(msg) > 60 {
 			msg = msg[:57] + "..."
@@ -130,7 +130,7 @@ func runComplainList(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runComplainDelete(cmd *cobra.Command, args []string) {
+func runFeedbackDelete(cmd *cobra.Command, args []string) {
 	id := args[0]
 
 	cfg := config.Load()
@@ -139,10 +139,10 @@ func runComplainDelete(cmd *cobra.Command, args []string) {
 		os.Exit(3)
 	}
 
-	if !complainDeleteYes {
+	if !feedbackDeleteYes {
 		var confirm bool
 		prompt := &survey.Confirm{
-			Message: fmt.Sprintf("Delete complaint %s?", id),
+			Message: fmt.Sprintf("Delete feedback %s?", id),
 			Default: false,
 		}
 		if err := survey.AskOne(prompt, &confirm); err != nil || !confirm {
@@ -153,7 +153,7 @@ func runComplainDelete(cmd *cobra.Command, args []string) {
 
 	client := apiclient.NewClient(cfg.APIURL, cfg.APIToken, false)
 
-	_, err := client.Delete("/api/complaints/" + id)
+	_, err := client.Delete("/api/feedback/" + id)
 	if err != nil {
 		if apiErr, ok := err.(*apiclient.APIError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", apiErr.Message)
@@ -163,5 +163,5 @@ func runComplainDelete(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Complaint %s deleted.\n", id)
+	fmt.Printf("Feedback %s deleted.\n", id)
 }

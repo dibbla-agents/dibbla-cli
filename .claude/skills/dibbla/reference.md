@@ -4,29 +4,29 @@ Complete usage, arguments, and flags for all commands.
 
 ---
 
-## complain
+## feedback
 
-File, list, and manage complaints.
+Send, list, and manage feedback.
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla complain <message>` |
+| **Usage** | `dibbla feedback <message>` |
 | **Arguments** | `message` (required) — all arguments are joined into one message |
-| **Output** | `Complaint <id> received. Thank you for your feedback!` |
+| **Output** | `Feedback <id> received. Thank you!` |
 
-### complain list
+### feedback list
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla complain list` |
+| **Usage** | `dibbla feedback list` |
 | **Output** | Table: ID, USER, DATE, MESSAGE |
 
-### complain delete
+### feedback delete
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla complain delete <complaint-id>` |
-| **Arguments** | `complaint-id` (required) — the complaint UUID |
+| **Usage** | `dibbla feedback delete <feedback-id>` |
+| **Arguments** | `feedback-id` (required) — the feedback UUID |
 | **Flags** | `--yes`, `-y` — skip confirmation |
 
 ---
@@ -401,9 +401,9 @@ Alias: `fn`.
 
 | Area | Command | Purpose |
 |------|---------|---------|
-| Complain | `dibbla complain <message>` | File a complaint |
-| Complain | `dibbla complain list` | List complaints |
-| Complain | `dibbla complain delete <id>` | Delete a complaint |
+| Feedback | `dibbla feedback <message>` | Send feedback |
+| Feedback | `dibbla feedback list` | List feedback |
+| Feedback | `dibbla feedback delete <id>` | Delete feedback |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port |

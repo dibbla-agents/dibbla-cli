@@ -11,7 +11,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 
 | Area       | Commands |
 |------------|----------|
-| Complain   | `complain <message>`, `complain list`, `complain delete <id>` |
+| Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
 | Deploy     | `deploy [path] [--alias name]` — deploy from directory |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
@@ -32,7 +32,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `dibbla secrets delete <name> --yes`
 - `dibbla workflows delete <name> --yes`
 - `dibbla nodes remove <wf> <id> --yes`
-- `dibbla complain delete <id> --yes`
+- `dibbla feedback delete <id> --yes`
 
 **Deploying an app for the first time:**
 1. Check if the app already exists: `dibbla apps list`
