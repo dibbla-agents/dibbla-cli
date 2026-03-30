@@ -84,11 +84,22 @@ func PrintNotice(info *UpdateInfo, currentVersion string) {
 func checkForUpdate(currentVersion string) *UpdateInfo {
 	s := readState()
 	if s != nil && time.Since(s.CheckedAt) < checkInterval {
+		if s.LatestVersion == "" {
+			return nil
+		}
 		return &UpdateInfo{LatestVersion: s.LatestVersion}
 	}
 
 	latest := fetchLatest(currentVersion)
 	if latest == "" {
+		cachedLatest := ""
+		if s != nil {
+			cachedLatest = s.LatestVersion
+		}
+		writeState(&state{
+			CheckedAt:     time.Now().UTC(),
+			LatestVersion: cachedLatest,
+		})
 		return nil
 	}
 

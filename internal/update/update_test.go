@@ -314,3 +314,47 @@ func TestCheckForUpdate_StaleCache(t *testing.T) {
 	}
 }
 
+func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "dibbla")
+	os.MkdirAll(dir, 0755)
+
+	staleCheckedAt := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
+	s := &state{
+		CheckedAt:     staleCheckedAt,
+		LatestVersion: "v1.5.0",
+	}
+	data, _ := yaml.Marshal(s)
+	os.WriteFile(filepath.Join(dir, "state.yml"), data, 0644)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	oldURL := apiBaseURL
+	apiBaseURL = srv.URL
+	defer func() { apiBaseURL = oldURL }()
+
+	info := checkForUpdate("1.0.0")
+	if info != nil {
+		t.Fatal("expected nil info when fetchLatest fails")
+	}
+
+	got := readState()
+	if got == nil {
+		t.Fatal("expected state to be written after failed fetch")
+	}
+	if !got.CheckedAt.After(staleCheckedAt) {
+		t.Fatalf("expected checked_at to be refreshed; old=%v got=%v", staleCheckedAt, got.CheckedAt)
+	}
+	if time.Since(got.CheckedAt) > 5*time.Second {
+		t.Fatalf("expected checked_at to be recent, got %v", got.CheckedAt)
+	}
+	if got.LatestVersion != "v1.5.0" {
+		t.Fatalf("expected latest version to be preserved, got %q", got.LatestVersion)
+	}
+}
+

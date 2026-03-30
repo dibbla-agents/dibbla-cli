@@ -14,6 +14,8 @@ import (
 var Version = "dev"
 
 var skillPrompt bool
+var checkInBackground = update.CheckInBackground
+var printNotice = update.PrintNotice
 
 //go:embed skill.md
 var skillPromptContent string
@@ -49,11 +51,15 @@ func init() {
 
 // Execute runs the root command
 func Execute() error {
-	ch := update.CheckInBackground(Version)
+	ch := checkInBackground(Version)
 	err := rootCmd.Execute()
 	if ch != nil {
-		if info := <-ch; info != nil {
-			update.PrintNotice(info, Version)
+		select {
+		case info := <-ch:
+			if info != nil {
+				printNotice(info, Version)
+			}
+		default:
 		}
 	}
 	return err
