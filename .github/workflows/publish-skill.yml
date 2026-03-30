@@ -1,0 +1,99 @@
+name: Publish Skill
+
+# Syncs skill files from this private repo to the public dibbla-agents/skills repo.
+# This allows skills.sh to auto-index the skill for discovery.
+#
+# Triggers:
+#   - Push to main when skill files change
+#   - New version tags (always, regardless of which files changed)
+#   - Manual trigger
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".claude/skills/**"
+      - "SKILL.md"
+  create:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-skill:
+    runs-on: ubuntu-latest
+    # Skip if triggered by create event for non-tag refs
+    if: github.event_name != 'create' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout dibbla-cli
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Validate SKILL.md frontmatter
+        run: |
+          SKILL_FILE="source/.claude/skills/dibbla/SKILL.md"
+          if [ ! -f "$SKILL_FILE" ]; then
+            echo "::error::$SKILL_FILE not found"
+            exit 1
+          fi
+          if ! head -20 "$SKILL_FILE" | grep -q "^name:"; then
+            echo "::error::SKILL.md missing 'name' in frontmatter"
+            exit 1
+          fi
+          if ! head -20 "$SKILL_FILE" | grep -q "^description:"; then
+            echo "::error::SKILL.md missing 'description' in frontmatter"
+            exit 1
+          fi
+          echo "✓ Skill frontmatter valid"
+
+      - name: Checkout public skills repo
+        uses: actions/checkout@v4
+        with:
+          repository: dibbla-agents/skills
+          token: ${{ secrets.SKILLS_REPO_TOKEN }}
+          path: target
+
+      - name: Sync skill files
+        run: |
+          # Clear existing skill content (so deletions propagate)
+          rm -rf target/dibbla-cli/
+
+          # Copy the skill directory
+          cp -r source/.claude/skills/dibbla target/dibbla-cli
+
+          # Copy the root SKILL.md as a convenience entry point
+          cp source/SKILL.md target/SKILL.md
+
+          # Check if anything actually changed
+          cd target
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "No skill changes to publish"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          else
+            echo "SKIP=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit and push
+        if: env.SKIP != 'true'
+        run: |
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          # Include version in commit message when triggered by a tag
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            git commit -m "Update dibbla skill to $VERSION"
+            git tag "$VERSION"
+            git push origin main --tags
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            git commit -m "Sync dibbla skill from dibbla-cli@$SHORT_SHA"
+            git push origin main
+          fi
+
+          echo "✓ Published to dibbla-agents/skills"
