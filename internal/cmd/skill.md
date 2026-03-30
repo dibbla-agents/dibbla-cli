@@ -121,15 +121,14 @@ Lists all available databases.
 
 #### `db create`
 
-Creates a new database. Automatically creates a `DATABASE_URL` secret with the connection string.
+Creates a new database.
 
 -   **Usage:** `dibbla db create [name]`
 -   **Arguments:**
     -   `name` (optional): The name for the new database.
 -   **Flags:**
     -   `--name <name>`: Alternative way to provide the database name.
-    -   `--deployment <alias>`: Scope the database and its `DATABASE_URL` secret to a specific deployment. If omitted, the secret is global (available to all deployments).
--   **Example:** `dibbla db create --name my-new-db` — **Scoped:** `dibbla db create mydb --deployment myapp`
+-   **Example:** `dibbla db create --name my-new-db`
 
 #### `db delete`
 
@@ -164,17 +163,6 @@ Restores a database from a dump file.
 -   **Flags:**
     -   `--file <path>`, `-f <path>` (required): The path to the dump file to restore from.
 -   **Example:** `dibbla db restore my-staging-db --file backup.dump`
-
-#### `db connect`
-
-Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy (`db.dibbla.com`). Uses your current API token as the password; the connection is authenticated and encrypted via TLS.
-
--   **Usage:** `dibbla db connect <name> [--quiet | -q]`
--   **Arguments:**
-    -   `name` (required): The name of the database to connect to.
--   **Flags:**
-    -   `--quiet`, `-q`: Only print the connection string (no labels or tips; for scripting).
--   **Example:** `dibbla db connect myapp` — **Quick connect:** `psql $(dibbla db connect myapp -q)` — **Export:** `export DATABASE_URL=$(dibbla db connect myapp -q)`
 
 ### `secrets`
 
@@ -249,3 +237,4 @@ The `deploy` command deploys a project to the Dibbla platform.
 - Always provide clear and direct commands.
 - When scripting, use flags like `--yes` to avoid interactive prompts.
 - Pay attention to the output for success messages, error details, and status information.
+- The CLI performs update checks in the background for interactive TTY sessions. If the network is unavailable, failed checks are cached for 24 hours to avoid repeated request timeouts on every command invocation.

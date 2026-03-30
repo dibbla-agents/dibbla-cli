@@ -237,3 +237,4 @@ The `deploy` command deploys a project to the Dibbla platform.
 - Always provide clear and direct commands.
 - When scripting, use flags like `--yes` to avoid interactive prompts.
 - Pay attention to the output for success messages, error details, and status information.
+- The CLI performs update checks in the background for interactive TTY sessions. If the network is unavailable, failed checks are cached for 24 hours to avoid repeated request timeouts on every command invocation.

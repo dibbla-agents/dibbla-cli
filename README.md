@@ -54,6 +54,14 @@ In CI, set environment variables instead of using `login`:
 
 Get your API token at [app.dibbla.com/settings/api-tokens](https://app.dibbla.com/settings/api-tokens).
 
+### Update notifications
+
+On interactive terminals, `dibbla` checks for new releases in the background at most once every 24 hours. The check is non-blocking, so fast commands like `--help` and `--version` return immediately.
+
+If the update request fails (for example due to network issues or blocked GitHub access), the check timestamp is still refreshed to avoid repeated slow retries on every invocation.
+
+Set `DIBBLA_NO_UPDATE_NOTIFIER=1` to disable update notifications.
+
 ### Create a Go Worker Project
 
 ```bash
