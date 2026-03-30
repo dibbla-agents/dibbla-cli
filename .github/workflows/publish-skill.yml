@@ -49,12 +49,20 @@ jobs:
           fi
           echo "✓ Skill frontmatter valid"
 
-      - name: Checkout public skills repo
-        uses: actions/checkout@v4
-        with:
-          repository: dibbla-agents/skills
-          token: ${{ secrets.SKILLS_REPO_TOKEN }}
-          path: target
+      - name: Clone or init public skills repo
+        env:
+          SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
+        run: |
+          # Try cloning; if the repo is empty (no main branch), init from scratch
+          if git clone --depth 1 "https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/dibbla-agents/skills.git" target 2>/dev/null; then
+            echo "✓ Cloned existing repo"
+          else
+            echo "Repo appears empty — initializing"
+            mkdir target && cd target
+            git init
+            git remote add origin "https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/dibbla-agents/skills.git"
+            git checkout -b main
+          fi
 
       - name: Sync skill files
         run: |
@@ -66,6 +74,11 @@ jobs:
 
           # Copy the root SKILL.md as a convenience entry point
           cp source/SKILL.md target/SKILL.md
+
+          # Copy the README if it doesn't exist yet
+          if [ ! -f target/README.md ]; then
+            cp source/skills-repo-README.md target/README.md
+          fi
 
           # Check if anything actually changed
           cd target

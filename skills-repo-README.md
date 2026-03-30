@@ -4,17 +4,21 @@ Agent skills for the [Dibbla](https://dibbla.com) platform. These skills teach A
 
 ## Install
 
+### Claude Code
+
+```bash
+npx skills add dibbla-agents/skills --skill dibbla-cli -a claude-code -y
+```
+
+### All agents
+
 ```bash
 npx skills add dibbla-agents/skills
 ```
 
-Or install just the CLI skill:
+### Manual
 
-```bash
-npx skills add dibbla-agents/skills --skill dibbla-cli
-```
-
-Or manually: copy the `dibbla-cli/` folder into your project's `.claude/skills/` directory.
+Copy the `dibbla-cli/` folder into your project's `.claude/skills/` directory.
 
 ## What's included
 
