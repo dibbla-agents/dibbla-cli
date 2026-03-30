@@ -6,6 +6,7 @@ import (
 
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
+	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -48,5 +49,12 @@ func init() {
 
 // Execute runs the root command
 func Execute() error {
-	return rootCmd.Execute()
+	ch := update.CheckInBackground(Version)
+	err := rootCmd.Execute()
+	if ch != nil {
+		if info := <-ch; info != nil {
+			update.PrintNotice(info, Version)
+		}
+	}
+	return err
 }
