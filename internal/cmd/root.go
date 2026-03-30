@@ -6,6 +6,7 @@ import (
 
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
+	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +14,8 @@ import (
 var Version = "dev"
 
 var skillPrompt bool
+var checkInBackground = update.CheckInBackground
+var printNotice = update.PrintNotice
 
 //go:embed skill.md
 var skillPromptContent string
@@ -48,5 +51,16 @@ func init() {
 
 // Execute runs the root command
 func Execute() error {
-	return rootCmd.Execute()
+	ch := checkInBackground(Version)
+	err := rootCmd.Execute()
+	if ch != nil {
+		select {
+		case info := <-ch:
+			if info != nil {
+				printNotice(info, Version)
+			}
+		default:
+		}
+	}
+	return err
 }
