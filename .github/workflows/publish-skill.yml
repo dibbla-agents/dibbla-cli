@@ -27,6 +27,14 @@ jobs:
     # Skip if triggered by create event for non-tag refs
     if: github.event_name != 'create' || startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: latest
+
       - name: Checkout dibbla-cli
         uses: actions/checkout@v4
         with:
@@ -110,3 +118,24 @@ jobs:
           fi
 
           echo "✓ Published to dibbla-agents/skills"
+
+      - name: Notify Slack
+        if: always() && env.SKIP != 'true'
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then status="success"; else status="failed"; fi
+          cluster_ip="$(dig +short ash.dibbla.net @1.1.1.1 | head -1)"
+          curl -fsS -X POST https://slack-bot.dibbla.net/api/notify \
+            --resolve "slack-bot.dibbla.net:443:${cluster_ip}" \
+            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_API_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<EOF
+          {
+            "service": "dibbla-cli-skill",
+            "environment": "prod",
+            "tag": "${{ github.sha }}",
+            "status": "${status}",
+            "actor": "${{ github.actor }}",
+            "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          )" || true

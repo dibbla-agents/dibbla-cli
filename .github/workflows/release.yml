@@ -17,6 +17,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: latest
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -39,9 +47,31 @@ jobs:
           echo "✓ Packaged dibbla-cli-skill.zip (will be attached to release)"
 
       - name: Attach skill archive to release
+        id: attach
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           gh release upload "$TAG" dist/dibbla-cli-skill.zip --clobber
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          if [ "${{ steps.attach.outcome }}" = "success" ]; then status="success"; else status="failed"; fi
+          cluster_ip="$(dig +short ash.dibbla.net @1.1.1.1 | head -1)"
+          curl -fsS -X POST https://slack-bot.dibbla.net/api/notify \
+            --resolve "slack-bot.dibbla.net:443:${cluster_ip}" \
+            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_API_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<EOF
+          {
+            "service": "dibbla-cli",
+            "environment": "release",
+            "tag": "${GITHUB_REF#refs/tags/}",
+            "status": "${status}",
+            "actor": "${{ github.actor }}",
+            "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          )" || true
 
