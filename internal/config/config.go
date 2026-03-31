@@ -12,6 +12,8 @@ import (
 const (
 	// DefaultAPIURL is the default Dibbla API endpoint
 	DefaultAPIURL = "https://api.dibbla.com"
+	// DefaultAppURL is the default Dibbla app/auth-UI endpoint
+	DefaultAppURL = "https://app.dibbla.com"
 )
 
 // Config holds the CLI configuration
