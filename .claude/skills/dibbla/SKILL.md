@@ -57,9 +57,12 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `db create --deployment <alias>` scopes the database and its auto-created `DATABASE_URL` secret to a specific deployment.
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
 
+**Pre-deploy guardrails:** Before calling `dibbla deploy`, you MUST complete the pre-deploy checklist and present findings to the user. Always wait for explicit user confirmation before deploying or fixing issues — never deploy autonomously. See [guardrails.md](guardrails.md) for the full checklist.
+
 ## Additional resources
 
 - **Full command and flag reference:** see [reference.md](reference.md) for usage, arguments, and all flags.
 - **Usage examples:** see [examples.md](examples.md) for copy-paste examples and scripting patterns.
+- **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy checklist.
 
 When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows.

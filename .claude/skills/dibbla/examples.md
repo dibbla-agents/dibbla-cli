@@ -260,6 +260,31 @@ dibbla workflows validate -f workflow.yaml && dibbla workflows update my-workflo
 
 Step-by-step patterns for AI agents deploying and managing apps non-interactively.
 
+### Pre-deploy guardrails workflow
+
+```bash
+# 1. Code is ready — run guardrails checks by reviewing the source code
+#    Check for: security issues, database anti-patterns, unsafe API calls, external write safety
+#    See guardrails.md for the full checklist
+
+# 2. Present the guardrails report to the user (example):
+#
+#    ## Pre-deploy guardrails report
+#    - [x] Security (OWASP Top 10): OK
+#    - [x] Database usage: OK
+#    - [x] REST/API calls: 1 warning
+#      - WARNING: No retry logic on payment API call in src/services/payment.js:23
+#    - [x] External writes: OK
+#    **Result: PASSED with 1 warning**
+#
+#    Ask: "There is 1 warning. Should I fix this before deploying, or proceed as-is?"
+
+# 3. Wait for user confirmation before deploying or fixing anything
+
+# 4. Deploy only after explicit user approval
+dibbla deploy . --alias my-app --update
+```
+
 ### Deploy a new app (first time)
 
 ```bash
