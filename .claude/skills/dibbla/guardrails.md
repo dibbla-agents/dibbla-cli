@@ -104,6 +104,28 @@ Show the user a guardrails report in this format:
 - **If only WARNINGs:** Ask the user: *"There are N warnings. Should I fix these before deploying, or proceed as-is?"*
 - **If all clear:** Ask the user: *"All guardrails checks passed. Ready to deploy?"*
 
+### Step 3.5: Write REVIEW.md
+
+After completing the guardrails review and before deploying, write a `REVIEW.md` file in the project root directory. This file is read by the platform and displayed as a review status indicator in the deployments dashboard.
+
+**Format:**
+
+```markdown
+---
+Review-status: Ok | Warnings | Critical
+One-Sentence-Summary: "<brief summary of findings>"
+---
+
+<full guardrails report from Step 2>
+```
+
+**Status mapping:**
+- `Ok` — all four checks passed with no blockers or warnings
+- `Warnings` — no blockers found, but warnings are present (user chose to proceed)
+- `Critical` — blockers were found and fixed before deploying
+
+Always write this file, even when all checks pass. The platform shows a red indicator when REVIEW.md is missing.
+
 ### Step 4: Deploy only after confirmation
 
 Only call `dibbla deploy` after the user has explicitly confirmed.

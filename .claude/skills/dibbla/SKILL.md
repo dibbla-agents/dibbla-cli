@@ -57,7 +57,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `db create --deployment <alias>` scopes the database and its auto-created `DATABASE_URL` secret to a specific deployment.
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
 
-**Pre-deploy guardrails:** Before calling `dibbla deploy`, you MUST complete the pre-deploy checklist and present findings to the user. Always wait for explicit user confirmation before deploying or fixing issues — never deploy autonomously. See [guardrails.md](guardrails.md) for the full checklist.
+**Pre-deploy guardrails:** Before calling `dibbla deploy`, you MUST complete the pre-deploy checklist and present findings to the user. Always wait for explicit user confirmation before deploying or fixing issues — never deploy autonomously. The guardrails workflow also writes a `REVIEW.md` file to the project root — the platform reads this and displays a review status indicator in the dashboard. See [guardrails.md](guardrails.md) for the full checklist.
 
 ## Additional resources
 
