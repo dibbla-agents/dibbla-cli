@@ -75,3 +75,93 @@ jobs:
           EOF
           )" || true
 
+  sign-macos:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - name: Install Apple certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm "$CERT_PATH"
+
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Sign and notarize macOS binaries
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+
+          for ARCH in amd64 arm64; do
+            ARCHIVE="dibbla_${VERSION}_darwin_${ARCH}"
+            TARBALL="${ARCHIVE}.tar.gz"
+
+            echo "==> Signing ${TARBALL}"
+
+            gh release download "$TAG" -p "$TARBALL" -D /tmp/sign -R "$GITHUB_REPOSITORY"
+
+            mkdir -p /tmp/sign/extract
+            tar -xzf "/tmp/sign/${TARBALL}" -C /tmp/sign/extract
+
+            codesign --force --options runtime \
+              --sign "$APPLE_DEVELOPER_ID" \
+              --timestamp \
+              /tmp/sign/extract/dibbla
+
+            ditto -c -k /tmp/sign/extract/dibbla /tmp/sign/dibbla-notarize.zip
+
+            xcrun notarytool submit /tmp/sign/dibbla-notarize.zip \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+
+            tar -czf "/tmp/sign/${TARBALL}" -C /tmp/sign/extract .
+            gh release upload "$TAG" "/tmp/sign/${TARBALL}" --clobber -R "$GITHUB_REPOSITORY"
+
+            rm -rf /tmp/sign/extract /tmp/sign/dibbla-notarize.zip
+          done
+
+          # Update checksums for the replaced archives
+          gh release download "$TAG" -p "checksums.txt" -D /tmp/sign -R "$GITHUB_REPOSITORY"
+          for ARCH in amd64 arm64; do
+            TARBALL="dibbla_${VERSION}_darwin_${ARCH}.tar.gz"
+            NEW_SUM=$(shasum -a 256 "/tmp/sign/${TARBALL}" | awk '{print $1}')
+            sed -i '' "s/^[a-f0-9]*  ${TARBALL}$/${NEW_SUM}  ${TARBALL}/" /tmp/sign/checksums.txt
+          done
+          gh release upload "$TAG" /tmp/sign/checksums.txt --clobber -R "$GITHUB_REPOSITORY"
+
+          rm -rf /tmp/sign
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          fi
