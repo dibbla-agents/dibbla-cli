@@ -47,6 +47,9 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | | `--memory` — Memory request (e.g. `512Mi`) |
 | | `--port` — Container port (e.g. `3000`) |
 | | `--favicon` — Favicon URL (e.g. `https://example.com/favicon.ico`) |
+| | `--require-login` — Require authentication to access the app |
+| | `--access-policy` — Access policy: `all_members` or `invite_only` |
+| | `--google-scopes` — Google OAuth scope URL (repeatable) |
 | **Note** | `--force` and `--update` are mutually exclusive |
 
 ---
@@ -72,7 +75,10 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | | `--memory` — Memory request/limit (e.g. `256Mi`, `512Mi`) |
 | | `--port` — Container port (1–65535) |
 | | `--favicon` — Favicon URL (use `""` to clear) |
-| **Rule** | At least one of: `--env`, `--replicas`, `--cpu`, `--memory`, `--port`, `--favicon` required |
+| | `--require-login` — Require login: `true` or `false` |
+| | `--access-policy` — Access policy: `all_members`, `invite_only`, or `""` to clear |
+| | `--google-scopes` — Google OAuth scope URL (repeatable, use `""` to clear) |
+| **Rule** | At least one of: `--env`, `--replicas`, `--cpu`, `--memory`, `--port`, `--favicon`, `--require-login`, `--access-policy`, `--google-scopes` required |
 
 ### apps delete
 
@@ -406,7 +412,7 @@ Alias: `fn`.
 | Feedback | `dibbla feedback delete <id>` | Delete feedback |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
 | Apps | `dibbla apps list` | List deployments |
-| Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port |
+| Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port, login guard |
 | Apps | `dibbla apps delete <alias>` | Delete deployment |
 | Db | `dibbla db list [-q]` | List databases |
 | Db | `dibbla db create [name]` | Create database |

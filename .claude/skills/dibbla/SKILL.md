@@ -12,7 +12,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 | Area       | Commands |
 |------------|----------|
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
-| Deploy     | `deploy [path] [--alias name]` — deploy from directory |
+| Deploy     | `deploy [path] [--alias name] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global or `-d <alias>`) |
@@ -53,6 +53,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
+- **Login guard:** Use `--require-login` to require authentication. Combine with `--access-policy invite_only` to restrict to invited users, or `all_members` for org-wide access. Use `--google-scopes` to request additional Google OAuth scopes (e.g. Drive, Calendar).
 - Use `--quiet` / `-q` on `db list`, `db delete`, `db connect` for machine-readable output in scripts.
 - `db create --deployment <alias>` scopes the database and its auto-created `DATABASE_URL` secret to a specific deployment.
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.

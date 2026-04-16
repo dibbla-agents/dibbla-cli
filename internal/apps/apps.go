@@ -27,8 +27,11 @@ type Deployment struct {
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 	DeployedAt  *time.Time       `json:"deployed_at"`
-	Error       string           `json:"error"`
-	HealthCheck *HealthCheckInfo `json:"health_check"`
+	Error           string           `json:"error"`
+	HealthCheck     *HealthCheckInfo `json:"health_check"`
+	RequireLogin    bool             `json:"require_login"`
+	AppAccessPolicy string           `json:"app_access_policy,omitempty"`
+	GoogleScopes    []string         `json:"google_scopes,omitempty"`
 }
 
 // DeploymentStatus represents the status of a deployment.
@@ -95,6 +98,9 @@ type UpdateDeploymentRequest struct {
 	Memory               string            `json:"memory,omitempty"`
 	Port                 *int              `json:"port,omitempty"`
 	FaviconURL           *string           `json:"favicon_url,omitempty"`
+	RequireLogin         *bool             `json:"require_login,omitempty"`
+	AppAccessPolicy      *string           `json:"app_access_policy,omitempty"`
+	GoogleScopes         []string          `json:"google_scopes,omitempty"`
 }
 
 // ListApps makes an API call to list all deployed applications.

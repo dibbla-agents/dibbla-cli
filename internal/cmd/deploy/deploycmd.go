@@ -14,14 +14,17 @@ import (
 )
 
 var (
-	deployForce  bool
-	deployUpdate bool
-	deployAlias  string
-	deployEnv    []string
-	deployCPU      string
-	deployMemory   string
-	deployPort     string
-	deployFavicon  string
+	deployForce        bool
+	deployUpdate       bool
+	deployAlias        string
+	deployEnv          []string
+	deployCPU          string
+	deployMemory       string
+	deployPort         string
+	deployFavicon      string
+	deployRequireLogin bool
+	deployAccessPolicy string
+	deployGoogleScopes []string
 )
 
 var deployCmd = &cobra.Command{
@@ -56,6 +59,9 @@ func init() {
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
 	deployCmd.Flags().StringVar(&deployFavicon, "favicon", "", "Favicon URL (e.g. https://example.com/favicon.ico)")
+	deployCmd.Flags().BoolVar(&deployRequireLogin, "require-login", false, "Require authentication to access the app")
+	deployCmd.Flags().StringVar(&deployAccessPolicy, "access-policy", "", "Access policy: all_members or invite_only")
+	deployCmd.Flags().StringArrayVar(&deployGoogleScopes, "google-scopes", nil, "Google OAuth scope URL (repeatable)")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 }
 
@@ -98,17 +104,20 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s Creating archive...\n", platform.Icon("📦", "[PKG]"))
 
 	opts := deploypkg.Options{
-		APIURL:   cfg.APIURL,
-		APIToken: cfg.APIToken,
-		Path:     path,
-		Force:    deployForce,
-		Update:   deployUpdate,
-		Alias:    deployAlias,
-		Env:      deployEnv,
-		CPU:      deployCPU,
-		Memory:   deployMemory,
-		Port:       deployPort,
-		FaviconURL: deployFavicon,
+		APIURL:       cfg.APIURL,
+		APIToken:     cfg.APIToken,
+		Path:         path,
+		Force:        deployForce,
+		Update:       deployUpdate,
+		Alias:        deployAlias,
+		Env:          deployEnv,
+		CPU:          deployCPU,
+		Memory:       deployMemory,
+		Port:         deployPort,
+		FaviconURL:   deployFavicon,
+		RequireLogin: deployRequireLogin,
+		AccessPolicy: deployAccessPolicy,
+		GoogleScopes: deployGoogleScopes,
 	}
 
 	action := "Deploying"

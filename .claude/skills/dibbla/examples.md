@@ -33,6 +33,11 @@ dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 dibbla deploy --cpu 500m --memory 512Mi --port 3000
 dibbla deploy --favicon https://example.com/favicon.ico
 dibbla deploy ./ --cpu 500m --memory 512Mi -e NODE_ENV=production
+
+# Deploy with login guard
+dibbla deploy --alias my-app --require-login
+dibbla deploy --alias my-app --require-login --access-policy invite_only
+dibbla deploy --alias my-app --require-login --google-scopes https://www.googleapis.com/auth/drive.readonly
 ```
 
 ---
@@ -48,6 +53,14 @@ dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000
 dibbla apps update myapp --replicas 2 --cpu 1 --memory 512Mi -e NODE_ENV=production
 dibbla apps update myapp --favicon https://example.com/favicon.ico
 dibbla apps update myapp --favicon ""   # Clear favicon
+
+# Login guard settings
+dibbla apps update myapp --require-login true
+dibbla apps update myapp --require-login false          # Disable login guard
+dibbla apps update myapp --access-policy invite_only
+dibbla apps update myapp --access-policy ""             # Clear access policy
+dibbla apps update myapp --google-scopes https://www.googleapis.com/auth/drive.readonly
+dibbla apps update myapp --google-scopes https://www.googleapis.com/auth/drive.readonly --google-scopes https://www.googleapis.com/auth/calendar.readonly
 dibbla apps delete my-old-app
 dibbla apps delete my-old-app -y
 ```

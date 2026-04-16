@@ -73,11 +73,15 @@ type Options struct {
 	Update   bool   // Rolling update with zero downtime (mutually exclusive with Force)
 	Alias    string // Custom alias; when empty, derived from directory name
 	// Optional deploy API params
-	Env    []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
-	CPU        string // e.g. 500m
-	Memory     string // e.g. 512Mi
-	Port       string // e.g. 3000
-	FaviconURL string // e.g. https://example.com/favicon.ico
+	Env        []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
+	CPU        string   // e.g. 500m
+	Memory     string   // e.g. 512Mi
+	Port       string   // e.g. 3000
+	FaviconURL string   // e.g. https://example.com/favicon.ico
+	// Login guard settings
+	RequireLogin bool     // Require authentication to access the app
+	AccessPolicy string   // "all_members" or "invite_only"
+	GoogleScopes []string // Google OAuth scopes to request
 }
 
 // excludedPaths are paths that should not be included in the archive
@@ -141,7 +145,7 @@ func Run(opts Options) (*DeployResponse, error) {
 	}
 
 	// Upload to API
-	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port, opts.FaviconURL)
+	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port, opts.FaviconURL, opts.RequireLogin, opts.AccessPolicy, opts.GoogleScopes)
 }
 
 // createArchive creates a tar.gz archive from the given directory
@@ -275,7 +279,7 @@ func envPairsToJSON(pairs []string) string {
 }
 
 // upload sends the archive to the API
-func upload(apiURL, apiToken string, archive []byte, appName string, force, update bool, envPairs []string, cpu, memory, port, faviconURL string) (*DeployResponse, error) {
+func upload(apiURL, apiToken string, archive []byte, appName string, force, update bool, envPairs []string, cpu, memory, port, faviconURL string, requireLogin bool, accessPolicy string, googleScopes []string) (*DeployResponse, error) {
 	// Create multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -333,6 +337,22 @@ func upload(apiURL, apiToken string, archive []byte, appName string, force, upda
 	if faviconURL != "" {
 		if err := writer.WriteField("favicon_url", faviconURL); err != nil {
 			return nil, fmt.Errorf("failed to write favicon_url field: %w", err)
+		}
+	}
+	if requireLogin {
+		if err := writer.WriteField("require_login", "true"); err != nil {
+			return nil, fmt.Errorf("failed to write require_login field: %w", err)
+		}
+	}
+	if accessPolicy != "" {
+		if err := writer.WriteField("app_access_policy", accessPolicy); err != nil {
+			return nil, fmt.Errorf("failed to write app_access_policy field: %w", err)
+		}
+	}
+	if len(googleScopes) > 0 {
+		scopesJSON, _ := json.Marshal(googleScopes)
+		if err := writer.WriteField("google_scopes", string(scopesJSON)); err != nil {
+			return nil, fmt.Errorf("failed to write google_scopes field: %w", err)
 		}
 	}
 
