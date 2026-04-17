@@ -159,6 +159,56 @@ jobs:
 
           rm -rf /tmp/sign
 
+      - name: Update Homebrew formula checksums
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+
+          # Download the signed tarballs to compute checksums
+          mkdir -p /tmp/brew
+          for ARCH in amd64 arm64; do
+            TARBALL="dibbla_${VERSION}_darwin_${ARCH}.tar.gz"
+            gh release download "$TAG" -p "$TARBALL" -D /tmp/brew -R "$GITHUB_REPOSITORY"
+          done
+
+          SHA_AMD64=$(shasum -a 256 "/tmp/brew/dibbla_${VERSION}_darwin_amd64.tar.gz" | awk '{print $1}')
+          SHA_ARM64=$(shasum -a 256 "/tmp/brew/dibbla_${VERSION}_darwin_arm64.tar.gz" | awk '{print $1}')
+
+          # Fetch current formula
+          FORMULA=$(gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
+            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
+            --jq '.content' | base64 -d)
+          FORMULA_SHA=$(gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
+            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
+            --jq '.sha')
+
+          # Replace darwin checksums in formula
+          # Match the sha256 line that follows the darwin_amd64 url
+          FORMULA=$(echo "$FORMULA" | awk -v new="$SHA_AMD64" '
+            /darwin_amd64\.tar\.gz/ { found_amd64=1 }
+            found_amd64 && /sha256 "/ { sub(/sha256 "[a-f0-9]+"/, "sha256 \"" new "\""); found_amd64=0 }
+            { print }
+          ')
+          FORMULA=$(echo "$FORMULA" | awk -v new="$SHA_ARM64" '
+            /darwin_arm64\.tar\.gz/ { found_arm64=1 }
+            found_arm64 && /sha256 "/ { sub(/sha256 "[a-f0-9]+"/, "sha256 \"" new "\""); found_arm64=0 }
+            { print }
+          ')
+
+          # Push updated formula
+          ENCODED=$(echo "$FORMULA" | base64)
+          gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
+            -X PUT \
+            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
+            -f message="Update darwin checksums for v${VERSION} (signed binaries)" \
+            -f content="$ENCODED" \
+            -f sha="$FORMULA_SHA"
+
+          rm -rf /tmp/brew
+          echo "✓ Updated Homebrew formula with signed checksums"
+
       - name: Clean up keychain
         if: always()
         run: |
