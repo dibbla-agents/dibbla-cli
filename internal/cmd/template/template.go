@@ -25,12 +25,15 @@ Override with DIBBLA_TEMPLATES_URL to point at a staging / local manifest.`,
 // stderr when verbose, and returns the manifest. Callers should prefer this
 // over calling templates.Resolve directly so the verbose message stays
 // consistent across subcommands.
-func resolveManifest(refresh, verbose bool) *templates.Manifest {
-	res := templates.Resolve(templates.ManifestURL(), refresh)
+func resolveManifest(refresh, verbose bool) (*templates.Manifest, error) {
+	res, err := templates.Resolve(templates.ManifestURL(), refresh)
+	if err != nil {
+		return nil, fmt.Errorf("%w — check your internet connection", err)
+	}
 	if verbose {
 		cliout.Stderr("templates: %s", sourceMessage(res))
 	}
-	return res.Manifest
+	return res.Manifest, nil
 }
 
 func sourceMessage(res *templates.Resolution) string {
@@ -39,10 +42,6 @@ func sourceMessage(res *templates.Resolution) string {
 		return fmt.Sprintf("from cache, fetched %s ago", humanDuration(res.Age))
 	case templates.SourceNetwork:
 		return "fresh from network"
-	case templates.SourceStaleCache:
-		return fmt.Sprintf("stale cache (%s old); network unavailable: %v", humanDuration(res.Age), res.FetchErr)
-	case templates.SourceEmbedded:
-		return fmt.Sprintf("offline — using embedded fallback list (network: %v)", res.FetchErr)
 	default:
 		return "(unknown source)"
 	}

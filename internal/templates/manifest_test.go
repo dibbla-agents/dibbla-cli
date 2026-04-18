@@ -50,19 +50,6 @@ func TestManifest_JSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestEmbedded_HasKnownTemplates(t *testing.T) {
-	m := Embedded()
-	if m.Version != SupportedVersion {
-		t.Errorf("Embedded version = %q, want %q", m.Version, SupportedVersion)
-	}
-	if m.FindByID("getting-started") == nil {
-		t.Error("embedded fallback missing getting-started")
-	}
-	if m.FindByID("expense-reporter") == nil {
-		t.Error("embedded fallback missing expense-reporter")
-	}
-}
-
 func TestManifestURL_EnvOverride(t *testing.T) {
 	t.Setenv("DIBBLA_TEMPLATES_URL", "https://override.example/templates.json")
 	if got := ManifestURL(); got != "https://override.example/templates.json" {

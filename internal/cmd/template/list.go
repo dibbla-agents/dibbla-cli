@@ -21,12 +21,15 @@ var listCmd = &cobra.Command{
 
 func init() {
 	listCmd.Flags().BoolVar(&listRefresh, "refresh", false, "Force re-fetch of the manifest, bypassing the fresh cache")
-	listCmd.Flags().BoolVarP(&listVerbose, "verbose", "v", false, "Print manifest source (cache/network/embedded)")
+	listCmd.Flags().BoolVarP(&listVerbose, "verbose", "v", false, "Print manifest source (cache/network)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	m := resolveManifest(listRefresh, listVerbose)
-	if m == nil || len(m.Templates) == 0 {
+	m, err := resolveManifest(listRefresh, listVerbose)
+	if err != nil {
+		return err
+	}
+	if len(m.Templates) == 0 {
 		cliout.Stderr("no templates available")
 		return nil
 	}

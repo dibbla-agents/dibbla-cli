@@ -12,8 +12,6 @@ func TestSourceMessage_Variants(t *testing.T) {
 	cases := map[templates.Source]string{
 		templates.SourceFreshCache: "from cache",
 		templates.SourceNetwork:    "fresh from network",
-		templates.SourceStaleCache: "stale cache",
-		templates.SourceEmbedded:   "embedded fallback",
 	}
 	for src, wantSubstr := range cases {
 		res := &templates.Resolution{Source: src, Age: 12 * time.Minute}

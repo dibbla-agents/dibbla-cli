@@ -12,9 +12,6 @@ const (
 	// FreshTTL is how long a cached manifest is considered fresh enough to
 	// use without attempting a network refresh.
 	FreshTTL = 1 * time.Hour
-	// StaleTTL is the hard cutoff beyond which we prefer an embedded fallback
-	// over a very stale cache when the network is unavailable.
-	StaleTTL = 24 * time.Hour
 )
 
 // CacheEntry is the envelope stored on disk at ~/.dibbla/templates-cache.json.

@@ -40,7 +40,10 @@ func init() {
 func runInstall(cmd *cobra.Command, args []string) error {
 	id := args[0]
 
-	m := resolveManifest(installRefresh, false)
+	m, err := resolveManifest(installRefresh, false)
+	if err != nil {
+		return err
+	}
 	tmpl := m.FindByID(id)
 	if tmpl == nil {
 		return fmt.Errorf("unknown template %q (run 'dibbla template list' to see available templates)", id)
