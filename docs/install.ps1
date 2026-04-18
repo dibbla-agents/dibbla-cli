@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "dibbla-agents/dibbla-cli"
 $Binary = "dibbla"
-$InstallDir = "$env:LOCALAPPDATA\dibbla"
+$InstallDir = if ($env:DIBBLA_INSTALL_DIR) { $env:DIBBLA_INSTALL_DIR } else { "$env:LOCALAPPDATA\dibbla" }
 
 function Write-Info($msg)  { Write-Host $msg -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host $msg -ForegroundColor Green }
@@ -82,6 +82,28 @@ function Install-Dibbla {
             [Environment]::SetEnvironmentVariable("Path", "$userPath;$InstallDir", "User")
             # Also update current session
             $env:Path = "$env:Path;$InstallDir"
+
+            # Broadcast WM_SETTINGCHANGE so Explorer and other running apps pick
+            # up the new user PATH without requiring a logout. Best-effort:
+            # swallow any failure — the PATH update itself already succeeded.
+            try {
+                if (-not ('Win32.NativeMethods' -as [Type])) {
+                    Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+public static extern System.IntPtr SendMessageTimeout(
+    System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, string lParam,
+    uint fuFlags, uint uTimeout, out System.UIntPtr lpdwResult);
+"@
+                }
+                $HWND_BROADCAST = [IntPtr]0xffff
+                $WM_SETTINGCHANGE = 0x1A
+                $result = [UIntPtr]::Zero
+                [void][Win32.NativeMethods]::SendMessageTimeout(
+                    $HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment",
+                    2, 5000, [ref]$result)
+            } catch {
+                # Non-fatal. New shells will still pick up the change.
+            }
         }
 
         # Verify
