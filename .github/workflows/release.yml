@@ -161,6 +161,7 @@ jobs:
 
       - name: Update Homebrew formula checksums
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
