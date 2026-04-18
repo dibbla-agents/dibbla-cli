@@ -6,7 +6,7 @@ import (
 )
 
 func TestResolveTaskPath_NoArg_DefaultsToCwdYAML(t *testing.T) {
-	path, isURL, cleanup, err := resolveTaskPath(nil)
+	path, isURL, cleanup, err := resolveTaskPath("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestResolveTaskPath_NoArg_DefaultsToCwdYAML(t *testing.T) {
 }
 
 func TestResolveTaskPath_LocalPath_AbsolutizesIt(t *testing.T) {
-	path, isURL, cleanup, err := resolveTaskPath([]string{"./relative/path.yaml"})
+	path, isURL, cleanup, err := resolveTaskPath("./relative/path.yaml")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,10 +41,7 @@ func TestResolveTaskPath_LocalPath_AbsolutizesIt(t *testing.T) {
 }
 
 func TestBuildEnv_ParsesKVPairs(t *testing.T) {
-	flagEnv = []string{"FOO=bar", "EMPTY=", "WITH_EQUALS=a=b=c"}
-	defer func() { flagEnv = nil }()
-
-	env, err := buildEnv()
+	env, err := buildEnv([]string{"FOO=bar", "EMPTY=", "WITH_EQUALS=a=b=c"}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,19 +57,14 @@ func TestBuildEnv_ParsesKVPairs(t *testing.T) {
 }
 
 func TestBuildEnv_RejectsInvalidPair(t *testing.T) {
-	flagEnv = []string{"NO_EQUALS_HERE"}
-	defer func() { flagEnv = nil }()
-
-	_, err := buildEnv()
+	_, err := buildEnv([]string{"NO_EQUALS_HERE"}, "")
 	if err == nil {
 		t.Fatal("expected error for env value without '='")
 	}
 }
 
 func TestPickFormatter_Defaults(t *testing.T) {
-	flagFormat = ""
-	defer func() { flagFormat = "plain" }()
-	f, err := pickFormatter()
+	f, err := pickFormatter("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,8 +74,7 @@ func TestPickFormatter_Defaults(t *testing.T) {
 }
 
 func TestPickFormatter_Plain(t *testing.T) {
-	flagFormat = "plain"
-	f, err := pickFormatter()
+	f, err := pickFormatter("plain")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,9 +84,7 @@ func TestPickFormatter_Plain(t *testing.T) {
 }
 
 func TestPickFormatter_GH(t *testing.T) {
-	flagFormat = "gh"
-	defer func() { flagFormat = "plain" }()
-	f, err := pickFormatter()
+	f, err := pickFormatter("gh")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,9 +94,7 @@ func TestPickFormatter_GH(t *testing.T) {
 }
 
 func TestPickFormatter_Invalid(t *testing.T) {
-	flagFormat = "json"
-	defer func() { flagFormat = "plain" }()
-	_, err := pickFormatter()
+	_, err := pickFormatter("json")
 	if err == nil {
 		t.Fatal("expected error for unknown format")
 	}

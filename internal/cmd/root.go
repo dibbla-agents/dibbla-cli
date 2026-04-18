@@ -6,6 +6,7 @@ import (
 
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/spf13/cobra"
@@ -49,6 +50,7 @@ func init() {
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
 	run.Register(rootCmd)
+	template.Register(rootCmd)
 }
 
 // Execute runs the root command

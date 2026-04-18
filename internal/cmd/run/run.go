@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -19,11 +20,11 @@ import (
 )
 
 var (
-	flagPreview  bool
-	flagEnv      []string
-	flagEnvFile  string
-	flagWorkDir  string
-	flagFormat   string
+	flagPreview bool
+	flagEnv     []string
+	flagEnvFile string
+	flagWorkDir string
+	flagFormat  string
 )
 
 var runCmd = &cobra.Command{
@@ -56,8 +57,26 @@ func init() {
 	runCmd.Flags().StringVar(&flagFormat, "format", "plain", "Output format: plain | gh")
 }
 
-func runE(cmd *cobra.Command, args []string) error {
-	taskPath, isURL, cleanup, err := resolveTaskPath(args)
+// TaskOpts configures ExecuteTask.
+type TaskOpts struct {
+	Preview bool
+	// Env is a slice of "KEY=VAL" strings, same shape as the --env flag.
+	Env []string
+	// EnvFile, if non-empty, is loaded via godotenv before applying Env.
+	EnvFile string
+	// WorkDir overrides the steprunner's work_dir resolution. If empty,
+	// URL-sourced tasks default to os.Getwd(); local-file tasks defer to
+	// the SDK default (the yaml's parent directory).
+	WorkDir string
+	// Format is "plain" or "gh". Empty string == "plain".
+	Format string
+}
+
+// ExecuteTask runs a dibbla-task.yaml given an arg (empty / local path / https URL)
+// and options. Exits the process with code 1 when steps fail. Returns a
+// non-nil error only for setup failures that should be printed by cobra.
+func ExecuteTask(ctx context.Context, arg string, opts TaskOpts) error {
+	taskPath, isURL, cleanup, err := resolveTaskPath(arg)
 	if err != nil {
 		return err
 	}
@@ -65,22 +84,22 @@ func runE(cmd *cobra.Command, args []string) error {
 		defer cleanup()
 	}
 
-	workDir, err := resolveWorkDir(isURL)
+	workDir, err := resolveWorkDir(opts.WorkDir, isURL)
 	if err != nil {
 		return err
 	}
 
-	env, err := buildEnv()
+	env, err := buildEnv(opts.Env, opts.EnvFile)
 	if err != nil {
 		return err
 	}
 
-	formatter, err := pickFormatter()
+	formatter, err := pickFormatter(opts.Format)
 	if err != nil {
 		return err
 	}
 
-	if flagPreview {
+	if opts.Preview {
 		preview, err := steprunner.Preview(taskPath)
 		if err != nil {
 			return err
@@ -89,18 +108,18 @@ func runE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	opts := []steprunner.Option{
+	runOpts := []steprunner.Option{
 		steprunner.WithFormatter(formatter),
 		steprunner.WithEnv(env),
 	}
 	if workDir != "" {
-		opts = append(opts, steprunner.WithWorkDir(workDir))
+		runOpts = append(runOpts, steprunner.WithWorkDir(workDir))
 	}
 
-	result, err := steprunner.Run(ctx, taskPath, opts...)
+	result, err := steprunner.Run(runCtx, taskPath, runOpts...)
 	if err != nil {
 		return err
 	}
@@ -110,12 +129,21 @@ func runE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveTaskPath(args []string) (path string, isURL bool, cleanup func(), err error) {
+func runE(cmd *cobra.Command, args []string) error {
 	arg := ""
 	if len(args) > 0 {
 		arg = args[0]
 	}
+	return ExecuteTask(cmd.Context(), arg, TaskOpts{
+		Preview: flagPreview,
+		Env:     flagEnv,
+		EnvFile: flagEnvFile,
+		WorkDir: flagWorkDir,
+		Format:  flagFormat,
+	})
+}
 
+func resolveTaskPath(arg string) (path string, isURL bool, cleanup func(), err error) {
 	switch {
 	case arg == "":
 		abs, absErr := filepath.Abs("dibbla-task.yaml")
@@ -139,9 +167,9 @@ func resolveTaskPath(args []string) (path string, isURL bool, cleanup func(), er
 	}
 }
 
-func resolveWorkDir(isURL bool) (string, error) {
-	if flagWorkDir != "" {
-		return filepath.Abs(flagWorkDir)
+func resolveWorkDir(override string, isURL bool) (string, error) {
+	if override != "" {
+		return filepath.Abs(override)
 	}
 	if isURL {
 		return os.Getwd()
@@ -149,11 +177,11 @@ func resolveWorkDir(isURL bool) (string, error) {
 	return "", nil
 }
 
-func buildEnv() (map[string]string, error) {
+func buildEnv(envFlags []string, envFile string) (map[string]string, error) {
 	env := map[string]string{}
 
-	if flagEnvFile != "" {
-		loaded, err := godotenv.Read(flagEnvFile)
+	if envFile != "" {
+		loaded, err := godotenv.Read(envFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading env file: %w", err)
 		}
@@ -162,7 +190,7 @@ func buildEnv() (map[string]string, error) {
 		}
 	}
 
-	for _, kv := range flagEnv {
+	for _, kv := range envFlags {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
 			return nil, fmt.Errorf("invalid --env value %q (want KEY=VAL)", kv)
@@ -185,14 +213,14 @@ func buildEnv() (map[string]string, error) {
 	return env, nil
 }
 
-func pickFormatter() (model.Formatter, error) {
-	switch flagFormat {
+func pickFormatter(format string) (model.Formatter, error) {
+	switch format {
 	case "plain", "":
 		return output.NewPlainFormatter(os.Stdout), nil
 	case "gh":
 		return output.NewGHActionsFormatter(os.Stdout), nil
 	default:
-		return nil, fmt.Errorf("unknown --format value %q (want plain or gh)", flagFormat)
+		return nil, fmt.Errorf("unknown --format value %q (want plain or gh)", format)
 	}
 }
 
@@ -230,4 +258,3 @@ func printPreview(p *model.PreviewResult) {
 		}
 	}
 }
-
