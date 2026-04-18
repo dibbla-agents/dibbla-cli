@@ -53,7 +53,7 @@ Discover and install Dibbla templates from the hosted manifest.
 
 Manifest URL (default): `https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/templates.json`. Override with `DIBBLA_TEMPLATES_URL` to point at a staging or local manifest.
 
-Cache lives at `~/.dibbla/templates-cache.json`. Resolution: fresh cache (< 1 h) → used silently; stale (1–24 h) → network fetch attempted, falls back to cache on failure; cold (> 24 h) → must fetch, else embedded fallback (2 templates: `getting-started`, `expense-reporter`).
+Cache lives at `~/.dibbla/templates-cache.json`. Resolution is simple: a fresh cache (fetched less than 1 h ago) is used silently; otherwise the CLI fetches the manifest from the URL and rewrites the cache. If the fetch fails (offline, 404, etc.), `dibbla template list / install` returns the error — there is no stale-cache or embedded-fallback tier. Pass `--refresh` to bypass the fresh-cache short-circuit and force a network fetch.
 
 ### template list
 
@@ -109,6 +109,18 @@ Send, list, and manage feedback.
 ## deploy
 
 Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.com`.
+
+### What your deploy directory needs
+
+- **A `Dockerfile` at the root.** The CLI does not auto-detect languages, doesn't run buildpacks, and doesn't generate a Dockerfile. If the Dockerfile is missing, the backend rejects the build at the build step with logs in the error. The templates in `dibbla-agents/dibbla-public-templates` all ship a working Dockerfile — copy a pattern from one when scaffolding.
+- **Whatever your Dockerfile expects** (e.g. `go.mod` + `main.go` for Go, `package.json` + source for Node, etc.). No minimum file set is enforced by the CLI.
+- **An exposed port + entrypoint in the Dockerfile.** The CLI's `--port` flag only tells the platform which container port to route to; the Dockerfile's `EXPOSE` and `CMD`/`ENTRYPOINT` are what actually bind and serve traffic.
+
+### What's excluded from the upload archive
+
+The CLI tar.gz's the deploy directory and excludes a hardcoded list: `.git/`, `node_modules/`, `.env.production`, SSH keys (`.pem`, `.key`, `*_rsa`, `*_dsa`), `.DS_Store`, etc. `.dockerignore` is not read by the CLI (but your templates can still have one — it's honored by the backend's Docker build).
+
+### Flags
 
 | Item | Details |
 |------|---------|

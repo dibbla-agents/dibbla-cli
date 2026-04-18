@@ -7,6 +7,21 @@ description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipel
 
 The `dibbla` CLI scaffolds projects and manages **applications**, **databases**, **secrets**, and **workflows** on the Dibbla platform. Deployed apps are available at `https://<alias>.dibbla.com`.
 
+## Prerequisites
+
+**Install the CLI** if it isn't already on the user's `PATH`:
+
+| Platform | Command |
+|----------|---------|
+| macOS (Homebrew) | `brew install dibbla-agents/tap/dibbla` |
+| macOS / Linux (shell installer) | `curl -fsSL https://install.dibbla.com/install.sh \| sh` |
+| Windows (PowerShell) | `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://install.dibbla.com/install.ps1 \| iex"` |
+| Verify | `dibbla --version` |
+
+The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if needed. Self-update is available inside task files via the same installer URL.
+
+**Deploying requires a `Dockerfile`** at the root of the directory you pass to `dibbla deploy`. The CLI does **not** auto-detect languages or generate a Dockerfile — if it's missing, the backend rejects the build with log output. All bundled templates in `dibbla-agents/dibbla-public-templates` ship a working Dockerfile you can copy (typically multi-stage: Node → JS build → Go → binary → small runtime image, `EXPOSE 80`).
+
 ## Commands at a glance
 
 | Area       | Commands |

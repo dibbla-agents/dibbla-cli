@@ -4,6 +4,29 @@ Copy-paste examples for common workflows. For full usage and flags see [referenc
 
 ---
 
+## Installing dibbla
+
+```bash
+# macOS — Homebrew
+brew install dibbla-agents/tap/dibbla
+
+# macOS / Linux — shell installer (drops binary into ~/.local/bin)
+curl -fsSL https://install.dibbla.com/install.sh | sh
+
+# Windows — PowerShell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://install.dibbla.com/install.ps1 | iex"
+
+# Verify
+dibbla --version
+
+# Upgrade (same command as install — replaces in place)
+curl -fsSL https://install.dibbla.com/install.sh | sh
+# …or on macOS Homebrew:
+brew upgrade dibbla
+```
+
+---
+
 ## Login (including Claude Code / agentic tools)
 
 ```bash
@@ -371,6 +394,17 @@ dibbla deploy . --alias my-app --update
 ### Deploy a new app (first time)
 
 ```bash
+# 0. The directory must contain a Dockerfile — dibbla does NOT autodetect
+#    languages or run buildpacks. Minimal example:
+#
+#    FROM node:20-alpine AS build
+#    WORKDIR /app
+#    COPY package*.json ./
+#    RUN npm ci --omit=dev
+#    COPY . .
+#    EXPOSE 3000
+#    CMD ["node", "server.js"]
+#
 # 1. Check if the app already exists
 dibbla apps list
 
