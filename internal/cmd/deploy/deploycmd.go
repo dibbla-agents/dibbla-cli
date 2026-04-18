@@ -34,6 +34,11 @@ var deployCmd = &cobra.Command{
 
 Your application will be available at https://<alias>.dibbla.com
 
+Symlinks: symlinks inside the deploy directory are followed and their content is
+included as regular files in the archive. Symlinks whose target escapes the deploy
+root (including absolute symlinks such as /etc/passwd) are skipped to prevent
+accidentally packaging host files.
+
 Configuration:
   Run dibbla login to store credentials, or set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) in your environment or .env file.
 

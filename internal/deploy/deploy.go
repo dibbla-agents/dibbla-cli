@@ -148,13 +148,34 @@ func Run(opts Options) (*DeployResponse, error) {
 	return upload(opts.APIURL, opts.APIToken, archive, appName, opts.Force, opts.Update, opts.Env, opts.CPU, opts.Memory, opts.Port, opts.FaviconURL, opts.RequireLogin, opts.AccessPolicy, opts.GoogleScopes)
 }
 
-// createArchive creates a tar.gz archive from the given directory
+// createArchive creates a tar.gz archive from the given directory.
+//
+// Symlink handling: a symlink whose resolved target is inside the archive root
+// is dereferenced — its content (file or directory tree) is emitted as regular
+// tar entries under the symlink's path. A symlink whose target escapes the
+// archive root (including absolute symlinks such as /etc/passwd) is skipped
+// entirely, never written to the archive. This prevents accidental packaging
+// of host files and also avoids tripping the backend's archive-safety check,
+// which rejects any symlink target containing "..".
 func createArchive(dir string) ([]byte, error) {
 	var buf bytes.Buffer
 	gzw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gzw)
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	rootAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	// Resolve symlinks in the archive root itself so containment checks against
+	// EvalSymlinks-resolved targets are on the same footing. Important on macOS
+	// where /var is a symlink to /private/var.
+	if resolved, rerr := filepath.EvalSymlinks(rootAbs); rerr == nil {
+		rootAbs = resolved
+	}
+
+	var skipped []string
+
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -178,7 +199,21 @@ func createArchive(dir string) ([]byte, error) {
 			return nil
 		}
 
-		// Create tar header
+		// Symlink: dereference-if-within-root, skip-if-outside.
+		if info.Mode()&os.ModeSymlink != 0 {
+			visited := make(map[string]bool)
+			didSkip, serr := archiveSymlink(tw, path, relPath, rootAbs, visited)
+			if serr != nil {
+				fmt.Fprintf(os.Stderr, "warning: skipping symlink %s: %v\n", relPath, serr)
+				return nil
+			}
+			if didSkip {
+				skipped = append(skipped, relPath)
+			}
+			return nil
+		}
+
+		// Regular file or directory: write a standard header and content.
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
@@ -192,20 +227,10 @@ func createArchive(dir string) ([]byte, error) {
 			header.Name += "/"
 		}
 
-		// Handle symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			header.Linkname = filepath.ToSlash(link)
-		}
-
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 
-		// Write file content for regular files
 		if info.Mode().IsRegular() {
 			file, err := os.Open(path)
 			if err != nil {
@@ -221,8 +246,8 @@ func createArchive(dir string) ([]byte, error) {
 		return nil
 	})
 
-	if err != nil {
-		return nil, err
+	if walkErr != nil {
+		return nil, walkErr
 	}
 
 	if err := tw.Close(); err != nil {
@@ -233,7 +258,168 @@ func createArchive(dir string) ([]byte, error) {
 		return nil, err
 	}
 
+	if len(skipped) > 0 {
+		fmt.Fprintf(os.Stderr, "Skipped %d symlink(s) pointing outside the deploy root: %s\n",
+			len(skipped), strings.Join(skipped, ", "))
+	}
+
 	return buf.Bytes(), nil
+}
+
+// archiveSymlink handles a single symlink encountered during the walk.
+// Returns skipped=true when nothing was written (target escaped root, broken
+// link, unsupported mode) so the caller can count it for the summary line.
+// A visited map is threaded through recursion so a self-referential directory
+// loop terminates; sibling symlinks to the same target each get a fresh map
+// from the top-level walker and are not de-duplicated across independent
+// dereference chains.
+func archiveSymlink(tw *tar.Writer, path, logicalPath, rootAbs string, visited map[string]bool) (skipped bool, err error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		// Broken, dangling, or cycle detected by Go's resolver — skip quietly.
+		return true, nil
+	}
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return true, err
+	}
+	if !isWithinRoot(targetAbs, rootAbs) {
+		return true, nil
+	}
+	if visited[targetAbs] {
+		// Already expanded in this dereference chain — prevents self-loop
+		// recursion. Not counted as "skipped" because the content is already
+		// in the archive under a parent logical path.
+		return false, nil
+	}
+	visited[targetAbs] = true
+
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		return true, nil
+	}
+
+	if targetInfo.Mode().IsRegular() {
+		return false, writeSymlinkedFile(tw, targetAbs, targetInfo, logicalPath)
+	}
+	if targetInfo.IsDir() {
+		return false, archiveSymlinkedDir(tw, targetAbs, logicalPath, rootAbs, visited)
+	}
+	// Sockets, devices, named pipes, etc.
+	return true, nil
+}
+
+// writeSymlinkedFile emits a single regular-file tar entry at logicalPath,
+// containing the content and mode of the resolved target file.
+func writeSymlinkedFile(tw *tar.Writer, targetAbs string, targetInfo os.FileInfo, logicalPath string) error {
+	header, err := tar.FileInfoHeader(targetInfo, "")
+	if err != nil {
+		return err
+	}
+	header.Name = filepath.ToSlash(logicalPath)
+	if err := tw.WriteHeader(header); err != nil {
+		return err
+	}
+	f, err := os.Open(targetAbs)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(tw, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+// archiveSymlinkedDir walks a directory reached through a symlink and emits
+// tar entries under logicalPrefix. Sub-entries pass through shouldExclude and
+// the same in-root check; sub-symlinks recurse via archiveSymlink so an
+// escaping or cyclic link inside a dereferenced tree is handled safely.
+func archiveSymlinkedDir(tw *tar.Writer, realRoot, logicalPrefix, archiveRootAbs string, visited map[string]bool) error {
+	topInfo, err := os.Stat(realRoot)
+	if err != nil {
+		return err
+	}
+	topHeader, err := tar.FileInfoHeader(topInfo, "")
+	if err != nil {
+		return err
+	}
+	topHeader.Name = filepath.ToSlash(logicalPrefix) + "/"
+	if err := tw.WriteHeader(topHeader); err != nil {
+		return err
+	}
+
+	return filepath.Walk(realRoot, func(p string, info os.FileInfo, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		rel, rerr := filepath.Rel(realRoot, p)
+		if rerr != nil {
+			return rerr
+		}
+		if rel == "." {
+			return nil // top dir already emitted above
+		}
+
+		logical := filepath.Join(logicalPrefix, rel)
+
+		if shouldExclude(logical, info) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			if _, serr := archiveSymlink(tw, p, logical, archiveRootAbs, visited); serr != nil {
+				fmt.Fprintf(os.Stderr, "warning: skipping symlink %s: %v\n", logical, serr)
+			}
+			return nil
+		}
+
+		header, herr := tar.FileInfoHeader(info, "")
+		if herr != nil {
+			return herr
+		}
+		header.Name = filepath.ToSlash(logical)
+		if info.IsDir() {
+			header.Name += "/"
+		}
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+
+		if info.Mode().IsRegular() {
+			f, oerr := os.Open(p)
+			if oerr != nil {
+				return oerr
+			}
+			defer f.Close()
+			if _, cerr := io.Copy(tw, f); cerr != nil {
+				return cerr
+			}
+		}
+		return nil
+	})
+}
+
+// isWithinRoot reports whether targetAbs is equal to or a descendant of rootAbs.
+// Both paths must already be absolute and cleaned.
+func isWithinRoot(targetAbs, rootAbs string) bool {
+	rel, err := filepath.Rel(rootAbs, targetAbs)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	if strings.HasPrefix(rel, "..") {
+		return false
+	}
+	if filepath.IsAbs(rel) {
+		return false
+	}
+	return true
 }
 
 // shouldExclude checks if a path should be excluded from the archive
