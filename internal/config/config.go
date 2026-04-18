@@ -25,12 +25,20 @@ type Config struct {
 // Load reads configuration from environment variables, .env file, and OS credential store.
 // In CI or when DIBBLA_API_TOKEN is set, only env is used. Otherwise stored credentials from
 // "dibbla login" are used.
+//
+// The API URL is resolved with this precedence: DIBBLA_API_URL (preferred name)
+// falls back to DIBBLA_AUTH_SERVICE_URL (the name used by the dibbla-tasks
+// steprunner and desktop app when injecting env into child processes), then to
+// the stored credential-store URL, then to DefaultAPIURL.
 func Load() *Config {
 	// Load .env file if it exists (ignores error if file doesn't exist)
 	_ = godotenv.Load()
 
 	envToken := os.Getenv("DIBBLA_API_TOKEN")
 	envURL := os.Getenv("DIBBLA_API_URL")
+	if envURL == "" {
+		envURL = os.Getenv("DIBBLA_AUTH_SERVICE_URL")
+	}
 
 	cfg := &Config{
 		APIURL:   DefaultAPIURL,
