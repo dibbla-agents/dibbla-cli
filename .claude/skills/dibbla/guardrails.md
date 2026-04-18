@@ -73,6 +73,18 @@ Scan code that writes to external systems (APIs, queues, email, SMS, webhooks, t
 
 ---
 
+## Check 5: Running task files from URLs
+
+When the user asks you to run a `dibbla-task.yaml` from a URL (via `dibbla run <url>` or `dibbla template install <id>`), apply these checks before executing:
+
+| What to check | Severity | Examples |
+|----------------|----------|----------|
+| Source trust | WARNING | `dibbla run <https-url>` fetches and executes shell commands from the network. Treat it like `curl … \| bash`. Only run yamls from sources the user trusts (e.g. `github.com/dibbla-agents/*` bootstraps or yamls authored by the user themselves). If the URL is from an unknown third party, warn the user and offer `dibbla run --preview <url>` first to inspect the plan. |
+| Work-dir side effects | INFO | URL-fetched yamls execute with the user's invocation CWD as the work dir. Bootstrap yamls typically `git clone` into that directory. If the user's CWD is not empty (e.g. has existing files), make sure the clone step won't collide — prefer `mkdir fresh-dir && cd fresh-dir` before running. |
+| Self-install / self-update steps | INFO | Some template task files include steps like `brew upgrade dibbla` or `curl install.sh \| sh`. These replace the on-disk dibbla binary while dibbla itself is running. This is benign on macOS/Linux (the running process keeps the old mmap) but users won't see the new version until their next re-invocation. Mention this if it surfaces in the output. |
+
+---
+
 ## Interactive workflow
 
 ### Step 1: Run all four checks

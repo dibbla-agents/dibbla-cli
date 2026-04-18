@@ -4,6 +4,76 @@ Copy-paste examples for common workflows. For full usage and flags see [referenc
 
 ---
 
+## Login (including Claude Code / agentic tools)
+
+```bash
+# Interactive (real TTY — picks between browser OAuth and paste-token)
+dibbla login api.dibbla.net
+
+# From inside Claude Code's `!` prefix, an agent shell, or any non-TTY context
+! dibbla login --browser api.dibbla.net
+# Opens your default browser via localhost callback. No stdin needed.
+
+# Headless (no browser available — CI, SSH, containers)
+dibbla login api.dibbla.net --api-key ak_...
+# or:
+export DIBBLA_API_TOKEN=ak_...
+export DIBBLA_API_URL=https://api.dibbla.net
+dibbla deploy .          # reads env vars directly; no login needed
+
+# Log out (clears keyring)
+dibbla logout
+```
+
+---
+
+## Running task files locally
+
+```bash
+# Run ./dibbla-task.yaml in the current directory
+dibbla run
+
+# Run a specific local task file
+dibbla run ./setup/dibbla-task.yaml
+
+# Preview (parse + print plan, do not execute)
+dibbla run --preview ./dibbla-task.yaml
+
+# Run a bootstrap yaml from GitHub — clones into your CWD and runs setup
+mkdir my-project && cd my-project
+dibbla run https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/getting-started.dibbla-task.yaml
+
+# Override env vars and working directory
+dibbla run --env PORT=3000 --env-file .env.local --work-dir ./build ./dibbla-task.yaml
+
+# Switch output format for CI / GitHub Actions
+dibbla run --format gh ./dibbla-task.yaml
+```
+
+---
+
+## Discovering and installing templates
+
+```bash
+# See what's available
+dibbla template list
+
+# Force re-fetch + show manifest source (cache / network / embedded)
+dibbla template list --refresh -v
+
+# Install a template into its default-named directory
+dibbla template install expense-reporter
+# → creates ./expense-reporter-template-1 and runs the bootstrap pipeline
+
+# Install a template into a custom directory
+dibbla template install getting-started my-starter-app
+
+# Reuse an existing destination directory
+dibbla template install crm --force
+```
+
+---
+
 ## Feedback
 
 ```bash
@@ -367,4 +437,37 @@ export DATABASE_URL=$(dibbla db connect my-app-db -q)
 dibbla apps delete my-app --yes
 dibbla db delete my-app-db --yes
 dibbla secrets delete API_KEY --yes
+```
+
+### Install a template and start iterating
+
+```bash
+# 1. Show available templates to the user
+dibbla template list
+
+# 2. Install the one they picked (default destination — ./<template_path>)
+dibbla template install expense-reporter
+
+# 3. The bootstrap yaml does the rest automatically:
+#    - tool checks (git, node, go, dibbla)
+#    - dibbla self-update (auto-installs latest dibbla)
+#    - clones the template project into CWD
+#    - dibbla login via env-var (DIBBLA_AUTH_SERVICE_URL picked up from parent)
+#    - npm install, go build, start dev servers (ports per template)
+#    - opens the app in the default browser
+#
+#    End state: a live local project the user can edit.
+
+# 4. Iteration: re-run the inner dibbla-task.yaml any time
+cd expense-reporter-template-1
+dibbla run
+# idempotent — existing installs skip, stale dev servers are reclaimed
+```
+
+### Run a bootstrap yaml directly (without dibbla template install)
+
+```bash
+# Same end state, one command:
+mkdir my-app && cd my-app
+dibbla run https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/getting-started.dibbla-task.yaml
 ```

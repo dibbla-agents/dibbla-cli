@@ -4,6 +4,81 @@ Complete usage, arguments, and flags for all commands.
 
 ---
 
+## login
+
+Authenticate with the Dibbla API and store the token in the OS credential store.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla login [api_url]` |
+| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.dibbla.net` or `https://api.dibbla.net`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. |
+| **Flags** | `--browser` — skip the interactive menu; go directly to browser OAuth. Works in non-TTY contexts (Claude Code `!` prefix, agent shells) because the flow uses a localhost callback, not stdin. |
+|  | `--api-key <token>` — pass a pre-generated token; works in any context |
+| **Interactive** | Real TTY only: picker for "Log in with browser" or "Paste an API token" |
+| **Note** | In CI, set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) instead of running login. |
+
+### logout
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla logout` |
+| **Output** | Removes stored token + api_url from the OS credential store |
+
+---
+
+## run
+
+Run a `dibbla-task.yaml` pipeline locally using the dibbla-tasks steprunner.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla run [path-or-url]` |
+| **Arguments** | (omitted) — runs `./dibbla-task.yaml` from the current directory |
+|  | `<local-path>` — runs the given file (work_dir defaults to the yaml's parent directory) |
+|  | `<https-url>` — fetches the yaml (5 MB max, 30 s timeout) and runs it with work_dir = your invocation CWD |
+| **Flags** | `--preview` — parse and print the execution plan without running anything |
+|  | `--env KEY=VAL` — set/override an env var for all steps (repeatable) |
+|  | `--env-file <path>` — load env vars from a `.env`-style file |
+|  | `--work-dir <dir>` — override working directory for command steps |
+|  | `--format plain\|gh` — output format (default `plain`; `gh` emits GitHub Actions workflow commands) |
+| **Env injected into steps** | `DIBBLA_API_TOKEN`, `DIBBLA_AUTH_SERVICE_URL` (both when logged in); `DIBBLA_CMD` (path to the running dibbla binary — used by bootstrap yamls for recursive invocation regardless of PATH state) |
+| **Security** | URL-fetched yamls become shell commands on the user's machine. Treat them as `curl \| bash` — only run yamls from trusted sources (e.g. `github.com/dibbla-agents/*`). |
+| **Exit code** | `0` on success; `1` on step failure or setup error |
+
+---
+
+## template
+
+Discover and install Dibbla templates from the hosted manifest.
+
+Manifest URL (default): `https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/templates.json`. Override with `DIBBLA_TEMPLATES_URL` to point at a staging or local manifest.
+
+Cache lives at `~/.dibbla/templates-cache.json`. Resolution: fresh cache (< 1 h) → used silently; stale (1–24 h) → network fetch attempted, falls back to cache on failure; cold (> 24 h) → must fetch, else embedded fallback (2 templates: `getting-started`, `expense-reporter`).
+
+### template list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla template list` |
+| **Flags** | `--refresh` — force re-fetch of the manifest, bypassing fresh cache |
+|  | `-v`, `--verbose` — print the manifest source used (cache / network / embedded) |
+| **Output** | Table: `ID  NAME  CATEGORY  DESCRIPTION` |
+
+### template install
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla template install <id> [<dir>]` |
+| **Arguments** | `id` (required) — template slug from the manifest (e.g. `getting-started`, `expense-reporter`, `crm`, `presentation`) |
+|  | `dir` (optional) — destination directory; defaults to the manifest's `template_path` for that id (e.g. `./expense-reporter-template-1`) |
+| **Flags** | `--force` — overwrite (reuse) the destination directory if it already exists |
+|  | `--refresh` — force re-fetch of the manifest before installing |
+| **Behavior** | `mkdir` destination → `chdir` into it → run the template's `bootstrap_url`. The bootstrap clones the project subtree from the templates repo into CWD and recursively invokes `dibbla run ./dibbla-task.yaml` inside the cloned directory. |
+| **Refuses** | If the destination directory already exists and `--force` is not passed |
+| **Exit code** | `0` on success; `1` on any failure (manifest lookup, mkdir, bootstrap pipeline) |
+
+---
+
 ## feedback
 
 Send, list, and manage feedback.
@@ -407,6 +482,14 @@ Alias: `fn`.
 
 | Area | Command | Purpose |
 |------|---------|---------|
+| Auth | `dibbla login [api_url]` | Interactive browser/paste login (real TTY) |
+| Auth | `dibbla login --browser` | Non-TTY browser OAuth (Claude Code, agent shells) |
+| Auth | `dibbla login --api-key <token>` | Headless token login (CI, scripted) |
+| Auth | `dibbla logout` | Clear stored credentials |
+| Run | `dibbla run [path\|url]` | Execute a dibbla-task.yaml pipeline locally |
+| Run | `dibbla run --preview <arg>` | Parse + print execution plan (no execution) |
+| Template | `dibbla template list` | List available templates from the hosted manifest |
+| Template | `dibbla template install <id> [<dir>]` | Materialize a template into a directory and run its bootstrap |
 | Feedback | `dibbla feedback <message>` | Send feedback |
 | Feedback | `dibbla feedback list` | List feedback |
 | Feedback | `dibbla feedback delete <id>` | Delete feedback |

@@ -1,6 +1,6 @@
 ---
 name: dibbla
-description: Use the Dibbla CLI to deploy apps, manage applications, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to deploy, list/update/delete apps, create/list/delete/dump/restore databases, manage secrets, or manage workflows (create/execute/validate workflows, manage nodes/edges/inputs/tools, revisions, and browse functions).
+description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), discover and install project templates (dibbla template list/install), deploy apps, and manage applications, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or a template from a URL, install a starter template, log in (including from non-TTY contexts like Claude Code via `dibbla login --browser`), deploy, list/update/delete apps, create/list/delete/dump/restore databases, manage secrets, or manage workflows (create/execute/validate workflows, manage nodes/edges/inputs/tools, revisions, and browse functions).
 ---
 
 # Dibbla CLI
@@ -11,6 +11,9 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 
 | Area       | Commands |
 |------------|----------|
+| Run        | `run [path\|url]`, `run --preview`, `run --env KEY=VAL`, `run --env-file <file>`, `run --work-dir <dir>`, `run --format plain\|gh` |
+| Template   | `template list [--refresh] [-v]`, `template install <id> [<dir>] [--force]` |
+| Login      | `login [api_url]`, `login --browser`, `login --api-key <token>`, `logout` |
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
 | Deploy     | `deploy [path] [--alias name] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
@@ -59,6 +62,17 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
 
 **Pre-deploy guardrails:** Before calling `dibbla deploy`, you MUST complete the pre-deploy checklist and present findings to the user. Always wait for explicit user confirmation before deploying or fixing issues — never deploy autonomously. The guardrails workflow also writes a `REVIEW.md` file to the project root — the platform reads this and displays a review status indicator in the dashboard. See [guardrails.md](guardrails.md) for the full checklist.
+
+**Non-TTY / agentic invocation:**
+- When running from inside Claude Code's `!` prefix, an agent shell, CI with a browser, or any other non-TTY context, use `dibbla login --browser` instead of bare `dibbla login`. The interactive flow needs stdin for the survey picker; `--browser` skips that and goes straight to browser-based OAuth via a localhost callback.
+- For true headless (SSH sessions, cloud VMs, CI runners with no local browser), use `dibbla login --api-key <token>` or set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) env vars — the CLI reads env vars in CI automatically.
+- The CLI accepts `DIBBLA_AUTH_SERVICE_URL` as a fallback for `DIBBLA_API_URL` when invoked from inside a `dibbla run` task. The steprunner injects the former (matching desktop/steprunner convention), so inner `dibbla login --api-key=$DIBBLA_API_TOKEN` calls target the right service without needing an explicit URL arg.
+
+**Running task files and templates:**
+- `dibbla run <path>` executes a `dibbla-task.yaml` pipeline locally. Tool checks, shell commands, background dev servers, and browser-open side effects are all possible — the task file becomes shell under the user's account.
+- `dibbla run <https-url>` fetches and executes a yaml from the network. **This is equivalent to `curl | bash`** — only run yamls from sources the user trusts (e.g. `github.com/dibbla-agents/*`). Work-dir defaults to the user's invocation CWD, so bootstrap clones land in the expected directory rather than in a temp dir.
+- `dibbla template install <id>` is ergonomic sugar over `mkdir ./<template-path> && cd ./<template-path> && dibbla run <bootstrap-url>`. It refuses if the destination directory exists; pass `--force` to reuse. Use `dibbla template list` to see available ids.
+- Prefer `dibbla run --preview` or `dibbla template list` before actually running, so the user can see what will execute.
 
 ## Additional resources
 
