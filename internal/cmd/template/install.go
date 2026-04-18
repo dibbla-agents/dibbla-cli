@@ -49,7 +49,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown template %q (run 'dibbla template list' to see available templates)", id)
 	}
 
-	destRel := tmpl.TemplatePath
+	destRel := tmpl.ID
 	if len(args) == 2 {
 		destRel = args[1]
 	}
