@@ -21,6 +21,14 @@ on:
 permissions:
   contents: read
 
+# Serialize runs so that pushing main + a tag simultaneously doesn't trigger
+# two parallel publishers racing to commit to dibbla-agents/skills (the loser
+# hits "cannot lock ref"). cancel-in-progress=false queues instead of
+# canceling — the second run is a cheap no-op via the SKIP=true path.
+concurrency:
+  group: publish-skill
+  cancel-in-progress: false
+
 jobs:
   publish-skill:
     runs-on: ubuntu-latest
