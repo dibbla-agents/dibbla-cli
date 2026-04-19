@@ -286,7 +286,7 @@ The CLI tar.gz's the deploy directory and excludes a hardcoded list: `.git/`, `n
 | **Usage** | `dibbla db connect <name> [--quiet | -q]` |
 | **Arguments** | `name` (required) — database name |
 | **Flags** | `--quiet`, `-q` — print only the connection string (scripting) |
-| **Output** | psql-compatible connection string via Dibbla database proxy (`db.dibbla.com`). Uses API token as password; TLS encrypted. |
+| **Output** | psql-compatible connection string via Dibbla database proxy. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` (`sslmode=require`), `api.dibbla.net` → `db.dibbla.net` (`sslmode=disable`, internal), `localhost`/`127.0.0.1` → `sslmode=disable`. Override with `DIBBLA_DB_HOST`, `DIBBLA_DB_PORT`, `DIBBLA_DB_SSLMODE`. Uses API token as password. |
 
 ### TLS for application database clients
 

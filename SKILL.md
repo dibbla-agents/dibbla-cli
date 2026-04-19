@@ -167,7 +167,7 @@ Restores a database from a dump file.
 
 #### `db connect`
 
-Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy (`db.dibbla.com`). Uses your current API token as the password; the connection is authenticated and encrypted via TLS.
+Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` with `sslmode=require`; `api.dibbla.net` (internal) → `db.dibbla.net` with `sslmode=disable`; `localhost` / `127.0.0.1` also use `sslmode=disable`. Override with `DIBBLA_DB_HOST` / `DIBBLA_DB_PORT` / `DIBBLA_DB_SSLMODE`. Uses your current API token as the password.
 
 -   **Usage:** `dibbla db connect <name> [--quiet | -q]`
 -   **Arguments:**

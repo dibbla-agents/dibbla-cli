@@ -2,8 +2,11 @@ package deploy
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/db"
@@ -61,10 +64,14 @@ var dbConnectCmd = &cobra.Command{
 	Use:   "connect <name>",
 	Short: "Print the connection string for a database",
 	Long: `Prints a psql-compatible connection string for connecting to a database
-via the Dibbla database proxy (db.dibbla.com).
+via the Dibbla database proxy.
 
-Uses your current API token as the password. The connection is
-authenticated and encrypted via TLS.
+The proxy host and TLS mode are derived from DIBBLA_API_URL:
+  api.dibbla.com  → db.dibbla.com  (sslmode=require)
+  api.dibbla.net  → db.dibbla.net  (sslmode=disable, internal)
+Override with DIBBLA_DB_HOST / DIBBLA_DB_PORT / DIBBLA_DB_SSLMODE.
+
+Uses your current API token as the password.
 
 Examples:
   dibbla db connect myapp
@@ -280,7 +287,8 @@ func runDbConnect(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	requireToken(cfg)
 
-	connStr := fmt.Sprintf("postgres://dibbla:%s@db.dibbla.com:30432/%s?sslmode=require", cfg.APIToken, name)
+	host, port, sslmode := dbProxyEndpoint(cfg.APIURL, os.Getenv)
+	connStr := fmt.Sprintf("postgres://dibbla:%s@%s:%s/%s?sslmode=%s", cfg.APIToken, host, port, name, sslmode)
 
 	if dbConnectQuiet {
 		fmt.Print(connStr)
@@ -296,4 +304,91 @@ func runDbConnect(cmd *cobra.Command, args []string) {
 	fmt.Println()
 	fmt.Println("Or export as an environment variable:")
 	fmt.Printf("  export DATABASE_URL=$(dibbla db connect %s -q)\n", name)
+}
+
+// dbProxyEndpoint derives the database proxy host, port, and sslmode from the
+// API URL, with env-var overrides. `getenv` takes a lookup function (normally
+// os.Getenv) so the helper is unit-testable.
+//
+// Derivation rules:
+//   - host: parse apiURL; if the hostname begins with "api.", swap that label
+//     for "db." (api.dibbla.com → db.dibbla.com, api.dibbla.net → db.dibbla.net).
+//     Otherwise fall back to "db.dibbla.com".
+//   - port: 30432.
+//   - sslmode: "disable" for known-internal hosts (api.dibbla.net, localhost,
+//     127.0.0.1, ::1, hostnames ending in ".local"); "require" elsewhere.
+//
+// Any of the three can be overridden via DIBBLA_DB_HOST / DIBBLA_DB_PORT /
+// DIBBLA_DB_SSLMODE.
+func dbProxyEndpoint(apiURL string, getenv func(string) string) (host, port, sslmode string) {
+	host, sslmode = deriveDBHostAndSSLMode(apiURL)
+	port = "30432"
+
+	if v := getenv("DIBBLA_DB_HOST"); v != "" {
+		host = v
+	}
+	if v := getenv("DIBBLA_DB_PORT"); v != "" {
+		port = v
+	}
+	if v := getenv("DIBBLA_DB_SSLMODE"); v != "" {
+		sslmode = v
+	}
+	return host, port, sslmode
+}
+
+func deriveDBHostAndSSLMode(apiURL string) (host, sslmode string) {
+	const fallbackHost = "db.dibbla.com"
+
+	apiHost := parseAPIHost(apiURL)
+	if apiHost == "" {
+		return fallbackHost, "require"
+	}
+
+	switch {
+	case strings.HasPrefix(apiHost, "api."):
+		host = "db." + strings.TrimPrefix(apiHost, "api.")
+	default:
+		host = fallbackHost
+	}
+
+	if isInternalAPIHost(apiHost) {
+		sslmode = "disable"
+	} else {
+		sslmode = "require"
+	}
+	return host, sslmode
+}
+
+// parseAPIHost extracts the hostname from an API URL. Accepts bare hostnames
+// ("api.dibbla.net") as well as full URLs ("https://api.dibbla.net").
+func parseAPIHost(apiURL string) string {
+	s := strings.TrimSpace(apiURL)
+	if s == "" {
+		return ""
+	}
+	if !strings.Contains(s, "://") {
+		s = "https://" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+func isInternalAPIHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	switch host {
+	case "api.dibbla.net", "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	if strings.HasSuffix(host, ".local") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
 }
