@@ -243,6 +243,36 @@ The `deploy` command deploys a project to the Dibbla platform.
     -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
 -   **Example:** `dibbla deploy ./my-app --force` — **Rolling update:** `dibbla deploy --update` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
+### `skills`
+
+The `skills` command installs the skill files that teach AI coding agents (Claude Code, Cursor, Gemini CLI, Opencode, Codex, Copilot, Windsurf, Aider, etc.) how to use the Dibbla CLI. The skill content is embedded in the binary via `//go:embed`, so no network is required and the skill version is always locked to the CLI version.
+
+#### `skills list`
+
+Lists skills bundled with this `dibbla` version.
+
+-   **Usage:** `dibbla skills list`
+-   **Output:** A table with skill id and description (currently just `dibbla`).
+-   **Example:** `dibbla skills list`
+
+#### `skills install`
+
+Writes the skill files into the current project (or `$HOME` with `--user`) plus `AGENTS.md` / `GEMINI.md` pointer blocks so other coding agents pick it up.
+
+-   **Usage:** `dibbla skills install <id>`
+-   **Arguments:**
+    -   `id` (required): Skill id from `dibbla skills list` (currently only `dibbla`).
+-   **Flags:**
+    -   `--user`: Install into `$HOME` instead of the current working directory (machine-wide coverage).
+    -   `--force`: Overwrite skill files that have been edited locally. Only the embedded filenames are touched; user-added files in `.claude/skills/<id>/` are always preserved.
+    -   `--no-agents`: Skip writing `AGENTS.md` and `GEMINI.md` at the target root (Claude Code only).
+-   **Writes:**
+    -   `<root>/.claude/skills/<id>/{SKILL.md,examples.md,guardrails.md,reference.md}` — Claude Code's native skill path.
+    -   `<root>/AGENTS.md` — marker-delimited pointer block (2026 open standard; read by Cursor, Opencode, Codex, Copilot, Windsurf, Aider, Zed, Warp, RooCode).
+    -   `<root>/GEMINI.md` — same block, for Gemini CLI's default context filename.
+-   **Idempotent:** Re-running is safe. Identical bytes are a no-op (no mtime bump). CRLF vs LF line endings in `AGENTS.md` / `GEMINI.md` are preserved.
+-   **Example:** `dibbla skills install dibbla` — **Machine-wide:** `dibbla skills install dibbla --user` — **Claude Code only:** `dibbla skills install dibbla --no-agents`
+
 ## Pre-deploy guardrails
 
 Before calling `dibbla deploy`, you MUST review the application code and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.

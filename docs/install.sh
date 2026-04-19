@@ -180,6 +180,9 @@ verify() {
         info "  Get started:"
         printf "    dibbla create go-worker my-project\n"
         printf "\n"
+        info "  Tip: teach AI coding agents about the CLI by running in your project:"
+        printf "    dibbla skills install dibbla\n"
+        printf "\n"
         return
     fi
 
@@ -193,6 +196,9 @@ verify() {
     printf "    export PATH=\"%s:\$PATH\"\n" "$INSTALL_DIR"
     printf "\n"
     info "  New terminal windows will work automatically."
+    printf "\n"
+    info "  Tip: teach AI coding agents about the CLI by running in your project:"
+    printf "    dibbla skills install dibbla\n"
     printf "\n"
 }
 
