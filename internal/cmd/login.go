@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,12 +16,16 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/auth"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
+	"github.com/dibbla-agents/dibbla-cli/internal/env"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
 var (
-	loginAPIKey  string
-	loginBrowser bool
+	loginAPIKey     string
+	loginBrowser    bool
+	loginAPIURL     string
+	loginWriteEnv   bool
+	loginNoKeychain bool
 )
 
 var loginCmd = &cobra.Command{
@@ -28,9 +33,9 @@ var loginCmd = &cobra.Command{
 	Short: "Log in and store API credentials securely",
 	Long: `Authenticate with the Dibbla API and store your token in the OS credential store.
 
-By default uses https://api.dibbla.com. To use a different endpoint, pass it as an argument:
-  dibbla login api.dibbla.net
-  dibbla login https://api.dibbla.net
+By default uses https://api.dibbla.com. To target a different endpoint:
+  dibbla login api.dibbla.net                  # positional arg
+  dibbla login --api-url https://api.dibbla.net  # --api-url flag (mutually exclusive with positional)
 
 Three ways to provide the token:
   (interactive)        Run in a real terminal; pick "Log in with browser" or "Paste an API token".
@@ -39,7 +44,19 @@ Three ways to provide the token:
                        agentic tooling) as long as the machine has a browser.
   --api-key <token>    Provide a pre-generated token; works in any context.
 
-In CI, set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) instead of using login.`,
+Persistence:
+  (default)            Token + URL stored in the OS keyring (macOS Keychain, Windows
+                       Credential Manager, libsecret/pass on Linux).
+  --write-env          Also write DIBBLA_API_TOKEN + DIBBLA_API_URL to ./.env in the
+                       current directory (atomic, preserves existing keys/comments) and
+                       ensure .env is listed in ./.gitignore.
+  --no-keychain        Skip the OS keyring entirely — validate only. Useful on cloud
+                       VMs / SSH / Docker where libsecret/gnome-keyring isn't
+                       installed. Combine with --write-env to persist credentials
+                       to the project's .env instead.
+
+In CI, set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) in the shell environment or
+./.env — the CLI reads both, and login is not required.`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runLogin,
 }
@@ -47,10 +64,17 @@ In CI, set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) instead of using log
 func init() {
 	loginCmd.Flags().StringVar(&loginAPIKey, "api-key", "", "API token (if omitted, you will be prompted)")
 	loginCmd.Flags().BoolVar(&loginBrowser, "browser", false, "Use browser-based OAuth directly; works in non-TTY contexts (Claude Code, agentic tools)")
+	loginCmd.Flags().StringVar(&loginAPIURL, "api-url", "", "API endpoint URL (alternative to the positional arg; mutually exclusive with it)")
+	loginCmd.Flags().BoolVar(&loginWriteEnv, "write-env", false, "After validation, write DIBBLA_API_TOKEN + DIBBLA_API_URL to ./.env and ensure .env is in ./.gitignore")
+	loginCmd.Flags().BoolVar(&loginNoKeychain, "no-keychain", false, "Do not persist credentials to the OS keyring — useful on cloud VMs / SSH where keyring services are not installed")
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
-	baseURL := resolveLoginBaseURL(args)
+	baseURL, err := resolveLoginBaseURL(args)
+	if err != nil {
+		fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
+		os.Exit(1)
+	}
 	if baseURL == "" {
 		fmt.Printf("%s Error: Invalid API URL\n", platform.Icon("❌", "[X]"))
 		os.Exit(1)
@@ -91,20 +115,71 @@ func runLogin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if err := credential.SetToken(token); err != nil {
-		fmt.Printf("%s Error: Token validated but failed to store credentials: %v\n", platform.Icon("❌", "[X]"), err)
-		os.Exit(1)
-	}
-	if baseURL != config.DefaultAPIURL {
-		if err := credential.SetAPIURL(baseURL); err != nil {
-			fmt.Printf("%s Error: Token stored but failed to store API URL: %v\n", platform.Icon("❌", "[X]"), err)
+	if !loginNoKeychain {
+		if err := credential.SetToken(token); err != nil {
+			fmt.Printf("%s Error: Token validated but failed to store credentials: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
 		}
-	} else {
-		_ = credential.DeleteAPIURL() // clear any previously stored custom URL
+		if baseURL != config.DefaultAPIURL {
+			if err := credential.SetAPIURL(baseURL); err != nil {
+				fmt.Printf("%s Error: Token stored but failed to store API URL: %v\n", platform.Icon("❌", "[X]"), err)
+				os.Exit(1)
+			}
+		} else {
+			_ = credential.DeleteAPIURL() // clear any previously stored custom URL
+		}
 	}
 
-	fmt.Printf("%s Logged in to %s\n", platform.Icon("✅", "[OK]"), baseURL)
+	if loginWriteEnv {
+		if err := writeEnvAndGitignore(token, baseURL); err != nil {
+			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
+			os.Exit(1)
+		}
+	}
+
+	switch {
+	case loginNoKeychain && loginWriteEnv:
+		fmt.Printf("%s Validated %s (keychain skipped, credentials in .env)\n", platform.Icon("✅", "[OK]"), baseURL)
+	case loginNoKeychain:
+		fmt.Printf("%s Validated %s (keychain skipped — re-run with --write-env to persist, or re-run without --no-keychain)\n", platform.Icon("✅", "[OK]"), baseURL)
+	case loginWriteEnv:
+		fmt.Printf("%s Logged in to %s (credentials also written to .env)\n", platform.Icon("✅", "[OK]"), baseURL)
+	default:
+		fmt.Printf("%s Logged in to %s\n", platform.Icon("✅", "[OK]"), baseURL)
+	}
+}
+
+// writeEnvAndGitignore persists DIBBLA_API_TOKEN + DIBBLA_API_URL into
+// ./.env and ensures ./.gitignore lists .env. A failure to patch .gitignore
+// is warned about but does not fail the command — the .env is already
+// safely written and the command's primary job (materializing credentials)
+// has succeeded.
+func writeEnvAndGitignore(token, baseURL string) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	envPath := filepath.Join(wd, ".env")
+	gitignorePath := filepath.Join(wd, ".gitignore")
+
+	written, err := env.MergeEnvFile(envPath, map[string]string{
+		"DIBBLA_API_TOKEN": token,
+		"DIBBLA_API_URL":   baseURL,
+	})
+	if err != nil {
+		return fmt.Errorf("write %s: %w", envPath, err)
+	}
+	fmt.Printf("%s Wrote %s to %s\n", platform.Icon("✅", "[OK]"), strings.Join(written, ", "), envPath)
+
+	modified, gerr := env.EnsureGitignoreEntry(gitignorePath)
+	if gerr != nil {
+		fmt.Printf("%s Warning: failed to update %s: %v\n", platform.Icon("⚠️", "[!]"), gitignorePath, gerr)
+		return nil
+	}
+	if modified {
+		fmt.Printf("%s Added .env to %s\n", platform.Icon("✅", "[OK]"), gitignorePath)
+	}
+	return nil
 }
 
 // acquireToken presents the user with a choice of login methods and returns an API token.
@@ -196,7 +271,7 @@ func browserLogin(apiBaseURL string) (string, error) {
 }
 
 // resolveLoginBaseURL picks the API URL to validate against, in order:
-//   1. The positional arg (explicit; wins over everything).
+//   1. --api-url flag OR positional arg (explicit; mutually exclusive — error if both).
 //   2. DIBBLA_API_URL env var.
 //   3. DIBBLA_AUTH_SERVICE_URL env var (the name used by the dibbla-tasks
 //      steprunner when injecting env into subprocesses — ensures `dibbla
@@ -206,17 +281,28 @@ func browserLogin(apiBaseURL string) (string, error) {
 //
 // The keyring URL is intentionally NOT consulted here — a login command's
 // purpose is to set that value, so reading it back would be circular.
-func resolveLoginBaseURL(args []string) string {
+func resolveLoginBaseURL(args []string) (string, error) {
+	flagURL := strings.TrimSpace(loginAPIURL)
+	var posURL string
 	if len(args) > 0 {
-		return normalizeAPIURL(strings.TrimSpace(args[0]))
+		posURL = strings.TrimSpace(args[0])
+	}
+	if flagURL != "" && posURL != "" {
+		return "", fmt.Errorf("cannot specify both positional api_url and --api-url flag")
+	}
+	if flagURL != "" {
+		return normalizeAPIURL(flagURL), nil
+	}
+	if posURL != "" {
+		return normalizeAPIURL(posURL), nil
 	}
 	if u := strings.TrimSpace(os.Getenv("DIBBLA_API_URL")); u != "" {
-		return normalizeAPIURL(u)
+		return normalizeAPIURL(u), nil
 	}
 	if u := strings.TrimSpace(os.Getenv("DIBBLA_AUTH_SERVICE_URL")); u != "" {
-		return normalizeAPIURL(u)
+		return normalizeAPIURL(u), nil
 	}
-	return config.DefaultAPIURL
+	return config.DefaultAPIURL, nil
 }
 
 // normalizeAPIURL returns a full https URL. Accepts "api.dibbla.net" or "https://api.dibbla.net".

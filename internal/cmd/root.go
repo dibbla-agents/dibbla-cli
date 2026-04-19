@@ -9,6 +9,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -53,8 +54,16 @@ func init() {
 	template.Register(rootCmd)
 }
 
-// Execute runs the root command
+// Execute runs the root command.
+//
+// We load ./.env once here, before dispatching any subcommand, so that env
+// vars like DIBBLA_API_TOKEN and DIBBLA_API_URL are visible to every command
+// via os.Getenv — including dibbla login, which otherwise wouldn't see them.
+// godotenv.Load() does not overwrite vars already present in the shell env, so
+// explicit shell exports still win over .env. Centralizing it here avoids
+// having each command remember to call godotenv.Load() individually.
 func Execute() error {
+	_ = godotenv.Load()
 	ch := checkInBackground(Version)
 	err := rootCmd.Execute()
 	if ch != nil {

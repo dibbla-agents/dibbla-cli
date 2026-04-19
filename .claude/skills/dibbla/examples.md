@@ -44,6 +44,16 @@ export DIBBLA_API_TOKEN=ak_...
 export DIBBLA_API_URL=https://api.dibbla.net
 dibbla deploy .          # reads env vars directly; no login needed
 
+# Cloud VM / SSH / Docker (no keyring service installed)
+# Validates the token, writes credentials to ./.env, patches .gitignore,
+# does NOT touch the OS keyring (libsecret/gnome-keyring/pass may not exist).
+# Requires CLI >= v1.2.4.
+dibbla login --api-key=ak_... --api-url=https://api.dibbla.net --write-env --no-keychain
+
+# Afterwards, every dibbla command in that directory reads credentials from .env:
+dibbla deploy .
+dibbla apps list
+
 # Log out (clears keyring)
 dibbla logout
 ```
@@ -132,6 +142,19 @@ dibbla deploy --alias my-app --require-login
 dibbla deploy --alias my-app --require-login --access-policy invite_only
 dibbla deploy --alias my-app --require-login --google-scopes https://www.googleapis.com/auth/drive.readonly
 ```
+
+### Deploy troubleshooting
+
+#### Cloudflare 524 / "timeout occurred" during deploy
+
+`dibbla deploy` holds a single HTTP connection to the backend while the container image is built. Builds that take longer than ~100 seconds (common for Next.js, Rails, or large monorepos) may return a Cloudflare 524 on the client side **even though the backend build is still running and often succeeds.** A 524 is not necessarily a failure.
+
+Recovery:
+
+1. Wait 2–5 minutes for the backend build to finish.
+2. Run `dibbla apps list` and look for the alias.
+3. If it appears with `running` status, the deploy succeeded — you are done.
+4. If the alias does not appear after ~10 minutes, retry with `dibbla deploy --update` (rolling, zero downtime if the previous attempt did quietly succeed). Avoid `--force`, which causes downtime if the deploy actually worked.
 
 ---
 
@@ -445,8 +468,11 @@ fi
 ### Full setup: app + database + secrets
 
 ```bash
-# 1. Create the database (scoped to the deployment — auto-creates DATABASE_URL secret)
-dibbla db create my-app-db --deployment my-app
+# 1. Create the database (scoped to the deployment).
+#    When --deployment is set, the auto-created secret is named
+#    DATABASE_URL_<UPPERCASED_NAME>, e.g. DATABASE_URL_MY_APP_DB here.
+#    Without --deployment it is named DATABASE_URL.
+dibbla db create my_app_db --deployment my-app
 
 # 2. Set additional secrets
 dibbla secrets set API_KEY "sk-xxx"

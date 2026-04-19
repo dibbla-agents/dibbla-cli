@@ -11,11 +11,23 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla login [api_url]` |
-| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.dibbla.net` or `https://api.dibbla.net`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. |
+| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.dibbla.net` or `https://api.dibbla.net`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. Both env names are read from `./.env` (CWD) as well as the shell environment. |
 | **Flags** | `--browser` — skip the interactive menu; go directly to browser OAuth. Works in non-TTY contexts (Claude Code `!` prefix, agent shells) because the flow uses a localhost callback, not stdin. |
 |  | `--api-key <token>` — pass a pre-generated token; works in any context |
+|  | `--api-url <url>` — explicit API endpoint URL (alternative to the positional arg; **mutually exclusive** with it — specifying both is an error). Useful in long command lines like yaml steps where positional args are easy to miss. |
+|  | `--write-env` — after successful validation, write `DIBBLA_API_TOKEN` + `DIBBLA_API_URL` to `./.env` in the current working directory and ensure `.env` is listed in `./.gitignore`. Writes are atomic (tmp-file → rename) and merge in place — existing keys and comments are preserved; only the two DIBBLA keys are replaced. Unix file perms are 0600. Requires CLI ≥ v1.2.4. |
+|  | `--no-keychain` — skip the OS keyring persist step. Token is validated against the API but not saved to macOS Keychain / Windows Credential Manager / libsecret. Intended for cloud VMs / SSH / Docker where keyring services aren't installed. Combine with `--write-env` to persist credentials to `./.env` instead of the keychain. Requires CLI ≥ v1.2.4. |
 | **Interactive** | Real TTY only: picker for "Log in with browser" or "Paste an API token" |
-| **Note** | In CI, set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) instead of running login. |
+| **Note** | In CI or sandbox sessions, set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) in the shell environment or `./.env` — the CLI reads both, and `login` is not required. Use `DIBBLA_API_URL` as the canonical name; `DIBBLA_AUTH_SERVICE_URL` is an internal compat alias. |
+
+**Canonical flag combinations:**
+
+| Context | Command |
+|---|---|
+| Laptop (keychain only, default) | `dibbla login` (interactive) or `dibbla login --browser` |
+| Laptop with project `.env` as well | `dibbla login --browser --write-env` or `dibbla login --api-key=<t> --write-env` |
+| Cloud VM / SSH / Docker (no keyring) | `dibbla login --api-key=<t> --api-url=<url> --write-env --no-keychain` |
+| Bootstrap yaml step (agent-invoked) | `dibbla login --api-key=$DIBBLA_API_TOKEN --api-url=$DIBBLA_AUTH_SERVICE_URL --write-env --no-keychain` |
 
 ### logout
 
@@ -193,8 +205,10 @@ The CLI tar.gz's the deploy directory and excludes a hardcoded list: `.git/`, `n
 | **Usage** | `dibbla db create [name]` or `dibbla db create --name <name>` |
 | **Arguments** | `name` (optional as position) — database name |
 | **Flags** | `--name` — database name (alternative to argument) |
-| | `--deployment <alias>` — scope the database and its `DATABASE_URL` secret to a specific deployment (omit for global) |
+| | `--deployment <alias>` — scope the database and the auto-created secret to a specific deployment (omit for global) |
 | **Rule** | Name required via argument or `--name` |
+| **Name rules** | Lowercase letters, digits, and underscores only; must start with a letter; max 63 chars. Pattern: `^[a-z][a-z0-9_]{0,62}$`. Hyphens and uppercase are rejected. |
+| **Secret name** | Without `--deployment` the auto-created secret is `DATABASE_URL`. With `--deployment` it is `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `DATABASE_URL_NEXTJS_TODO_DB` for database `nextjs_todo_db`). App code must read the scoped name, not a plain `DATABASE_URL`. |
 
 ### db delete
 
@@ -230,6 +244,57 @@ The CLI tar.gz's the deploy directory and excludes a hardcoded list: `.git/`, `n
 | **Arguments** | `name` (required) — database name |
 | **Flags** | `--quiet`, `-q` — print only the connection string (scripting) |
 | **Output** | psql-compatible connection string via Dibbla database proxy (`db.dibbla.com`). Uses API token as password; TLS encrypted. |
+
+### TLS for application database clients
+
+Dibbla's managed Postgres serves a **self-signed TLS certificate**. Every application client must either relax peer-cert verification or skip it entirely; the connection is still encrypted in transit. Server trust is enforced by network isolation — the database is only reachable from inside the deployment cluster — not by CA-rooted cert identity.
+
+The injected connection string (`DATABASE_URL` or `DATABASE_URL_<NAME>`) already carries an `sslmode` value. If your client reads `sslmode` from the URL *and* accepts explicit SSL options, the URL usually wins — a naive `ssl: { rejectUnauthorized: false }` is silently shadowed. The reliable fix is to **strip `sslmode` from the URL** before passing it to the client, then configure SSL explicitly.
+
+#### Node.js — `pg`
+
+```js
+import { Pool } from "pg";
+
+const raw =
+  process.env.DATABASE_URL ?? process.env.DATABASE_URL_MY_DB;
+
+const connectionString = raw
+  ?.replace(/([?&])sslmode=[^&]*(&|$)/gi, (_, p1, p2) => (p2 ? p1 : ""))
+  .replace(/\?$/, "");
+
+export const pool = new Pool({
+  connectionString,
+  ssl: { rejectUnauthorized: false },
+});
+```
+
+`ssl: { rejectUnauthorized: false }` alone is not enough — it is overridden by the URL's `sslmode`. Strip `sslmode` first.
+
+#### Python — `psycopg2` / `psycopg`
+
+```python
+import os
+import psycopg2
+
+conn = psycopg2.connect(
+    os.environ["DATABASE_URL"],
+    sslmode="require",   # encrypt channel
+    sslrootcert="",      # do not require CA verification
+)
+```
+
+`psycopg` v3 uses the same parameters.
+
+#### Prisma
+
+Append `?sslmode=no-verify` to the URL — a Prisma-specific extension (recent Prisma versions) that accepts self-signed certs without CA verification:
+
+```env
+DATABASE_URL="postgresql://user:pass@host:5432/db?sslmode=no-verify"
+```
+
+For older Prisma versions that don't recognise `no-verify`, use the `@prisma/adapter-pg` driver adapter and pass `ssl: { rejectUnauthorized: false }` on the underlying `pg` Pool — same pattern as the Node.js snippet above. See Prisma's self-signed-cert docs for version-specific guidance.
 
 ---
 
