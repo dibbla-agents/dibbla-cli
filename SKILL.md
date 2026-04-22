@@ -243,6 +243,30 @@ The `deploy` command deploys a project to the Dibbla platform.
     -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
 -   **Example:** `dibbla deploy ./my-app --force` — **Rolling update:** `dibbla deploy --update` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
+### `clone`
+
+Clones the Dibbla-managed git repo for a deployed app. Each `dibbla deploy` writes a commit to a platform-managed bare repo; `clone` lets you fetch that history locally so you (or a coding agent) can inspect exactly what was deployed, diff between deploys, or fork the code back to GitHub/GitLab.
+
+-   **Usage:** `dibbla clone <app>` or `dibbla clone <org>/<app>`
+-   **Arguments:**
+    -   `app` (required): The app alias. The `<org>/` prefix is accepted but optional — the org is derived from your token.
+-   **Flags:**
+    -   `--ref <sha>`: Commit SHA to check out after clone (default: latest on `main`).
+    -   `--into <dir>`: Destination directory (default: `./<app>`).
+-   **Authentication:** Reuses the token from `dibbla login` / `DIBBLA_API_TOKEN` — no separate clone credential. Internally the CLI shells out to `git -c http.extraHeader="Authorization: Bearer <token>" clone ...`, so the token never lands in `~/.git-credentials` or `.git/config`.
+-   **Push is rejected.** The platform rejects `git push` by design — these repos are append-only from deploys. If you want to share changes, add a GitHub/GitLab remote locally and push there.
+-   **Example:** `dibbla clone my-app` — **Pin commit:** `dibbla clone my-app --ref abc1234` — **Custom dir:** `dibbla clone my-app --into ./checkout`
+
+### Version control API (for scripting / agents)
+
+Three read-only endpoints expose the same data surfaced by the console's Version Control card. Authenticate with `Authorization: Bearer $DIBBLA_API_TOKEN`.
+
+-   `GET /api/deploy/deployments/<app>/vcs/info` — returns default branch, latest commit, clone URL, CLI command, and `running_sha` when the latest commit matches the Running deployment.
+-   `GET /api/deploy/deployments/<app>/vcs/commits?limit=<n>&before=<sha>` — paginated commit list (newest first). The `deploy_id` field (from the `Deploy-Id:` trailer) correlates commits with deployments.
+-   `GET /api/deploy/deployments/<app>/vcs/commits/<sha>` — commit detail with the file list at that tree.
+
+Prefer `dibbla clone` over shelling out to `git clone` by hand — it resolves the canonical clone URL via `/vcs/info`, so it keeps working if the git host moves.
+
 ## Pre-deploy guardrails
 
 Before calling `dibbla deploy`, you MUST review the application code and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
