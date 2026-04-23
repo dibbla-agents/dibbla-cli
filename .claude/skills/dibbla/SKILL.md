@@ -12,7 +12,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 | Area       | Commands |
 |------------|----------|
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
-| Deploy     | `deploy [path] [--alias name] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory |
+| Deploy     | `deploy [path] -m "<msg>" [--alias name] [--update] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory; `-m` becomes the VCS commit subject |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global or `-d <alias>`) |
@@ -38,11 +38,12 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 1. Check if the app already exists: `dibbla apps list`
 2. If it does **not** exist, deploy with all required environment variables included in the deploy command — there is no app to attach them to yet:
    ```bash
-   dibbla deploy . --alias my-app -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
+   dibbla deploy . --alias my-app -m "feat: initial deploy" \
+     -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
    ```
 3. If it **already** exists, use `--update` for a zero-downtime rolling update:
    ```bash
-   dibbla deploy . --alias my-app --update
+   dibbla deploy . --alias my-app -m "fix: resolve 500 on /search" --update
    ```
    To change env vars on an existing app, use `apps update` instead:
    ```bash
@@ -50,6 +51,7 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
    ```
 
 **Key rules:**
+- **Every `dibbla deploy` must include `-m "<message>"`.** The value becomes the git commit subject in the app's Dibbla-managed VCS history (and on the GitHub mirror, if configured). Treat it like a git commit: present-tense imperative, under ~72 chars, covering what changed and why — e.g. `-m "fix: handle null org in /api/me"`, `-m "feat: add nightly db backup workflow"`, `-m "chore: bump node to 20.14"`. For retries or mechanical redeploys, still say so explicitly: `-m "redeploy: retry after CF 524"`. Max 500 chars. Never run `dibbla deploy` without `-m`; a blank deploy history is a bug, not a default.
 - `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.

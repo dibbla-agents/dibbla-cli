@@ -234,6 +234,7 @@ The `deploy` command deploys a project to the Dibbla platform.
     -   `path` (optional): The path to the project to deploy. Defaults to the current directory.
 -   **Flags:**
     -   `--alias`, `-a`: Custom alias name (default: directory name).
+    -   `--message`, `-m`: **Required for agents.** Deploy message used as the VCS commit subject in the app's Dibbla-managed git history (and on the GitHub mirror, if configured). Treat it like a git commit subject: present-tense imperative, under ~72 chars, covering what changed and why. Max 500 chars. Examples: `-m "fix: handle null org in /api/me"`, `-m "feat: add nightly db backup workflow"`, `-m "chore: bump node to 20.14"`. For retries/mechanical redeploys still say so: `-m "redeploy: retry after CF 524"`. Never omit `-m` — a blank deploy history is a bug, not a default.
     -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists (causes downtime).
     -   `--update`, `-u`: Rolling update of existing deployment (zero downtime). Mutually exclusive with `--force`.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style).
@@ -241,7 +242,7 @@ The `deploy` command deploys a project to the Dibbla platform.
     -   `--memory <value>`: Memory request (e.g. `512Mi`).
     -   `--port <value>`: Container port (e.g. `3000`).
     -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
--   **Example:** `dibbla deploy ./my-app --force` — **Rolling update:** `dibbla deploy --update` — **With options:** `dibbla deploy --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
+-   **Example:** `dibbla deploy ./my-app -m "feat: initial deploy" --force` — **Rolling update:** `dibbla deploy -m "fix: resolve 500 on /search" --update` — **With options:** `dibbla deploy -m "feat: add healthcheck" --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
 
 ### `clone`
 

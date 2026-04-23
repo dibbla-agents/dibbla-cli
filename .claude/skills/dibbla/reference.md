@@ -40,6 +40,7 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 | **Usage** | `dibbla deploy [path]` |
 | **Arguments** | `path` (optional) — directory to deploy; default `.` |
 | **Flags** | `--alias`, `-a` — custom alias name (default: directory name) |
+| | `--message`, `-m` — Deploy message, used verbatim as the VCS commit subject (local bare repo and GitHub mirror). Max 500 chars; API returns 400 if exceeded. **Agents must always pass this** — treat it like a git commit subject (imperative mood, ≤72 chars). |
 || | `--force`, `-f` — force redeploy if alias exists (causes downtime) |
 | | `--update`, `-u` — rolling update of existing deployment (zero downtime) |
 | | `--env`, `-e` — env var `KEY=value` (repeatable) |
