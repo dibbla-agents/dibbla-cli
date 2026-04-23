@@ -25,6 +25,7 @@ var (
 	deployRequireLogin bool
 	deployAccessPolicy string
 	deployGoogleScopes []string
+	deployMessage      string
 )
 
 var deployCmd = &cobra.Command{
@@ -46,6 +47,7 @@ Examples:
   dibbla deploy              # Deploy current directory
   dibbla deploy ./myapp      # Deploy specific directory
   dibbla deploy --alias my-api  # Deploy with custom alias name
+  dibbla deploy -m "feat: add /healthz endpoint"   # Set VCS commit subject
   dibbla deploy --update     # Rolling update (zero downtime)
   dibbla deploy --force      # Force redeploy existing alias (causes downtime)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
@@ -67,6 +69,7 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployRequireLogin, "require-login", false, "Require authentication to access the app")
 	deployCmd.Flags().StringVar(&deployAccessPolicy, "access-policy", "", "Access policy: all_members or invite_only")
 	deployCmd.Flags().StringArrayVar(&deployGoogleScopes, "google-scopes", nil, "Google OAuth scope URL (repeatable)")
+	deployCmd.Flags().StringVarP(&deployMessage, "message", "m", "", "Deploy message, used as the VCS commit subject (e.g. \"fix: handle null user\")")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 }
 
@@ -123,6 +126,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		RequireLogin: deployRequireLogin,
 		AccessPolicy: deployAccessPolicy,
 		GoogleScopes: deployGoogleScopes,
+		Message:      deployMessage,
 	}
 
 	action := "Deploying"
