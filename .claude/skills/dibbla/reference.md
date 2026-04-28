@@ -175,6 +175,50 @@ Deploy a containerized app from a directory. App URL: `https://<alias>.dibbla.co
 
 The CLI tar.gz's the deploy directory and excludes a hardcoded list: `.git/`, `node_modules/`, `.env.production`, SSH keys (`.pem`, `.key`, `*_rsa`, `*_dsa`), `.DS_Store`, etc. `.dockerignore` is not read by the CLI (but your templates can still have one — it's honored by the backend's Docker build).
 
+### `.dibblaignore` (server-side VCS filter)
+
+When the deploy archive arrives at the backend, a second filter decides which files get committed to Dibbla-managed version control (the bare repo and optional GitHub mirror tied to the app). **This filter only affects VCS history — it does not change what the Docker build sees.** Files excluded from VCS still ship in the build context.
+
+| Item | Details |
+|------|---------|
+| **Location** | `.dibblaignore` at the root of the deploy directory (same level as `Dockerfile`). The file itself is committed to VCS — keep it under version control. |
+| **Syntax** | gitignore-style globs (powered by `sabhiram/go-gitignore`). Supports `**`, directory suffixes (`build/`), negation, etc. Example: `build/`, `**/*.log`, `coverage/`, `*.tmp`. |
+| **Platform denylist (always-on)** | `node_modules/`, `dist/`, `.venv/`, `.git/`, `.env`, `.env.*`, `*.pem`, `*.key`. These are **always** filtered from VCS regardless of `.dibblaignore`, and each hit produces a warning returned in the deploy response under `vcs_filtered`. The CLI surfaces these as a recommendation to add the path to `.dibblaignore` to silence the warning. |
+| **Suppressing warnings** | Add a path that hits the platform denylist (e.g. `.env`) to `.dibblaignore` and the warning goes away — same file is still excluded from VCS, but silently. User-ignored entries are checked **before** the platform denylist, so `.dibblaignore` always wins on the warning channel. |
+| **Hard rejections** | The server enforces per-file and per-commit size caps. If any file exceeds the per-file cap, or the kept set exceeds the total cap, the **entire deploy fails** with `ErrCodeVCSFiltered` (HTTP 400) and a message naming the offending path. Limits are server-configured (`GitMaxFileSize`, `GitMaxCommitDelta`); typical cause is committing a generated artifact, dataset, or build output. Fix by adding the path to `.dibblaignore`. |
+| **Symlinks / non-regular files** | Skipped silently. Only regular files are committed. |
+| **Disabled mode** | If the platform's `VCSEnabled` flag is off for an app/org, the filter doesn't run and `.dibblaignore` has no effect. The deploy still succeeds either way. |
+| **What deploy returns** | `DeployResponse.vcs_commit` — SHA written for this deploy (empty if tree unchanged or VCS disabled); `DeployResponse.vcs_filtered` — paths the platform denylist excluded; `DeployResponse.vcs_error` — non-empty if the deploy went live but the VCS commit step failed (best-effort side channel). |
+
+**Typical contents:**
+
+```gitignore
+# Build outputs
+build/
+dist/
+*.tsbuildinfo
+
+# Test/coverage artifacts
+coverage/
+.nyc_output/
+
+# Local env (also matched by platform denylist — listing here silences the warning)
+.env
+.env.local
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Large binaries / datasets the Docker build needs but shouldn't be in VCS
+data/*.parquet
+fixtures/*.bin
+```
+
+**Rule of thumb:** if it's generated, secret, or large, put it in `.dibblaignore`. If the deploy response surfaces a `vcs_filtered` entry on every deploy, add it to `.dibblaignore` to clean up the log.
+
 ### Flags
 
 | Item | Details |
