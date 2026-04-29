@@ -94,6 +94,27 @@ dibbla apps update my-app --cpu 500m --memory 512Mi --port 3000
 dibbla apps delete my-app
 ```
 
+### View Logs
+
+```bash
+dibbla logs my-app                            # Last 15 minutes (default), then exit
+dibbla logs my-app --since 24h                # Last 24 hours
+dibbla logs my-app --since 10m -f             # Backfill 10 min, then stream new lines
+dibbla logs my-app -n 200                     # Last 200 lines
+dibbla logs my-app --grep "timeout"           # Server-side regex filter
+dibbla logs my-app --json | jq .              # Raw NDJSON for tooling
+```
+
+| Flag | Description |
+|------|-------------|
+| `--since <duration>` | Window to fetch (Go duration; default `15m`, server cap `24h`) |
+| `-f`, `--follow` | Stream new log lines as they arrive |
+| `-n`, `--tail <N>` | Show only the last N lines (instead of the `--since` window) |
+| `--grep <regex>` | Server-side regex line filter |
+| `--limit <N>` | Cap lines fetched in range mode |
+| `--json` | Emit raw NDJSON instead of the formatted human output |
+| `--no-color` | Disable color (auto-disabled when stdout isn't a TTY) |
+
 ### Manage Databases
 
 ```bash
@@ -223,6 +244,7 @@ dibbla-cli/
 │   │   │   ├── apps.go      # Apps management
 │   │   │   ├── db.go        # Database management (list, create, delete, restore, dump)
 │   │   │   └── secrets.go   # Secrets management (list, set, get, delete)
+│   │   ├── logs/            # Per-app log streaming command (`dibbla logs <app>`)
 │   │   └── wf/              # Workflow commands
 │   ├── apiclient/
 │   │   └── client.go        # HTTP API client + token validation
@@ -238,6 +260,8 @@ dibbla-cli/
 │   │   └── deploy.go        # Deploy API client + archive build
 │   ├── apps/
 │   │   └── apps.go          # Apps (deployments) API client
+│   ├── applogs/
+│   │   └── applogs.go       # Streaming client for the per-app /logs endpoint
 │   ├── secrets/
 │   │   └── secrets.go       # Secrets API client
 │   ├── platform/

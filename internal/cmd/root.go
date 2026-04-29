@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
@@ -52,6 +53,7 @@ func init() {
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
 	run.Register(rootCmd)
+	logs.Register(rootCmd)
 	template.Register(rootCmd)
 	skills.Register(rootCmd)
 }

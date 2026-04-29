@@ -106,6 +106,30 @@ Deletes a deployed application.
     -   `--yes`, `-y`: Skip the confirmation prompt.
 -   **Example:** `dibbla apps delete my-old-app -y`
 
+### `logs`
+
+Print logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes of logs and exits.
+
+-   **Usage:** `dibbla logs <app>`
+-   **Arguments:**
+    -   `app` (required): The alias of the app whose logs to fetch.
+-   **Flags:**
+    -   `--since <duration>`: Window to fetch (Go duration; default `15m`, server cap `24h`).
+    -   `-f`, `--follow`: Stream new log lines as they arrive (after the `--since` backfill, if any).
+    -   `-n`, `--tail <N>`: Show only the last N lines instead of the `--since` window.
+    -   `--grep <regex>`: Server-side regex line filter (LogQL `|~`).
+    -   `--limit <N>`: Cap lines fetched in range mode (server caps the value).
+    -   `--json`: Emit raw NDJSON (one Loki entry per line) instead of the human format.
+    -   `--no-color`: Disable color in the human format.
+-   **Authorization:** Returns 404 for apps outside your organization. Returns 503 if the platform isn't configured for logs (`LOKI_URL` unset on the server).
+-   **Examples:**
+    -   `dibbla logs expense-reporter`
+    -   `dibbla logs expense-reporter --since 24h`
+    -   `dibbla logs expense-reporter --since 10m -f`
+    -   `dibbla logs expense-reporter -n 200`
+    -   `dibbla logs expense-reporter --grep "timeout"`
+    -   `dibbla logs expense-reporter --json | jq .`
+
 ### `db`
 
 The `db` command manages managed databases on the Dibbla platform.
