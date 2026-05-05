@@ -104,6 +104,14 @@ edges:
 
 Before authoring anything non-trivial, run `dibbla fn list` to see what functions exist and `dibbla wf get <existing> -o yaml` on a similar workflow for shape — the function registry, not the YAML, is the source of truth. Pick the iteration loop that matches the change size: small tweak → patch HEAD with `nodes add`/`edges add`/`inputs set`/`tools add`; structural change → `wf get … -o yaml` → edit → `wf update -f`. Always `dibbla revisions create <wf>` before either; patches are not auto-snapshotted and `revisions restore` overwrites HEAD (it's not a checkout). For the complete model — node-type roles, the agent+tool pattern, all 13 validator errors and their fixes, execution/HTTP semantics, and the three canonical workflow shapes (transform, agent+tools, multi-stage pipeline) — see [workflows.md](workflows.md).
 
+**Workflow gotchas that bite once:**
+- **Pick `reasoning_agent_function` for new agents** — `reasoning_agent_with_thread` has been observed to silently return empty responses with current Claude models. Always wire `agent.error -> api_response.error` so silent failures surface.
+- **Production callers must use the gateway URL**, not the URL `wf api-docs` prints. Rewrite host: `https://workflow-server.dibbla.net/api/execute/<name>/<urlid>` (shown by `api-docs`, internal only) → `https://api.dibbla.net/api/wf/execute/<name>/<urlid>` (gateway, accepts `Authorization: Bearer ak_<workflow-api-key>`).
+- **After many `wf update` iterations, recreate the workflow before shipping** — the `<urlid>` in the gateway URL can go silently stale (calls hang for ~5 minutes with no error). `wf delete --yes && wf create` gives a fresh id.
+- **Node ids collapse to the function name on `wf create`.** Don't pick custom ids; refer to tools by function name.
+- **Result cache is 1 hour** on `reasoning_agent_function`. During iterative testing, vary the input or use a `*_no_cache` variant.
+- **Always wrap workflow fetches in an `AbortController` with a 30–60s timeout** and log before/after — Node's default 5-minute timeout makes failures look like hangs.
+
 **Non-TTY / agentic invocation:**
 - When running from inside Claude Code's `!` prefix, an agent shell, CI with a browser, or any other non-TTY context, use `dibbla login --browser` instead of bare `dibbla login`. The interactive flow needs stdin for the survey picker; `--browser` skips that and goes straight to browser-based OAuth via a localhost callback.
 - For true headless (SSH sessions, cloud VMs, CI runners with no local browser), use `dibbla login --api-key <token>` or set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) env vars — the CLI reads env vars in CI automatically.

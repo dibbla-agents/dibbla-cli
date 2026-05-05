@@ -177,6 +177,31 @@ The most-used pattern in production: one `api` input, one or more `function`-as-
 
 Mid-flight: `dibbla tools add <workflow> <agent_id> <tool_id>` and `dibbla tools remove <workflow> <agent_id> <tool_id>` patch HEAD without rewriting the whole YAML.
 
+### Picking an agent function — what works, what to avoid
+
+Several agent-shaped functions exist in the registry. As of this skill's last update, only one is unconditionally safe for new work:
+
+- **`reasoning_agent_function`** (preferred) — the workhorse. `accepts_tools`. Takes `system_message`, `prompt_message`, `model`, `tools`. Use this unless you have a specific reason not to.
+- **`reasoning_agent_with_thread`** — adds thread-id-based history. **Has been observed to silently return `{response: ""}` with claude-haiku-4-5 and claude-sonnet-4-5** even with no tools and no thread_id, because most failure paths in the function populate the `error` output instead of `response`. Don't use it for new workflows until you've verified it works in your deployment with the model you want; if you need history, manage it client-side and prepend it to the `prompt_message`.
+- **`reasoning_with_messages`** — takes `chat_messages`, `model`, `tools` only. **No `system_message` input** — you can't combine a system prompt and conversation history without smuggling the system instructions into the first message. Use sparingly.
+
+**Always wire the agent's `error` output to something** — typically into an `api_response` field, or into a downstream handlebars node that surfaces it. Agents that fail silently look identical to agents that succeed with an empty answer, and the result is hours of debugging blind:
+
+```yaml
+- id: api_response
+  type: api_response
+  linked_to: api_input
+  inputs: [response, error]      # ← surface BOTH
+
+edges:
+  - agent.response -> api_response.response
+  - agent.error    -> api_response.error
+```
+
+### Cache TTL — vary your input or fail your tests
+
+`reasoning_agent_function` has a **1-hour result cache** keyed by inputs. Re-running `wf execute` with the same JSON body returns the cached result, including a cached *empty* result from a transient failure — easy to mistake for a persistent bug. During development, either vary the input each iteration (append a timestamp), or pick a `*_no_cache` function variant if the registry exposes one. Production callers normally want the cache.
+
 ---
 
 ## 7. Inputs come from three places
@@ -325,6 +350,49 @@ Response shape: a JSON object **keyed by the input names declared on the `api_re
 
 Both ends pin to the workflow's HEAD revision unless you pass `--revision <id>`. The server returns a `runID` you can use against the WebSocket stream (`/api/wf/ws/run?run=<id>`) for live execution events; the CLI doesn't expose a follow-mode for this today.
 
+### Calling a workflow from production code (HTTP)
+
+There are **two execute paths**, and they accept different auth. This catches every team once.
+
+| Path | Used by | Auth it accepts | Stable? |
+|---|---|---|---|
+| `POST /api/wf/slim/workflows/<name>/execute` | The CLI's `wf execute` | User session JWT (browser/CLI login). **Not** `ak_<workflow-api-key>` Bearer tokens through the gateway. | Yes — auto-resolves the api node by name |
+| `POST /api/wf/execute/<name>/<urlid>` | Production callers using a workflow API key | `Authorization: Bearer ak_<workflow-api-key>` | The `<urlid>` can go stale (see footgun) — recreate the workflow if calls start hanging |
+
+For a Dibbla-deployed app calling its own workflow, use the second path with `ak_` Bearer auth. The first path won't accept that token through the public gateway.
+
+**Two URLs, one of which is wrong for production.** `dibbla wf api-docs <name>` shows the workflow-server's *direct* URL — `https://workflow-server.dibbla.net/api/execute/<name>/<urlid>` — which requires platform-internal auth and returns "Missing authentication headers" when called with an `ak_` token. To call from a deployed app, **rewrite the host to the public gateway**:
+
+| | URL |
+|---|---|
+| Shown by `wf api-docs` (internal — don't paste this into production code) | `https://workflow-server.dibbla.net/api/execute/<name>/<urlid>` |
+| What production code should use | `https://api.dibbla.net/api/wf/execute/<name>/<urlid>` |
+
+Same path tail, different host, plus the gateway's `/api/wf` prefix.
+
+**Always use a short timeout in callers.** Workflow calls behave like any external HTTP — they can hang. Node's undici defaults to a 5-minute headers timeout, and a stale `<urlid>` can hang silently for the full 5 minutes before throwing `UND_ERR_HEADERS_TIMEOUT`. Wrap every workflow fetch in an `AbortController` with 30–60s, log before and after, and surface failures fast:
+
+```javascript
+const ctrl = new AbortController();
+const t = setTimeout(() => ctrl.abort(), 60_000);
+console.log("[wf] calling", name);
+try {
+  const r = await fetch(`https://api.dibbla.net/api/wf/execute/${name}/${urlId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.WORKFLOW_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+    signal: ctrl.signal,
+  });
+  console.log("[wf] returned", r.status);
+  if (!r.ok) throw new Error(`workflow ${name} returned ${r.status}`);
+  return await r.json();
+} finally {
+  clearTimeout(t);
+}
+```
+
+If a production call to the gateway path silently hangs while `dibbla wf execute` against the same workflow works, **the `<urlid>` has gone stale** — see the footgun below; the fix is `wf delete --yes` + `wf create`. Don't chase auth/path/header issues first.
+
 ---
 
 ## 12. Revisions
@@ -425,3 +493,7 @@ Things that compile clean but bite at runtime, or that look right but aren't:
 - **Edge spaces are load-bearing.** `"a.x->b.y"` is `INVALID_EDGE_FORMAT`. Always `"a.x -> b.y"`.
 - **`accepts_tools` is invisible from the YAML.** A node with `tools: […]` but a function that lacks the `accepts_tools` registry tag will accept the syntax silently and then ignore the tools at runtime. Verify with `dibbla fn get`.
 - **Tool-connection edges are auto-generated.** Don't hand-author entries like `agent.tool-connection:foo -> tool.tool-connection:bar` in `edges:`; the slim YAML has no syntax for this and the converter fills it in from `tools: […]`.
+- **`<urlid>` can go silently stale after repeated `wf update`s.** After several swap-the-agent / add-and-remove-tool iterations, the gateway path `https://api.dibbla.net/api/wf/execute/<name>/<urlid>` can start hanging indefinitely with no error and no log entry, while `dibbla wf execute` against the same workflow keeps working (the CLI's slim path resolves the api node dynamically). The fix is `dibbla wf delete <name> --yes && dibbla wf create -f file.yaml` — the new workflow gets a fresh `<urlid>`. **Before shipping a workflow that's gone through many patch iterations, recreate it cleanly** so production callers get a stable id.
+- **Node IDs collapse to the function name on `wf create`.** If you write `id: garden_search` for a node with `function: call_http_api`, the server normalizes the node id to `call_http_api` on save. Two nodes that share the same function name will collide and one will be lost. **Don't pick custom ids — refer to a tool by its function name** in your system prompts and your `tools:` lists. Confirmed via the round-trip note in the workflow server's e2e tests: "After create -> GET round-trip, function node IDs are derived from function names."
+- **Result cache is 1 hour, including failed runs.** `reasoning_agent_function` caches by input — re-running `wf execute` with the same body returns the cached prior result. If a prior run silently failed and returned an empty response (see §6), the empty answer is cached for an hour and looks like a persistent bug. Vary the input or use a `*_no_cache` variant during development.
+- **Silent-empty agents.** If an agent's `error` output isn't wired to anything, a runtime failure shows up as a successful response with an empty `response` field. Always route `agent.error -> api_response.error` (or into a downstream node that surfaces it).
