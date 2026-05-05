@@ -467,6 +467,8 @@ Alias: `wf`. All workflow commands support these persistent flags:
 | `--quiet`, `-q` | Minimal output |
 | `--verbose`, `-v` | Show HTTP request/response details |
 
+> **What is a workflow?** A typed DAG of function calls authored in slim YAML. A *workflow* is a stable name; a *revision* is an immutable snapshot of its YAML. `HEAD` is the mutable working revision that every command below modifies unless `--revision` is passed. See [workflows.md](workflows.md) for the model, the YAML format, node-type roles, validator errors, and canonical shapes.
+
 ### workflows list
 
 | Item | Details |
@@ -512,6 +514,7 @@ Alias: `wf`. All workflow commands support these persistent flags:
 |------|---------|
 | **Usage** | `dibbla workflows validate --file <path>` or `-f <path>` |
 | **Flags** | `--file`, `-f` (required) — workflow definition to validate (not saved) |
+| **Behavior** | Pure validation — never persists. Safe to run repeatedly during authoring. Returns the list of validation rule violations (`UNSATISFIED_INPUT`, `UNKNOWN_FUNCTION`, etc. — see [workflows.md](workflows.md) §10). |
 
 ### workflows execute
 
@@ -521,7 +524,9 @@ Alias: `wf`. All workflow commands support these persistent flags:
 | **Arguments** | `name` (required) — workflow to execute |
 | **Flags** | `--data` — inline JSON data to send |
 | | `--file`, `-f` — JSON data file |
-| | `--node` — target a specific API node ID |
+| | `--node` — target a specific API node ID (only required when the workflow has multiple `api` nodes) |
+| **Body shape** | JSON object **keyed by the `inputs:` names declared on the target `api` node** (e.g. `{"question":"…"}` if the api node has `inputs: [question]`). |
+| **Response shape** | JSON object **keyed by the `inputs:` names declared on the linked `api_response` node** (those keys are filled by the edges flowing into it). |
 
 ### workflows url
 
@@ -544,6 +549,8 @@ Alias: `wf`. All workflow commands support these persistent flags:
 ---
 
 ## nodes
+
+> All `nodes` / `edges` / `inputs` / `tools` commands patch the workflow's HEAD revision. They do **not** auto-snapshot — pair risky patch sequences with `dibbla revisions create <workflow>` before and after for safe rollback.
 
 ### nodes add
 
@@ -647,6 +654,7 @@ Alias: `rev`.
 |------|---------|
 | **Usage** | `dibbla revisions restore <workflow> <revision_id>` |
 | **Arguments** | `workflow` (required), `revision_id` (required) |
+| **Behavior** | Makes `<revision_id>` the new HEAD by overwriting the current HEAD. **Not** a checkout — once HEAD is overwritten, the previous HEAD is lost unless it had been snapshotted. Always run `revisions create` first if the current HEAD is worth keeping. |
 
 ---
 

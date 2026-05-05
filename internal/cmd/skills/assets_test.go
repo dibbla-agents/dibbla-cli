@@ -11,7 +11,7 @@ func TestDibblaSkillFS_NotEmpty(t *testing.T) {
 		t.Fatalf("fs.Sub(%q): %v — did you run `go generate ./internal/cmd/skills/...`?", dibblaSkillRoot, err)
 	}
 
-	expected := []string{"SKILL.md", "examples.md", "guardrails.md", "reference.md"}
+	expected := []string{"SKILL.md", "examples.md", "guardrails.md", "platform.md", "reference.md", "workflows.md"}
 	for _, name := range expected {
 		data, err := fs.ReadFile(sub, name)
 		if err != nil {

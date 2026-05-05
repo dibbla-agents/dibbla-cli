@@ -1,7 +1,7 @@
 ---
 name: dibbla
-description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), install project templates (dibbla template list/install), install this skill into a project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage apps, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or template from a URL, install a starter template, install the dibbla skill into a project or home dir for Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts via `dibbla login --browser`), deploy, manage apps/databases/secrets, or work with workflows (nodes/edges/inputs/tools/revisions/functions).
-when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, auth integration, runtime log access, build-time vs runtime env vars (Vite/Next/CRA), or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "how do I read the logged-in user", "what headers does Dibbla inject", "why does my Postgres TLS connection fail", "how do I view logs / debug a 500", "why is my VITE_* env var undefined", or "what should be in .dibblaignore". Skill ships platform.md (Dockerfile contract, port-matching, runtime env, build-time-vs-runtime env, Postgres TLS, `X-User-*` auth headers, Google OAuth brokering, upload boundary, compatibility checklist) plus `dibbla logs <app>` reference for live debugging.
+description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), install project templates (dibbla template list/install), install this skill into a project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, manage apps/databases/secrets, and design/iterate workflows on the Dibbla platform. Use when the user wants to run a local task file or template from a URL, install a starter template, install the dibbla skill into a project or home dir for Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts via `dibbla login --browser`), deploy, manage apps/databases/secrets, or design and operate workflows — author a slim YAML workflow that wires an LLM agent to tools, validate it with `dibbla wf validate`, deploy it with `wf create`/`wf update`, iterate it via `nodes add`/`edges add`/`inputs set`/`tools add`, snapshot with `revisions create`, roll back with `revisions restore`, and execute via `wf execute` or the HTTP endpoint exposed by `wf api-docs`.
+when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, auth integration, runtime log access, build-time vs runtime env vars (Vite/Next/CRA), or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "how do I read the logged-in user", "what headers does Dibbla inject", "why does my Postgres TLS connection fail", "how do I view logs / debug a 500", "why is my VITE_* env var undefined", or "what should be in .dibblaignore". Also trigger on workflow design/authoring questions — e.g. "build a workflow that asks an LLM and calls a weather tool", "wire this tool to that agent", "what node types exist", "why does my workflow fail validation", "what's `UNSATISFIED_INPUT`", "snapshot the workflow before I edit it", "what functions are in the registry", "how do I call my workflow over HTTP". Skill ships platform.md (Dockerfile contract, port-matching, runtime env, build-time-vs-runtime env, Postgres TLS, `X-User-*` auth headers, Google OAuth brokering, upload boundary, compatibility checklist), workflows.md (slim YAML format, node-type roles, agent+tool wiring, validator errors, revisions, execution semantics, canonical shapes), plus `dibbla logs <app>` reference for live debugging.
 ---
 
 # Dibbla CLI
@@ -87,6 +87,23 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 
 **Pre-deploy guardrails:** Before calling `dibbla deploy`, you MUST complete the pre-deploy checklist and present findings to the user. Always wait for explicit user confirmation before deploying or fixing issues — never deploy autonomously. The guardrails workflow also writes a `REVIEW.md` file to the project root — the platform reads this and displays a review status indicator in the dashboard. See [guardrails.md](guardrails.md) for the full checklist.
 
+**Workflows:** A workflow is a typed DAG of function calls — nodes name a `function` from the registry, edges carry data port-to-port, an `api` node + `api_response` node make it callable over HTTP. Author in **slim YAML** (the format `wf get`/`wf create -f` consume); never hand-write the verbose React-Flow JSON. Minimal shape:
+
+```yaml
+name: my_workflow
+nodes:
+  - {id: api_input,  type: api,          inputs: [question], outputs: [question]}
+  - {id: greet,      type: function,     function: handlebars_template,
+     server: go-function-server1,        inputs: {script: "Hello {{question}}!"},
+     outputs: [error, output]}
+  - {id: api_response, type: api_response, linked_to: api_input, inputs: [response]}
+edges:
+  - api_input.question -> greet.question
+  - greet.output -> api_response.response
+```
+
+Before authoring anything non-trivial, run `dibbla fn list` to see what functions exist and `dibbla wf get <existing> -o yaml` on a similar workflow for shape — the function registry, not the YAML, is the source of truth. Pick the iteration loop that matches the change size: small tweak → patch HEAD with `nodes add`/`edges add`/`inputs set`/`tools add`; structural change → `wf get … -o yaml` → edit → `wf update -f`. Always `dibbla revisions create <wf>` before either; patches are not auto-snapshotted and `revisions restore` overwrites HEAD (it's not a checkout). For the complete model — node-type roles, the agent+tool pattern, all 13 validator errors and their fixes, execution/HTTP semantics, and the three canonical workflow shapes (transform, agent+tools, multi-stage pipeline) — see [workflows.md](workflows.md).
+
 **Non-TTY / agentic invocation:**
 - When running from inside Claude Code's `!` prefix, an agent shell, CI with a browser, or any other non-TTY context, use `dibbla login --browser` instead of bare `dibbla login`. The interactive flow needs stdin for the survey picker; `--browser` skips that and goes straight to browser-based OAuth via a localhost callback.
 - For true headless (SSH sessions, cloud VMs, CI runners with no local browser), use `dibbla login --api-key <token>` or set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) env vars — the CLI reads env vars in CI automatically.
@@ -110,8 +127,9 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 ## Additional resources
 
 - **Platform compatibility:** see [platform.md](platform.md) for the Dockerfile contract, port-matching, runtime environment, managed Postgres TLS handling, secrets/env-var injection, the auth-header contract (`X-User-*` headers and Google OAuth scope brokering), the upload boundary, and the pre-deploy compatibility checklist. Read this when working in a Dibbla-connected project on Dockerfile, `.dibblaignore`, auth integration, or deploy-readiness questions.
+- **Workflows:** see [workflows.md](workflows.md) for the complete workflow model — slim YAML format, the three node types and the roles `function` plays (agent / tool / script / data fetcher), the agent+tool wiring pattern, all 13 validator errors with fixes, edges and data flow, the functions registry, the three idiomatic authoring loops, revision semantics, HTTP execution, the canonical workflow shapes, the pre-flight checklist, and footguns. Read this whenever the user asks anything that touches `dibbla wf`/`nodes`/`edges`/`inputs`/`tools`/`revisions`/`functions`.
 - **Full command and flag reference:** see [reference.md](reference.md) for usage, arguments, and all flags.
 - **Usage examples:** see [examples.md](examples.md) for copy-paste examples and scripting patterns.
 - **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy security checklist.
 
-When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows. For "is my app ready for Dibbla?" questions, start in `platform.md`.
+When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows. For "is my app ready for Dibbla?" questions, start in `platform.md`. For "build / iterate / debug a workflow" questions, start in `workflows.md`.

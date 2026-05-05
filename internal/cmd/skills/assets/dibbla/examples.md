@@ -579,3 +579,164 @@ dibbla run
 mkdir my-app && cd my-app
 dibbla run https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/getting-started.dibbla-task.yaml
 ```
+
+## Workflows
+
+These three transcripts cover the lifecycle: build a new workflow from scratch, iterate on it via patches, and roll back when something goes wrong. The full mental model is in [workflows.md](workflows.md); this page is for copy-paste shape.
+
+### Build an agent + tool workflow from scratch
+
+The canonical "ask an LLM a question, let it call a weather tool" shape. Validate before sending, smoke-test after.
+
+```bash
+# 1. Discover what's available — registry, not YAML, is the source of truth
+dibbla fn list --tag accepts_tools                  # agent-eligible functions
+dibbla fn list --server go-function-server1         # all functions on the server
+dibbla fn get go-function-server1 reasoning_agent_function   # full schema
+
+# 2. Author the slim YAML
+cat > /tmp/weather.yaml <<'EOF'
+name: weather_assistant
+label: "Weather Assistant"
+description: "Asks an LLM the weather, with one tool wired in"
+nodes:
+  - id: api_input
+    type: api
+    inputs: [question]
+    outputs: [question]
+
+  - id: system_prompt
+    type: function
+    function: handlebars_template
+    server: go-function-server1
+    inputs:
+      script: |
+        You are a helpful weather assistant.
+        Use the get_weather tool whenever the user asks about a location.
+    outputs: [error, output]
+
+  - id: agent
+    type: function
+    function: reasoning_agent_function
+    server: go-function-server1
+    inputs:
+      model: "claude-sonnet-4-5-20250514"
+      prompt_message: ~
+      system_message: ~
+    tools:
+      - weather_tool
+    outputs: [response]
+
+  - id: weather_tool
+    type: function
+    function: get_weather_function
+    server: go-function-server1
+    inputs:
+      query: ~
+    outputs: [result]
+
+  - id: api_response
+    type: api_response
+    linked_to: api_input
+    inputs: [response]
+
+edges:
+  - api_input.question -> agent.prompt_message
+  - system_prompt.output -> agent.system_message
+  - agent.response -> api_response.response
+EOF
+
+# 3. Validate — safe, never persists
+dibbla wf validate -f /tmp/weather.yaml
+
+# 4. Create on HEAD
+dibbla wf create -f /tmp/weather.yaml
+
+# 5. Print the HTTP endpoint and a curl example
+dibbla wf api-docs weather_assistant
+
+# 6. Smoke-test from the CLI
+dibbla wf execute weather_assistant --data '{"question":"What is the weather in Berlin?"}'
+
+# 7. Snapshot the working version before any edits
+dibbla revisions create weather_assistant
+```
+
+### Iterate on an existing workflow with patches
+
+Smaller changes are faster as patch operations against HEAD than as full updates. Each command applies one operation; pair the sequence with `revisions create` snapshots so you can roll back.
+
+```bash
+# Always snapshot before a patch sequence
+dibbla revisions create weather_assistant
+
+# Add a date tool (a plain function node — no inputs needed)
+dibbla nodes add weather_assistant --inline '{
+  "id":"date_tool",
+  "type":"function",
+  "function":"todays_date",
+  "server":"go-function-server1",
+  "outputs":["date"]
+}'
+
+# Or from a file when the spec is bigger
+cat > /tmp/news_tool.json <<'EOF'
+{
+  "id": "news_tool",
+  "type": "function",
+  "function": "news_search_function",
+  "server": "go-function-server1",
+  "inputs": {"query": null},
+  "outputs": ["headlines"]
+}
+EOF
+dibbla nodes add weather_assistant -f /tmp/news_tool.json
+
+# Wire the date_tool's output into the agent's system message
+# (the existing edge from system_prompt → agent.system_message must be removed first
+# — an input port can only have one incoming edge)
+dibbla edges remove weather_assistant "system_prompt.output -> agent.system_message"
+dibbla edges add    weather_assistant "date_tool.date -> agent.system_message"
+
+# Pin a specific model on the agent (overrides the YAML hardcode without rewriting it)
+dibbla inputs set weather_assistant agent model "claude-sonnet-4-5-20250514"
+
+# Attach the new tools to the agent — these are by node id, not function name
+dibbla tools add weather_assistant agent date_tool
+dibbla tools add weather_assistant agent news_tool
+
+# List edges to confirm the wiring
+dibbla edges list weather_assistant
+
+# Snapshot the new known-good state
+dibbla revisions create weather_assistant
+
+# Re-run the smoke test
+dibbla wf execute weather_assistant --data '{"question":"What is the weather in Berlin today?"}'
+```
+
+### Roll back a bad change
+
+When a patch sequence broke something, restore the most recent good revision. Note that `restore` overwrites HEAD — it is not a checkout you can return from without re-restoring.
+
+```bash
+# See available revisions, newest first
+dibbla revisions list weather_assistant
+# ID     TIMESTAMP             LABEL
+# 87f3   2026-05-05T13:42:18Z
+# 1td9   2026-05-05T13:08:42Z
+# 9k3q   2026-05-04T18:11:00Z
+
+# Snapshot the (broken) HEAD before restoring — so you can recover the
+# broken state if you change your mind, or diff to understand what went wrong
+dibbla revisions create weather_assistant
+
+# Restore the known-good revision; HEAD now equals 1td9
+dibbla revisions restore weather_assistant 1td9
+
+# Confirm by re-running the smoke test
+dibbla wf execute weather_assistant --data '{"question":"What is the weather in Berlin?"}'
+
+# If you need a copy of the broken state for inspection without affecting HEAD:
+dibbla wf get weather_assistant --revision <broken_id> -o yaml > /tmp/broken.yaml
+```
