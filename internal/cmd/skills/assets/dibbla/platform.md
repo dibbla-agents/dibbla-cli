@@ -1,6 +1,6 @@
 # Dibbla CLI — Platform compatibility
 
-What your application must look like to build and run on Dibbla. Use this as the developer-facing mental model for Dockerfile shape, runtime expectations, env vars, and the upload boundary. Cross-links: [reference.md](reference.md) for full CLI flag/syntax detail, [guardrails.md](guardrails.md) for the pre-deploy **security** review (distinct from the compatibility checklist in §10 below).
+What your application must look like to build and run on Dibbla. Use this as the developer-facing mental model for Dockerfile shape, runtime expectations, env vars, and the upload boundary. Cross-links: [reference.md](reference.md) for full CLI flag/syntax detail, [guardrails.md](guardrails.md) for the pre-deploy **security** review (distinct from the compatibility checklist in §12 below).
 
 ---
 
@@ -38,7 +38,7 @@ A `Dockerfile` at the deploy root is **required**. The platform does not run bui
 
 ## 4. Runtime contract
 
-- **Filesystem is ephemeral.** Anything written to disk is gone on restart, scale-out, or redeploy. Persist via managed Postgres (§6) or external object storage. Do not write user-visible state to local files.
+- **Filesystem is ephemeral.** Anything written to disk is gone on restart, scale-out, or redeploy. Persist via managed Postgres (§7) or external object storage. Do not write user-visible state to local files.
 - **Single ingress port.** Only the port matched to `--port` (or `80` by default) is reachable from the public URL. Side-channel ports, sidecar listeners, and direct container-to-container networking are not exposed.
 - **Plain HTTP inside the container.** TLS is terminated by the platform's routing layer; do **not** run your own TLS in the container — it'll only see plain HTTP from the proxy.
 - **PID 1.** Whatever your `CMD`/`ENTRYPOINT` runs is PID 1 — forward signals correctly, or use a small init shim (`tini`, `dumb-init`) if you spawn children.
@@ -53,11 +53,32 @@ User-app environment variables come from three places:
 - **`--env KEY=VAL`** on `dibbla deploy` and `dibbla apps update`. Persist across redeploys — set once, they stick.
 - **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable.
 
-Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§7 strips them anyway).
+Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
 
 ---
 
-## 6. Managed Postgres — self-signed TLS
+## 6. Build-time vs runtime env vars (Vite, Next.js, CRA)
+
+This trips up almost every frontend project on first deploy, so understand the distinction before scaffolding.
+
+**The platform's `--env` and secret-injection channels are runtime only.** They set process env vars when the container starts — long after the bundler has finished compiling your JS. Frontend bundlers like **Vite (`VITE_*`)**, **Next.js (`NEXT_PUBLIC_*`)**, and **Create React App (`REACT_APP_*`)** all bake env vars into the JS bundle at **build time**. By the time `--env` arrives, the bundle is frozen — the value will not be there.
+
+**The CLI does not currently expose `--build-arg`.** That means anything that needs to be present during `docker build` has to come from one of these patterns:
+
+1. **Public values → commit them.** Vite/Next/CRA's `*_PUBLIC_*` / `VITE_*` / `REACT_APP_*` prefixes are explicit signals from the framework: *"this value will be visible in browser devtools after the build."* If the value is genuinely public (Supabase anon key, public API URL, feature flags, Sentry DSN), inline it in source or commit a `.env.production` to the repo. **No secret is leaking — it would be in the bundle either way.** Just be sure you're not committing a secret by mistake; the `*_PUBLIC_*` naming convention helps.
+2. **Truly secret build-time inputs → don't put them in the bundle.** If a value would be a problem to expose to a logged-in user with devtools open, it doesn't belong in a Vite/Next/CRA build. Move the call server-side: route the request through your backend (read the secret from `dibbla secrets`/`--env` at runtime there) and have the frontend call your backend instead of the third-party API directly.
+3. **Per-environment build-time toggles → use a runtime config endpoint.** If you need different values per deploy (staging vs prod) but they aren't *secret*, ship a small `/config.json` endpoint from your backend that returns `{ apiUrl, sentryDsn, ... }` populated from runtime env vars, and have the frontend fetch it on startup. The bundle stays the same across environments; the values come from `--env` at runtime.
+
+What does **not** work:
+- Putting `VITE_FOO=...` in `dibbla deploy --env` and expecting the frontend to see it. The bundle was built before that env var existed.
+- Relying on a `.env.local` on your laptop. The CLI strips `.env.production` and `.env.prod` and the server denylist strips `.env` and `.env.*` (§8).
+- `ARG` directives in the Dockerfile expecting values from `--env` flags. `--env` becomes runtime env, not Docker build args.
+
+Pattern (1) — inlining public values — is the right answer for the Lovable / Supabase / Firebase-frontend genre. Pattern (3) — runtime config endpoint — is the right answer when values genuinely differ across deploys but are still public.
+
+---
+
+## 7. Managed Postgres — self-signed TLS
 
 The Dibbla-managed Postgres serves a **self-signed certificate**. Connections are still encrypted in transit; trust is enforced by network isolation (the database is only reachable from inside the deployment cluster), not CA-rooted cert identity. Two consequences for app code:
 
@@ -68,7 +89,7 @@ Working snippets for `pg`, Prisma, and psycopg2 live in `reference.md` → "TLS 
 
 ---
 
-## 7. Upload boundary — what gets shipped, what gets stripped
+## 8. Upload boundary — what gets shipped, what gets stripped
 
 Two filtering layers sit between your working tree and the build:
 
@@ -86,7 +107,7 @@ Use `.dibblaignore` (gitignore syntax, at the deploy root) to silence server-sid
 
 ---
 
-## 8. Public URL & access control
+## 9. Public URL & access control
 
 - Default public URL: `https://<alias>.dibbla.com`.
 - Gate access with `dibbla deploy --require-login` (any authenticated Dibbla user) plus `--access-policy invite_only` (only explicitly invited users) or `--access-policy all_members` (all org members).
@@ -95,7 +116,7 @@ Use `.dibblaignore` (gitignore syntax, at the deploy root) to silence server-sid
 
 ---
 
-## 9. Authentication contract — reading the user inside your app
+## 10. Authentication contract — reading the user inside your app
 
 When you deploy with `--require-login`, the platform proxy handles the OAuth flow upstream and only forwards the request to your container after the user is authenticated and authorised by the configured access policy. Your app never sees unauthenticated traffic and never has to validate a JWT itself — by the time a request reaches you, identity has been verified and access policy has been enforced. **You just read headers.**
 
@@ -175,7 +196,7 @@ Never ship a dev bypass to production. Gate it behind a build flag or env-var ch
 
 ---
 
-## 10. What the platform does *not* do for you
+## 11. What the platform does *not* do for you
 
 The platform is intentionally minimal at the container boundary. It does **not**:
 
@@ -185,11 +206,11 @@ The platform is intentionally minimal at the container boundary. It does **not**
 - Filter outbound network egress.
 - Apply request-size limits or rate limits.
 
-These are application-side concerns. For the security review before deploy, run the OWASP-driven checklist in `guardrails.md` — it is distinct from the compatibility checklist in §11.
+These are application-side concerns. For the security review before deploy, run the OWASP-driven checklist in `guardrails.md` — it is distinct from the compatibility checklist in §12.
 
 ---
 
-## 11. Compatibility checklist (will it boot and serve traffic?)
+## 12. Compatibility checklist (will it boot and serve traffic?)
 
 **Compatibility, not security.** This list answers "will my app run on Dibbla?" — not "is my app safe to expose?" The security half lives in `guardrails.md` and must be run separately before any deploy.
 
@@ -198,8 +219,9 @@ These are application-side concerns. For the security review before deploy, run 
 - [ ] App binds to `0.0.0.0`, not `127.0.0.1`.
 - [ ] `USER` directive sets a non-root user in the runtime stage.
 - [ ] All secrets come from `dibbla secrets set` or `--env`, never hardcoded or baked into the image.
-- [ ] Postgres client configured to accept the self-signed cert (see §6); `sslmode=disable` is **not** used.
-- [ ] If `--require-login`, app reads `X-User-*` headers (see §9) and does not attempt JWT verification.
+- [ ] Postgres client configured to accept the self-signed cert (see §7); `sslmode=disable` is **not** used.
+- [ ] For Vite/Next.js/CRA frontends, public values are inlined or fetched via a runtime config endpoint — not passed via `--env` (see §6).
+- [ ] If `--require-login`, app reads `X-User-*` headers (see §10) and does not attempt JWT verification.
 - [ ] No `.env`, `*.pem`, `*.key`, SSH keys, or `service-account.json` in the deploy directory.
 - [ ] `.dibblaignore` covers build outputs and any large generated files.
 - [ ] App tolerates an ephemeral local filesystem; persistent state lives in Postgres or external storage.

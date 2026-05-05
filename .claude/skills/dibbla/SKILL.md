@@ -1,7 +1,7 @@
 ---
 name: dibbla
 description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), install project templates (dibbla template list/install), install this skill into a project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage apps, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or template from a URL, install a starter template, install the dibbla skill into a project or home dir for Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts via `dibbla login --browser`), deploy, manage apps/databases/secrets, or work with workflows (nodes/edges/inputs/tools/revisions/functions).
-when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, auth integration, or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "how do I read the logged-in user", "what headers does Dibbla inject", "why does my Postgres TLS connection fail", or "what should be in .dibblaignore". The skill ships platform.md with the Dockerfile contract, port-matching, runtime env, self-signed Postgres TLS, secrets/env-var injection, the auth-header contract (`X-User-*`), Google OAuth scope brokering, the upload boundary, and a pre-deploy compatibility checklist.
+when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, auth integration, runtime log access, build-time vs runtime env vars (Vite/Next/CRA), or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "how do I read the logged-in user", "what headers does Dibbla inject", "why does my Postgres TLS connection fail", "how do I view logs / debug a 500", "why is my VITE_* env var undefined", or "what should be in .dibblaignore". Skill ships platform.md (Dockerfile contract, port-matching, runtime env, build-time-vs-runtime env, Postgres TLS, `X-User-*` auth headers, Google OAuth brokering, upload boundary, compatibility checklist) plus `dibbla logs <app>` reference for live debugging.
 ---
 
 # Dibbla CLI
@@ -34,6 +34,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
 | Deploy     | `deploy [path] -m "<msg>" [--alias name] [--update] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory; `-m` becomes the VCS commit subject |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
+| Logs       | `logs <app>` (last 15m), `logs <app> --since 24h`, `logs <app> -f` (follow), `logs <app> -n 200` (tail), `logs <app> --grep <regex>`, `logs <app> --json` — runtime logs from Loki; primary tool for debugging a deployed app without redeploying |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global or `-d <alias>`) |
 | Workflows  | `workflows list`, `get`, `create`, `update`, `delete`, `validate`, `execute`, `url`, `api-docs` |

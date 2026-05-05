@@ -277,6 +277,38 @@ fixtures/*.bin
 
 ---
 
+## logs
+
+Print runtime logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes and exits. **This is the primary way to debug a deployed app without redeploying** — when a deploy succeeds but the app 500s, errors out, or behaves unexpectedly, run `dibbla logs <app>` first rather than adding `console.log` and redeploying.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla logs <app>` |
+| **Arguments** | `app` (required) — alias of the deployed app whose logs to fetch |
+| **Flags** | `--since <duration>` — window to fetch (Go duration; default `15m`, server cap `24h`) |
+| | `-f`, `--follow` — stream new lines as they arrive (after the `--since` backfill, if any) |
+| | `-n`, `--tail <N>` — show only the last N lines instead of the `--since` window |
+| | `--grep <regex>` — server-side regex line filter (LogQL `|~`) |
+| | `--limit <N>` — cap lines fetched in range mode (server caps the value) |
+| | `--json` — emit raw NDJSON (one Loki entry per line) instead of the human format |
+| | `--no-color` — disable colour in the human format (set this for non-TTY callers) |
+| **Errors** | Returns 404 for apps outside your organisation. Returns 503 if the platform isn't configured for logs (`LOKI_URL` unset on the server). |
+
+**Examples:**
+
+```bash
+dibbla logs expense-reporter                         # last 15 min, exit
+dibbla logs expense-reporter --since 24h             # last 24 hours
+dibbla logs expense-reporter --since 10m -f          # backfill 10 min, then follow
+dibbla logs expense-reporter -n 200                  # last 200 lines
+dibbla logs expense-reporter --grep "timeout"        # server-side filter
+dibbla logs expense-reporter --json | jq '.line'     # NDJSON for scripting
+```
+
+**Agent guidance:** when a deploy succeeds but the app misbehaves, the debugging loop is `dibbla logs <app> --since 30m --grep <error-substring>` → identify the failure → fix code → redeploy with `--update`. Only resort to "redeploy with extra logging" if the existing logs don't surface the issue.
+
+---
+
 ## db
 
 ### db list
