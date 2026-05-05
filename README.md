@@ -62,6 +62,23 @@ If the update request fails (for example due to network issues or blocked GitHub
 
 Set `DIBBLA_NO_UPDATE_NOTIFIER=1` to disable update notifications.
 
+### Self-update
+
+When the notifier reports a newer version, run `dibbla update` to upgrade in place:
+
+```bash
+dibbla update                  # latest, with confirmation
+dibbla update --check          # only report drift; non-zero exit if behind
+dibbla update --version v1.4.2 # pin / downgrade to a specific tag
+dibbla update --yes            # skip the confirmation prompt
+```
+
+`dibbla update` detects how the binary was installed:
+
+- **Homebrew / apt / rpm / scoop / choco**: prints the right upgrade command for your package manager (`brew upgrade dibbla`, etc.). It does not run the command itself, so there's no implicit `sudo`.
+- **Script install** (from `install.dibbla.com`, lands in `~/.local/bin` or `%LOCALAPPDATA%\dibbla`): downloads the matching release archive, verifies its SHA-256 against `checksums.txt`, and atomically replaces the binary.
+- **`go install` / development builds (`Version == "dev"`)**: refuses to self-replace; rebuild from source instead.
+
 ### Create a Go Worker Project
 
 ```bash

@@ -26,10 +26,59 @@ type UpdateInfo struct {
 	LatestVersion string
 }
 
+// Asset describes one file attached to a GitHub release.
+type Asset struct {
+	Name        string `json:"name"`
+	DownloadURL string `json:"browser_download_url"`
+	Size        int64  `json:"size"`
+}
+
+// Release is the subset of the GitHub release payload we care about.
+// Shared between the background notifier and the `dibbla update` command
+// so both go through one HTTP path.
+type Release struct {
+	TagName string  `json:"tag_name"`
+	Assets  []Asset `json:"assets"`
+}
+
+// ChecksumAsset returns the asset named "checksums.txt" if present.
+func (r *Release) ChecksumAsset() *Asset {
+	for i := range r.Assets {
+		if r.Assets[i].Name == "checksums.txt" {
+			return &r.Assets[i]
+		}
+	}
+	return nil
+}
+
+// FindAsset returns the first asset whose name matches the given name.
+func (r *Release) FindAsset(name string) *Asset {
+	for i := range r.Assets {
+		if r.Assets[i].Name == name {
+			return &r.Assets[i]
+		}
+	}
+	return nil
+}
+
 // state represents the cached update check state on disk.
 type state struct {
 	CheckedAt     time.Time `yaml:"checked_at"`
 	LatestVersion string    `yaml:"latest_version"`
+}
+
+// StateFilePath exposes the cached-state path so other packages
+// (notably the update command) can refresh it after a successful upgrade.
+func StateFilePath() string { return stateFilePath() }
+
+// WriteCachedLatest stores the latest known version with a fresh timestamp.
+// Used by `dibbla update` to suppress the background notice immediately
+// after a successful self-replace.
+func WriteCachedLatest(version string) {
+	writeState(&state{
+		CheckedAt:     time.Now().UTC(),
+		LatestVersion: version,
+	})
 }
 
 // CheckInBackground starts an update check in a goroutine and returns a channel
@@ -152,33 +201,48 @@ func writeState(s *state) {
 }
 
 func fetchLatest(currentVersion string) string {
-	url := apiBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/latest"
+	rel, err := FetchRelease(currentVersion, "")
+	if err != nil || rel == nil {
+		return ""
+	}
+	return rel.TagName
+}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+// FetchRelease retrieves a release from the dibbla-cli GitHub repo. If tag
+// is empty the "latest" release is returned; otherwise the release with the
+// given tag (e.g. "v1.2.3") is fetched. The notifier and the `dibbla update`
+// command both go through this function.
+func FetchRelease(currentVersion, tag string) (*Release, error) {
+	var url string
+	if tag == "" {
+		url = apiBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/latest"
+	} else {
+		url = apiBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/tags/" + tag
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return ""
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "dibbla-cli/"+currentVersion)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
+	var release Release
 	// Limit response to 1MB to prevent memory exhaustion from unexpected responses.
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
-		return ""
+		return nil, err
 	}
 
-	return release.TagName
+	return &release, nil
 }

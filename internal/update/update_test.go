@@ -250,6 +250,83 @@ func TestPrintNotice_InvalidCurrentVersion(t *testing.T) {
 	}
 }
 
+func TestFetchRelease_LatestParsesAssets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/dibbla-agents/dibbla-cli/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tag_name": "v3.4.5",
+			"assets": []map[string]interface{}{
+				{"name": "dibbla_3.4.5_linux_amd64.tar.gz", "browser_download_url": "https://example/a", "size": 100},
+				{"name": "checksums.txt", "browser_download_url": "https://example/c", "size": 64},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	old := apiBaseURL
+	apiBaseURL = srv.URL
+	defer func() { apiBaseURL = old }()
+
+	rel, err := FetchRelease("1.0.0", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v3.4.5" {
+		t.Errorf("tag = %q want v3.4.5", rel.TagName)
+	}
+	if len(rel.Assets) != 2 {
+		t.Fatalf("want 2 assets got %d", len(rel.Assets))
+	}
+	if rel.ChecksumAsset() == nil {
+		t.Error("expected checksums.txt asset to be found")
+	}
+	if rel.FindAsset("dibbla_3.4.5_linux_amd64.tar.gz") == nil {
+		t.Error("expected platform asset to be found")
+	}
+}
+
+func TestFetchRelease_ByTag(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/dibbla-agents/dibbla-cli/releases/tags/v1.2.3" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"tag_name": "v1.2.3"})
+	}))
+	defer srv.Close()
+
+	old := apiBaseURL
+	apiBaseURL = srv.URL
+	defer func() { apiBaseURL = old }()
+
+	rel, err := FetchRelease("1.0.0", "v1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.2.3" {
+		t.Errorf("tag = %q want v1.2.3", rel.TagName)
+	}
+}
+
+func TestFetchRelease_Non200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	old := apiBaseURL
+	apiBaseURL = srv.URL
+	defer func() { apiBaseURL = old }()
+
+	if _, err := FetchRelease("1.0.0", ""); err == nil {
+		t.Error("expected error on non-200")
+	}
+}
+
 func TestPrintNotice_VPrefixHandling(t *testing.T) {
 	output := captureStderr(t, func() {
 		PrintNotice(&UpdateInfo{LatestVersion: "v2.0.0"}, "v1.0.0")
@@ -357,4 +434,3 @@ func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
 		t.Fatalf("expected latest version to be preserved, got %q", got.LatestVersion)
 	}
 }
-

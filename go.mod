@@ -13,6 +13,12 @@ require (
 )
 
 require (
+	aead.dev/minisign v0.2.0 // indirect
+	github.com/minio/selfupdate v0.6.0 // indirect
+	golang.org/x/crypto v0.0.0-20211209193657-4570a0811e8b // indirect
+)
+
+require (
 	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dibbla-agents/dibbla-tasks v0.1.1

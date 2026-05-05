@@ -9,6 +9,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
+	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/joho/godotenv"
@@ -56,6 +57,7 @@ func init() {
 	logs.Register(rootCmd)
 	template.Register(rootCmd)
 	skills.Register(rootCmd)
+	updatecmd.Register(rootCmd, Version)
 }
 
 // Execute runs the root command.
