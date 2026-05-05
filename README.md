@@ -36,6 +36,33 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 
 ## Usage
 
+### First-time setup
+
+After installing dibbla, run:
+
+```bash
+dibbla init
+```
+
+This is a one-shot wizard that runs three steps in order, each as a child of the running binary so each step picks up the current code:
+
+1. `dibbla update --yes` — make sure you're on the latest release.
+2. `dibbla login` — store your API token in the OS keyring (skipped if a token is already configured; force with `--re-login`).
+3. `dibbla skills install dibbla` — install the AI-agent skill into the current project (or `$HOME` with `--user`).
+
+Failure policy: `update` and `skill install` warn and continue; `login` is a hard stop because everything else needs auth. The command is safe to re-run — each step detects "already done."
+
+| Flag | Description |
+|------|-------------|
+| `-y`, `--yes` | Skip prompts where possible (forwarded to `update`) |
+| `--skip-update` | Skip the update step |
+| `--skip-skill` | Skip installing the skill |
+| `--user` | Install the skill into `$HOME` instead of the current project |
+| `--re-login` | Run `login` even if a token is already configured |
+| `--api-url <url>` | API endpoint forwarded to `login` |
+
+To pre-set the token without an interactive prompt, export `DIBBLA_API_TOKEN=<token>` before running `dibbla init`. Don't pass tokens via flag — they end up in `ps` output.
+
 ### Authentication
 
 For local use, log in once; your API token is stored securely in the OS credential store (e.g. macOS Keychain):

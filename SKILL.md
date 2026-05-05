@@ -130,6 +130,25 @@ Print logs for a deployed app, sourced from the platform's Loki backend. By defa
     -   `dibbla logs expense-reporter --grep "timeout"`
     -   `dibbla logs expense-reporter --json | jq .`
 
+### `init`
+
+One-shot machine setup. Runs `dibbla update`, `dibbla login`, and `dibbla skills install dibbla` in order, each as its own subprocess of the running dibbla binary. Designed for "I just installed dibbla, set me up" — and is safe to re-run (idempotent: each step detects "already done").
+
+-   **Usage:** `dibbla init`
+-   **Flags:**
+    -   `-y`, `--yes`: Skip prompts where possible (forwarded to `update`).
+    -   `--skip-update`: Don't run the update step.
+    -   `--skip-skill`: Don't install the dibbla skill.
+    -   `--user`: Install the skill into `$HOME` instead of the current project (forwarded to `skills install`).
+    -   `--re-login`: Run `login` even if a token is already configured.
+    -   `--api-url <url>`: API endpoint forwarded to `login` (e.g. `https://api.dibbla.net`).
+-   **Failure policy:** `update` and `skill install` failures warn and continue; `login` failure stops init (everything else needs auth).
+-   **Token handling:** Pass an existing `DIBBLA_API_TOKEN` env var to skip the login prompt. **Do not pass tokens via flag** — they appear in `ps` output.
+-   **Examples:**
+    -   `dibbla init` — set up everything in this project.
+    -   `dibbla init --user` — install skill machine-wide instead of per-project.
+    -   `dibbla init --skip-update --skip-skill` — just log in (e.g. fresh install, dont care about the skill yet).
+
 ### `update`
 
 Update dibbla itself to the latest released version. The command detects how dibbla was installed and either prints the right command for your package manager (Homebrew, apt, rpm, scoop, choco) or self-replaces the binary for installs from the install.dibbla.com script.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/initcmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
@@ -58,6 +59,7 @@ func init() {
 	template.Register(rootCmd)
 	skills.Register(rootCmd)
 	updatecmd.Register(rootCmd, Version)
+	initcmd.Register(rootCmd)
 }
 
 // Execute runs the root command.
