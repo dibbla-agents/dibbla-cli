@@ -1155,3 +1155,65 @@ dibbla wf execute weather_assistant --data '{"question":"What is the weather in 
 # If you need a copy of the broken state for inspection without affecting HEAD:
 dibbla wf get weather_assistant --revision <broken_id> -o yaml > /tmp/broken.yaml
 ```
+
+### Calling a workflow from production code
+
+Two paths exist; pick the right one. From a Dibbla-deployed app with a `WORKFLOW_API_KEY` (an `ak_…` Bearer token), use the **gateway URL** — not the URL `wf api-docs` prints. The api-docs URL is the workflow-server's internal/direct address and rejects `ak_` tokens at the gateway with "Missing authentication headers."
+
+```bash
+# What `wf api-docs` shows (internal — do NOT paste into production code):
+#   https://workflow-server.dibbla.net/api/execute/weather_assistant/ni3xl724
+# What production code should call (gateway, accepts `ak_` Bearer):
+#   https://api.dibbla.net/api/wf/execute/weather_assistant/ni3xl724
+
+# Get the urlid from api-docs, then rewrite the host
+URL_ID=$(dibbla wf api-docs weather_assistant -o json | jq -r '.url_id')
+GATEWAY_URL="https://api.dibbla.net/api/wf/execute/weather_assistant/${URL_ID}"
+echo "$GATEWAY_URL"
+```
+
+A robust JavaScript caller. Always use `AbortController` with a short timeout — Node's undici defaults to a 5-minute headers timeout, and a stale `<urlid>` (see footguns) hangs silently for the full 5 minutes before throwing `UND_ERR_HEADERS_TIMEOUT`. Log before and after so failures don't look like hangs.
+
+```javascript
+// One workflow call, fail-fast and visible in logs.
+async function askWeatherAgent(question) {
+  const url = `https://api.dibbla.net/api/wf/execute/weather_assistant/${process.env.WEATHER_WF_URL_ID}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60_000); // 60s — workflow calls behave like external HTTP
+
+  console.log("[wf] → weather_assistant", { question });
+  const t0 = Date.now();
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.WORKFLOW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ question }),
+      signal: ctrl.signal,
+    });
+    console.log("[wf] ← weather_assistant", { status: r.status, ms: Date.now() - t0 });
+    if (!r.ok) throw new Error(`weather_assistant returned ${r.status}: ${await r.text()}`);
+    const json = await r.json();
+    // Always check the agent's error field — see workflows.md §6 on silent-empty agents
+    if (json.error) throw new Error(`weather_assistant error: ${json.error}`);
+    return json.response;
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("weather_assistant timed out after 60s");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+```
+
+If the gateway call hangs while `dibbla wf execute weather_assistant --data '…'` against the same workflow works, the `<urlid>` has gone stale after too many `wf update` iterations. Recreate the workflow before debugging auth/path/header issues:
+
+```bash
+# Snapshot first so you can inspect the old YAML if needed
+dibbla wf get weather_assistant -o yaml > /tmp/weather_pre_recreate.yaml
+dibbla wf delete weather_assistant --yes
+dibbla wf create -f /tmp/weather_pre_recreate.yaml
+dibbla wf api-docs weather_assistant      # ← fresh urlid; update WEATHER_WF_URL_ID env in the app
+```
