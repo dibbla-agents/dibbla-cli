@@ -160,7 +160,11 @@ func checkForUpdate(currentVersion string) *UpdateInfo {
 	return &UpdateInfo{LatestVersion: latest}
 }
 
-func stateFilePath() string {
+// stateFilePath is overridable in tests (mirrors the apiBaseURL pattern
+// above). On macOS, os.UserConfigDir ignores XDG_CONFIG_HOME and always
+// returns ~/Library/Application Support, so tests can't isolate state by
+// env vars alone — they rebind this variable instead.
+var stateFilePath = func() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return ""

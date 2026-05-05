@@ -96,16 +96,21 @@ func TestFetchLatest_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestStateReadWrite(t *testing.T) {
+// useTempState rebinds stateFilePath for the duration of the test so
+// readState/writeState hit a tempdir and don't read the developer's real
+// ~/Library/Application Support/dibbla/state.yml on macOS, where
+// XDG_CONFIG_HOME is ignored by os.UserConfigDir.
+func useTempState(t *testing.T) string {
+	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp) // Linux
-	// Also handle macOS/Windows by overriding the function indirectly
-	// os.UserConfigDir() respects XDG_CONFIG_HOME on Linux
+	old := stateFilePath
+	stateFilePath = func() string { return filepath.Join(tmp, "state.yml") }
+	t.Cleanup(func() { stateFilePath = old })
+	return tmp
+}
 
-	dir := filepath.Join(tmp, "dibbla")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
+func TestStateReadWrite(t *testing.T) {
+	useTempState(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	s := &state{
@@ -127,13 +132,7 @@ func TestStateReadWrite(t *testing.T) {
 }
 
 func TestStateExpiry(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "dibbla")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	tmp := useTempState(t)
 
 	// Write a state that's 25 hours old
 	old := &state{
@@ -141,7 +140,7 @@ func TestStateExpiry(t *testing.T) {
 		LatestVersion: "1.0.0",
 	}
 	data, _ := yaml.Marshal(old)
-	os.WriteFile(filepath.Join(dir, "state.yml"), data, 0644)
+	os.WriteFile(filepath.Join(tmp, "state.yml"), data, 0644)
 
 	got := readState()
 	if got == nil {
@@ -155,12 +154,8 @@ func TestStateExpiry(t *testing.T) {
 }
 
 func TestStateCorrupt(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "dibbla")
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "state.yml"), []byte("{{invalid yaml"), 0644)
+	tmp := useTempState(t)
+	os.WriteFile(filepath.Join(tmp, "state.yml"), []byte("{{invalid yaml"), 0644)
 
 	got := readState()
 	if got != nil {
@@ -169,8 +164,7 @@ func TestStateCorrupt(t *testing.T) {
 }
 
 func TestStateMissing(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	useTempState(t)
 
 	got := readState()
 	if got != nil {
@@ -337,18 +331,14 @@ func TestPrintNotice_VPrefixHandling(t *testing.T) {
 }
 
 func TestCheckForUpdate_CachedFresh(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "dibbla")
-	os.MkdirAll(dir, 0755)
+	tmp := useTempState(t)
 
 	s := &state{
 		CheckedAt:     time.Now().UTC(),
 		LatestVersion: "1.5.0",
 	}
 	data, _ := yaml.Marshal(s)
-	os.WriteFile(filepath.Join(dir, "state.yml"), data, 0644)
+	os.WriteFile(filepath.Join(tmp, "state.yml"), data, 0644)
 
 	info := checkForUpdate("1.0.0")
 	if info == nil {
@@ -360,18 +350,14 @@ func TestCheckForUpdate_CachedFresh(t *testing.T) {
 }
 
 func TestCheckForUpdate_StaleCache(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "dibbla")
-	os.MkdirAll(dir, 0755)
+	tmp := useTempState(t)
 
 	s := &state{
 		CheckedAt:     time.Now().UTC().Add(-25 * time.Hour),
 		LatestVersion: "1.0.0",
 	}
 	data, _ := yaml.Marshal(s)
-	os.WriteFile(filepath.Join(dir, "state.yml"), data, 0644)
+	os.WriteFile(filepath.Join(tmp, "state.yml"), data, 0644)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"tag_name": "v2.0.0"})
@@ -392,11 +378,7 @@ func TestCheckForUpdate_StaleCache(t *testing.T) {
 }
 
 func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "dibbla")
-	os.MkdirAll(dir, 0755)
+	tmp := useTempState(t)
 
 	staleCheckedAt := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
 	s := &state{
@@ -404,7 +386,7 @@ func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
 		LatestVersion: "v1.5.0",
 	}
 	data, _ := yaml.Marshal(s)
-	os.WriteFile(filepath.Join(dir, "state.yml"), data, 0644)
+	os.WriteFile(filepath.Join(tmp, "state.yml"), data, 0644)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
