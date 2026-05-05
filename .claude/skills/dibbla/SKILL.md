@@ -1,6 +1,7 @@
 ---
 name: dibbla
-description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), discover and install project templates (dibbla template list/install), install this skill into any project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage applications, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or a template from a URL, install a starter template, install the dibbla skill into a project or home dir for use with Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts like Claude Code via `dibbla login --browser`), deploy, list/update/delete apps, create/list/delete/dump/restore databases, manage secrets, or manage workflows (create/execute/validate workflows, manage nodes/edges/inputs/tools, revisions, and browse functions).
+description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), install project templates (dibbla template list/install), install this skill into a project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage apps, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or template from a URL, install a starter template, install the dibbla skill into a project or home dir for Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts via `dibbla login --browser`), deploy, manage apps/databases/secrets, or work with workflows (nodes/edges/inputs/tools/revisions/functions).
+when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "why does my Postgres TLS connection fail", or "what should be in .dibblaignore". The skill ships platform.md with the Dockerfile contract, port-matching, runtime env, self-signed Postgres TLS handling, secrets/env-var injection, the upload boundary, and a pre-deploy compatibility checklist.
 ---
 
 # Dibbla CLI
@@ -106,8 +107,9 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 
 ## Additional resources
 
+- **Platform compatibility:** see [platform.md](platform.md) for the Dockerfile contract, port-matching, runtime environment, managed Postgres TLS handling, secrets/env-var injection, the upload boundary, and the pre-deploy compatibility checklist. Read this when working in a Dibbla-connected project on Dockerfile, `.dibblaignore`, or deploy-readiness questions.
 - **Full command and flag reference:** see [reference.md](reference.md) for usage, arguments, and all flags.
 - **Usage examples:** see [examples.md](examples.md) for copy-paste examples and scripting patterns.
-- **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy checklist.
+- **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy security checklist.
 
-When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows.
+When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows. For "is my app ready for Dibbla?" questions, start in `platform.md`.

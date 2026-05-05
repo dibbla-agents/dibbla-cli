@@ -20,7 +20,7 @@ func (s *skillEntry) files() (fs.FS, error) {
 var registry = []skillEntry{
 	{
 		id:          "dibbla",
-		description: "Use the Dibbla CLI to scaffold projects, run task pipelines, deploy apps, and manage databases, secrets, and workflows.",
+		description: "Use the Dibbla CLI to scaffold projects, run task pipelines, deploy apps, and manage databases, secrets, and workflows. Includes a platform compatibility reference for Dockerfile, .dibblaignore, and deploy-readiness questions.",
 		embedFS:     dibblaSkillFS,
 		root:        dibblaSkillRoot,
 	},

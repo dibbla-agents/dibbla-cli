@@ -292,7 +292,7 @@ Writes the skill files into the current project (or `$HOME` with `--user`) plus 
     -   `--force`: Overwrite skill files that have been edited locally. Only the embedded filenames are touched; user-added files in `.claude/skills/<id>/` are always preserved.
     -   `--no-agents`: Skip writing `AGENTS.md` and `GEMINI.md` at the target root (Claude Code only).
 -   **Writes:**
-    -   `<root>/.claude/skills/<id>/{SKILL.md,examples.md,guardrails.md,reference.md}` — Claude Code's native skill path.
+    -   `<root>/.claude/skills/<id>/{SKILL.md,examples.md,guardrails.md,platform.md,reference.md}` — Claude Code's native skill path.
     -   `<root>/AGENTS.md` — marker-delimited pointer block (2026 open standard; read by Cursor, Opencode, Codex, Copilot, Windsurf, Aider, Zed, Warp, RooCode).
     -   `<root>/GEMINI.md` — same block, for Gemini CLI's default context filename.
 -   **Idempotent:** Re-running is safe. Identical bytes are a no-op (no mtime bump). CRLF vs LF line endings in `AGENTS.md` / `GEMINI.md` are preserved.

@@ -1,6 +1,7 @@
 ---
 name: dibbla
-description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), discover and install project templates (dibbla template list/install), install this skill into any project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage applications, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or a template from a URL, install a starter template, install the dibbla skill into a project or home dir for use with Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts like Claude Code via `dibbla login --browser`), deploy, list/update/delete apps, create/list/delete/dump/restore databases, manage secrets, or manage workflows (create/execute/validate workflows, manage nodes/edges/inputs/tools, revisions, and browse functions).
+description: Use the Dibbla CLI to scaffold projects, run dibbla-task.yaml pipelines locally (dibbla run), install project templates (dibbla template list/install), install this skill into a project so other AI coding agents read it too (dibbla skills install dibbla), deploy apps, and manage apps, databases, secrets, and workflows on the Dibbla platform. Use when the user wants to run a local task file or template from a URL, install a starter template, install the dibbla skill into a project or home dir for Claude Code/Cursor/Gemini CLI/Opencode/Codex, log in (including from non-TTY contexts via `dibbla login --browser`), deploy, manage apps/databases/secrets, or work with workflows (nodes/edges/inputs/tools/revisions/functions).
+when_to_use: Also trigger on Dockerfile review/authoring, `.dibblaignore`, deploy-readiness, or platform-compatibility questions for apps destined for Dibbla — e.g. "review my Dockerfile for Dibbla", "is my app ready to deploy", "why does my Postgres TLS connection fail", or "what should be in .dibblaignore". The skill ships platform.md with the Dockerfile contract, port-matching, runtime env, self-signed Postgres TLS handling, secrets/env-var injection, the upload boundary, and a pre-deploy compatibility checklist.
 ---
 
 # Dibbla CLI
@@ -31,7 +32,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Skills     | `skills list`, `skills install <id>` (`--user`, `--force`, `--no-agents`) — install AI-agent guidance into `.claude/skills/` + `AGENTS.md` + `GEMINI.md` |
 | Login      | `login [api_url]`, `login --browser`, `login --api-key <token>`, `login --api-url <url>`, `login --write-env`, `login --no-keychain`, `logout` |
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
-| Deploy     | `deploy [path] [--alias name] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory |
+| Deploy     | `deploy [path] -m "<msg>" [--alias name] [--update] [--require-login] [--access-policy] [--google-scopes]` — deploy from directory; `-m` becomes the VCS commit subject |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>` |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global or `-d <alias>`) |
@@ -57,11 +58,12 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 1. Check if the app already exists: `dibbla apps list`
 2. If it does **not** exist, deploy with all required environment variables included in the deploy command — there is no app to attach them to yet:
    ```bash
-   dibbla deploy . --alias my-app -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
+   dibbla deploy . --alias my-app -m "feat: initial deploy" \
+     -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
    ```
 3. If it **already** exists, use `--update` for a zero-downtime rolling update:
    ```bash
-   dibbla deploy . --alias my-app --update
+   dibbla deploy . --alias my-app -m "fix: resolve 500 on /search" --update
    ```
    To change env vars on an existing app, use `apps update` instead:
    ```bash
@@ -69,6 +71,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
    ```
 
 **Key rules:**
+- **Every `dibbla deploy` must include `-m "<message>"`.** The value becomes the git commit subject in the app's Dibbla-managed VCS history (and on the GitHub mirror, if configured). Treat it like a git commit: present-tense imperative, under ~72 chars, covering what changed and why — e.g. `-m "fix: handle null org in /api/me"`, `-m "feat: add nightly db backup workflow"`, `-m "chore: bump node to 20.14"`. For retries or mechanical redeploys, still say so explicitly: `-m "redeploy: retry after CF 524"`. Max 500 chars. Never run `dibbla deploy` without `-m`; a blank deploy history is a bug, not a default.
 - `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
@@ -104,8 +107,9 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 
 ## Additional resources
 
+- **Platform compatibility:** see [platform.md](platform.md) for the Dockerfile contract, port-matching, runtime environment, managed Postgres TLS handling, secrets/env-var injection, the upload boundary, and the pre-deploy compatibility checklist. Read this when working in a Dibbla-connected project on Dockerfile, `.dibblaignore`, or deploy-readiness questions.
 - **Full command and flag reference:** see [reference.md](reference.md) for usage, arguments, and all flags.
 - **Usage examples:** see [examples.md](examples.md) for copy-paste examples and scripting patterns.
-- **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy checklist.
+- **Pre-deploy guardrails:** see [guardrails.md](guardrails.md) for the mandatory pre-deploy security checklist.
 
-When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows.
+When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows. For "is my app ready for Dibbla?" questions, start in `platform.md`.
