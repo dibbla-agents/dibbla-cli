@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
+	"github.com/dibbla-agents/dibbla-cli/internal/deploy/render"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
+	isatty "github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +26,9 @@ var (
 	deployAccessPolicy string
 	deployGoogleScopes []string
 	deployMessage      string
+	deployQuiet        bool
+	deployJSON         bool
+	deployVerboseBuild bool
 )
 
 var deployCmd = &cobra.Command{
@@ -43,6 +46,14 @@ accidentally packaging host files.
 Configuration:
   Run dibbla login to store credentials, or set DIBBLA_API_TOKEN (and optionally DIBBLA_API_URL) in your environment or .env file.
 
+Output modes:
+  When stdout is a TTY, dibbla streams a live build view with per-step
+  progress. In CI or when piped, it switches to ISO-timestamped log lines
+  (no cursor moves, grep-friendly). --quiet collapses success to one line;
+  --json emits a single structured object that scripts can parse with jq.
+  On build failure --verbose-build asks the server to ship the full build
+  log instead of relying on parsed compile diagnostics alone.
+
 Examples:
   dibbla deploy              # Deploy current directory
   dibbla deploy ./myapp      # Deploy specific directory
@@ -52,7 +63,9 @@ Examples:
   dibbla deploy --force      # Force redeploy existing alias (causes downtime)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
-  dibbla deploy --favicon https://example.com/favicon.ico`,
+  dibbla deploy --favicon https://example.com/favicon.ico
+  dibbla deploy --quiet      # Single-line success/failure (script-friendly)
+  dibbla deploy --json       # Structured JSON output for jq / agents`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runDeploy,
 }
@@ -70,13 +83,14 @@ func init() {
 	deployCmd.Flags().StringVar(&deployAccessPolicy, "access-policy", "", "Access policy: all_members or invite_only")
 	deployCmd.Flags().StringArrayVar(&deployGoogleScopes, "google-scopes", nil, "Google OAuth scope URL (repeatable)")
 	deployCmd.Flags().StringVarP(&deployMessage, "message", "m", "", "Deploy message, used as the VCS commit subject (e.g. \"fix: handle null user\")")
+	deployCmd.Flags().BoolVar(&deployQuiet, "quiet", false, "Suppress build progress; print one line on success/failure")
+	deployCmd.Flags().BoolVar(&deployJSON, "json", false, "Emit a single structured JSON object on completion")
+	deployCmd.Flags().BoolVar(&deployVerboseBuild, "verbose-build", false, "On build failure, request the full server build log instead of just the elided tail")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
+	deployCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 }
 
 func runDeploy(cmd *cobra.Command, args []string) {
-	fmt.Printf("%s Dibbla Deploy\n", platform.Icon("🚀", ">>"))
-	fmt.Println()
-
 	cfg := config.Load()
 	requireToken(cfg)
 
@@ -87,29 +101,15 @@ func runDeploy(cmd *cobra.Command, args []string) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		fmt.Printf("%s Error: Invalid path: %v\n", platform.Icon("❌", "[X]"), err)
+		fmt.Fprintf(os.Stderr, "✗ invalid path: %v\n", err)
 		os.Exit(1)
 	}
-
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		fmt.Printf("%s Error: Directory not found: %s\n", platform.Icon("❌", "[X]"), absPath)
+		fmt.Fprintf(os.Stderr, "✗ directory not found: %s\n", absPath)
 		os.Exit(1)
 	}
 
-	fmt.Printf("%s Deploying: %s\n", platform.Icon("📁", "[DIR]"), absPath)
-	if deployAlias != "" {
-		fmt.Printf("%s Alias: %s\n", platform.Icon("🏷️", "[TAG]"), deployAlias)
-	}
-	fmt.Printf("%s API: %s\n", platform.Icon("🌐", "[NET]"), cfg.APIURL)
-	if deployUpdate {
-		fmt.Printf("%s Update mode: rolling update with zero downtime\n", platform.Icon("🔄", "[UPD]"))
-	}
-	if deployForce {
-		fmt.Printf("%s Force mode: will overwrite existing deployment\n", platform.Icon("⚠️", "[!]"))
-	}
-	fmt.Println()
-
-	fmt.Printf("%s Creating archive...\n", platform.Icon("📦", "[PKG]"))
+	r := selectRenderer()
 
 	opts := deploypkg.Options{
 		APIURL:       cfg.APIURL,
@@ -127,38 +127,32 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		AccessPolicy: deployAccessPolicy,
 		GoogleScopes: deployGoogleScopes,
 		Message:      deployMessage,
+		VerboseBuild: deployVerboseBuild,
 	}
 
-	action := "Deploying"
-	if deployUpdate {
-		action = "Updating"
-	}
-	fmt.Printf("%s Uploading and %s...\n", platform.Icon("☁️", "[CLOUD]"), strings.ToLower(action))
-	fmt.Println()
-
-	stop := spinner.Start(action, "\033[32m")
-
-	result, err := deploypkg.Run(opts)
-	stop()
-	if err != nil {
-		fmt.Printf("\r%s Deployment failed: %v\n", platform.Icon("❌", "[X]"), err)
+	_, err = deploypkg.Run(opts, r)
+	if err != nil && r == nil {
+		// Legacy/no-renderer path — surface the raw error directly.
+		fmt.Fprintf(os.Stderr, "✗ deploy failed: %v\n", err)
 		os.Exit(1)
 	}
+	os.Exit(r.OnDone())
+}
 
-	if deployUpdate {
-		fmt.Printf("\r%s Update successful!\n", platform.Icon("✅", "[OK]"))
-	} else {
-		fmt.Printf("\r%s Deployment successful!\n", platform.Icon("✅", "[OK]"))
-	}
-	fmt.Println()
-	fmt.Printf("   URL:    %s\n", result.Deployment.URL)
-	fmt.Printf("   Alias:  %s\n", result.Deployment.Alias)
-	fmt.Printf("   Status: %s\n", result.Deployment.Status)
-	fmt.Printf("   ID:     %s\n", result.Deployment.ID)
-
-	if result.Deployment.HealthCheck != nil {
-		fmt.Printf("   Health: %s (%dms)\n",
-			result.Deployment.HealthCheck.Status,
-			result.Deployment.HealthCheck.ResponseTimeMs)
+// selectRenderer picks an output renderer based on flags and stdout type.
+// Order: --json > --quiet > TTY (interactive) > log (CI / piped).
+// platform.IsCI is used as a belt-and-braces fallback so that explicit CI
+// env vars force the log renderer even if isatty is fooled by an
+// allocated pty (some CI runners do this).
+func selectRenderer() render.Renderer {
+	switch {
+	case deployJSON:
+		return render.NewJSON(os.Stdout)
+	case deployQuiet:
+		return render.NewQuiet(os.Stdout)
+	case isatty.IsTerminal(os.Stdout.Fd()) && !platform.IsCI():
+		return render.NewTTY(os.Stdout, true)
+	default:
+		return render.NewLog(os.Stdout, os.Stderr)
 	}
 }
