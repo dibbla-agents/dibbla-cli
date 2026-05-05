@@ -1,19 +1,15 @@
 name: Publish Skill
 
-# Syncs skill files from this private repo to the public dibbla-agents/skills repo.
-# This allows skills.sh to auto-index the skill for discovery.
+# Mirrors the embedded skill (the exact bytes go:embed bakes into the
+# released binary) from this repo to the public dibbla-agents/skills repo,
+# tagged with the same version as the CLI release.
 #
-# Triggers:
-#   - Push to main when skill files change
-#   - New version tags (always, regardless of which files changed)
-#   - Manual trigger
+# Tag-only trigger so the public repo represents shipped versions only —
+# in-flight changes on main don't leak. For every dibbla-cli vX.Y.Z tag,
+# the mirror gets a vX.Y.Z tag whose contents match what the CLI binary
+# embeds at that version.
 on:
   push:
-    branches: [main]
-    paths:
-      - ".claude/skills/**"
-      - "SKILL.md"
-  create:
     tags:
       - "v*"
   workflow_dispatch:
@@ -21,19 +17,9 @@ on:
 permissions:
   contents: read
 
-# Serialize runs so that pushing main + a tag simultaneously doesn't trigger
-# two parallel publishers racing to commit to dibbla-agents/skills (the loser
-# hits "cannot lock ref"). cancel-in-progress=false queues instead of
-# canceling — the second run is a cheap no-op via the SKIP=true path.
-concurrency:
-  group: publish-skill
-  cancel-in-progress: false
-
 jobs:
   publish-skill:
     runs-on: ubuntu-latest
-    # Skip if triggered by create event for non-tag refs
-    if: github.event_name != 'create' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
@@ -48,11 +34,11 @@ jobs:
         with:
           path: source
 
-      - name: Validate SKILL.md frontmatter
+      - name: Validate embedded skill exists
         run: |
-          SKILL_FILE="source/.claude/skills/dibbla/SKILL.md"
+          SKILL_FILE="source/internal/cmd/skills/assets/dibbla/SKILL.md"
           if [ ! -f "$SKILL_FILE" ]; then
-            echo "::error::$SKILL_FILE not found"
+            echo "::error::$SKILL_FILE not found — did 'go generate ./...' run before commit?"
             exit 1
           fi
           if ! head -20 "$SKILL_FILE" | grep -q "^name:"; then
@@ -63,7 +49,7 @@ jobs:
             echo "::error::SKILL.md missing 'description' in frontmatter"
             exit 1
           fi
-          echo "✓ Skill frontmatter valid"
+          echo "✓ Embedded skill valid"
 
       - name: Clone or init public skills repo
         env:
@@ -82,53 +68,53 @@ jobs:
 
       - name: Sync skill files
         run: |
-          # Clear existing skill content (so deletions propagate)
+          # Mirror the *embedded* skill — the bytes go:embed bakes into the
+          # released binary — not the editable .claude/skills source dir.
+          # Drift between the two is caught at PR-time by skill-sync-check.yml.
           rm -rf target/dibbla-cli/
+          cp -r source/internal/cmd/skills/assets/dibbla target/dibbla-cli
 
-          # Copy the skill directory
-          cp -r source/.claude/skills/dibbla target/dibbla-cli
-
-          # Copy the root SKILL.md as a convenience entry point
+          # Convenience entry point at the root of the public repo.
           cp source/SKILL.md target/SKILL.md
 
-          # Copy the README if it doesn't exist yet
+          # Seed README on first publish; never overwrite human edits there.
           if [ ! -f target/README.md ]; then
             cp source/skills-repo-README.md target/README.md
           fi
 
-          # Check if anything actually changed
           cd target
           if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
-            echo "No skill changes to publish"
-            echo "SKIP=true" >> "$GITHUB_ENV"
+            echo "CONTENT_CHANGED=false" >> "$GITHUB_ENV"
           else
-            echo "SKIP=false" >> "$GITHUB_ENV"
+            echo "CONTENT_CHANGED=true" >> "$GITHUB_ENV"
           fi
 
-      - name: Commit and push
-        if: env.SKIP != 'true'
+      - name: Commit and tag
         run: |
           cd target
+          VERSION="${GITHUB_REF#refs/tags/}"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
 
-          # Include version in commit message when triggered by a tag
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
+          # Always tag the mirror, even when content hasn't changed since
+          # the previous version — multiple tags can point at the same
+          # commit, and consumers need every CLI tag to resolve in the
+          # mirror. Commit only if content actually changed.
+          if [ "$CONTENT_CHANGED" = "true" ]; then
+            git add -A
             git commit -m "Update dibbla skill to $VERSION"
-            git tag "$VERSION"
-            git push origin main --tags
           else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            git commit -m "Sync dibbla skill from dibbla-cli@$SHORT_SHA"
-            git push origin main
+            echo "Content unchanged since last sync — tagging existing HEAD"
           fi
 
-          echo "✓ Published to dibbla-agents/skills"
+          git tag "$VERSION"
+          git push origin main --tags
+
+          echo "✓ Published $VERSION to dibbla-agents/skills"
 
       - name: Notify Slack
-        if: always() && env.SKIP != 'true'
+        if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then status="success"; else status="failed"; fi
           cluster_ip="$(dig +short ash.dibbla.net @1.1.1.1 | head -1)"

@@ -1,0 +1,56 @@
+name: Skill sync check
+
+# Verifies that the embedded skill (internal/cmd/skills/assets/dibbla/) and
+# the embedded root skill prompt (internal/cmd/skill.md) are in sync with
+# their respective source files. Runs `go generate ./...` and fails if the
+# working tree changes — meaning someone committed an edit without
+# re-running generate, and the binary would embed stale content.
+#
+# Catches the drift at PR time so the publish-skill workflow's bit-for-bit
+# guarantee (dibbla-skills@vX.Y.Z == binary-embedded skill @ vX.Y.Z) is
+# always honored at release time.
+
+on:
+  pull_request:
+    paths:
+      - ".claude/skills/**"
+      - "SKILL.md"
+      - "internal/cmd/skills/assets/**"
+      - "internal/cmd/skill.md"
+      - "internal/cmd/skills/assets.go"
+      - "internal/cmd/root.go"
+  push:
+    branches: [main]
+    paths:
+      - ".claude/skills/**"
+      - "SKILL.md"
+      - "internal/cmd/skills/assets/**"
+      - "internal/cmd/skill.md"
+      - "internal/cmd/skills/assets.go"
+      - "internal/cmd/root.go"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate embedded files
+        run: go generate ./...
+
+      - name: Verify no drift
+        run: |
+          if ! git diff --exit-code; then
+            echo ""
+            echo "::error::Embedded skill files are out of sync with their sources."
+            echo "::error::Run 'go generate ./...' locally and commit the result."
+            exit 1
+          fi
+          echo "✓ Embedded skill files match sources"
