@@ -202,11 +202,42 @@ verify() {
     printf "\n"
 }
 
+# If a working dibbla is already on PATH and knows about the `update`
+# subcommand (v1.2.10+), delegate to it. That path goes through
+# install-method detection (refuses to clobber a brew/apt install) and
+# verifies the SHA-256 of the downloaded archive — both things this
+# bootstrap script can't do on its own. Pre-v1.2.10 binaries don't
+# recognize `update`, so the probe fails and we fall through to bootstrap.
+#
+# Set DIBBLA_INSTALLER_FORCE=1 to skip delegation when:
+#   - the existing dibbla update is broken and you need to reinstall fresh
+#   - you want to install into a different DIBBLA_INSTALL_DIR
+maybe_delegate_to_update() {
+    if [ "${DIBBLA_INSTALLER_FORCE:-}" = "1" ]; then
+        return 0
+    fi
+
+    existing=$(command -v dibbla 2>/dev/null || true)
+    if [ -z "$existing" ]; then
+        return 0
+    fi
+
+    if "$existing" update --help >/dev/null 2>&1; then
+        printf "\n"
+        info "  Found existing dibbla at $existing — delegating to 'dibbla update'."
+        info "  (set DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
+        printf "\n"
+        exec "$existing" update --yes
+    fi
+}
+
 main() {
     printf "\n"
     info "  Dibbla CLI Installer"
     info "  --------------------"
     printf "\n"
+
+    maybe_delegate_to_update
 
     check_deps
     detect_os

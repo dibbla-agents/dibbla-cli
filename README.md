@@ -79,6 +79,8 @@ dibbla update --yes            # skip the confirmation prompt
 - **Script install** (from `install.dibbla.com`, lands in `~/.local/bin` or `%LOCALAPPDATA%\dibbla`): downloads the matching release archive, verifies its SHA-256 against `checksums.txt`, and atomically replaces the binary.
 - **`go install` / development builds (`Version == "dev"`)**: refuses to self-replace; rebuild from source instead.
 
+Re-running the `curl … | sh` (or `irm … | iex`) installer also picks up `dibbla update` automatically: if a working dibbla is already on `PATH` and recognizes the `update` subcommand, the installer delegates to it instead of overwriting the binary in place. That way running the installer on a Homebrew or apt install prints the right `brew upgrade` / `apt-get install --only-upgrade` command rather than silently replacing the package-manager copy. Set `DIBBLA_INSTALLER_FORCE=1` (or `$env:DIBBLA_INSTALLER_FORCE=1` on Windows) to skip the delegation and reinstall from scratch — useful when the existing `dibbla update` is broken or when installing into a different `DIBBLA_INSTALL_DIR`.
+
 ### Create a Go Worker Project
 
 ```bash

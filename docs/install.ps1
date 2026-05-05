@@ -121,5 +121,31 @@ public static extern System.IntPtr SendMessageTimeout(
     }
 }
 
+# If a working dibbla is already on PATH and knows about the `update`
+# subcommand (v1.2.10+), delegate to it. That path verifies the SHA-256
+# of the downloaded archive and does the running-exe rename dance —
+# both things this bootstrap script can't do on its own. Pre-v1.2.10
+# binaries fail the `update --help` probe, so we fall through.
+#
+# Set $env:DIBBLA_INSTALLER_FORCE=1 to skip delegation (useful when an
+# existing `dibbla update` is broken or when targeting a new install dir).
+function Invoke-MaybeDelegateToUpdate {
+    if ($env:DIBBLA_INSTALLER_FORCE -eq "1") { return }
+
+    $existing = Get-Command dibbla -ErrorAction SilentlyContinue
+    if (-not $existing) { return }
+
+    & $existing.Source update --help *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Info "  Found existing dibbla at $($existing.Source) — delegating to 'dibbla update'."
+        Write-Info "  (set `$env:DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
+        Write-Host ""
+        & $existing.Source update --yes
+        exit $LASTEXITCODE
+    }
+}
+
+Invoke-MaybeDelegateToUpdate
 Install-Dibbla
 
