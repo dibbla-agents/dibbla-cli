@@ -192,10 +192,21 @@ var workflowsExecuteCmd = &cobra.Command{
 	Short: "Execute a workflow",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		async, _ := cmd.Flags().GetBool("async")
+		follow, _ := cmd.Flags().GetBool("follow")
+		// --follow implies --async: we need the runId immediately so we can
+		// open a log tail while the workflow is still executing.
+		if follow {
+			async = true
+		}
+
 		path := "/api/wf/slim/workflows/" + args[0] + "/execute?format=json"
 		node, _ := cmd.Flags().GetString("node")
 		if node != "" {
 			path += "&node=" + node
+		}
+		if async {
+			path += "&async=true"
 		}
 		dataStr, _ := cmd.Flags().GetString("data")
 		filePath, _ := cmd.Flags().GetString("file")
@@ -220,13 +231,66 @@ var workflowsExecuteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var result interface{}
+		var result map[string]interface{}
 		if err := parseJSON(resp.Body, &result); err != nil {
 			fmt.Print(string(resp.Body))
 			return nil
 		}
+
+		if follow {
+			runID, _ := extractRunID(result)
+			if runID == "" {
+				output.Stderr("Started but could not parse run id from response; skipping log tail.")
+				return output.PrintJSON(result)
+			}
+			output.Stderr("Started run %s — tailing logs (Ctrl-C to stop)", runID)
+			if err := runLogsByID(cmd, runID); err != nil {
+				return err
+			}
+			// After the run_completed sentinel, fetch the api_response payload
+			// so `--follow` produces the same final output as a synchronous
+			// execute. Best-effort: a 404 here just means the workflow had
+			// no api_response node or errored before reaching it; in that
+			// case the logs above are the meaningful artefact.
+			return printRunOutput(runID)
+		}
+
 		return output.PrintJSON(result)
 	},
+}
+
+// printRunOutput fetches /api/wf/slim/runs/<id>/output and prints the result
+// as JSON to stdout. Used by `wf execute --follow` to surface the final
+// api_response payload after the log tail completes.
+func printRunOutput(runID string) error {
+	resp, err := getClient().Get("/api/wf/slim/runs/" + runID + "/output")
+	if err != nil {
+		// Most common cause: 404 because the run had no api_response or
+		// finished too fast for the persisted row to be queryable.
+		// Print to stderr so the (possibly empty) stdout stays scriptable.
+		output.Stderr("could not fetch run output: %v", err)
+		return nil
+	}
+	var result map[string]interface{}
+	if err := parseJSON(resp.Body, &result); err != nil {
+		fmt.Print(string(resp.Body))
+		return nil
+	}
+	return output.PrintJSON(result)
+}
+
+// extractRunID pulls the run id from either the async or sync execute response
+// shape. Both nest the metadata under "response_metadata".
+func extractRunID(result map[string]interface{}) (string, bool) {
+	meta, _ := result["response_metadata"].(map[string]interface{})
+	if meta == nil {
+		return "", false
+	}
+	id, _ := meta["run"].(string)
+	if id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 var workflowsURLCmd = &cobra.Command{
@@ -387,8 +451,10 @@ func init() {
 	workflowsDeleteCmd.Flags().Bool("yes", false, "Skip confirmation")
 	workflowsValidateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsExecuteCmd.Flags().String("data", "", "JSON data to send")
-	workflowsExecuteCmd.Flags().StringP("file", "f", "", "JSON data file")
+	workflowsExecuteCmd.Flags().StringP("file", "F", "", "JSON data file")
 	workflowsExecuteCmd.Flags().String("node", "", "Target API node ID")
+	workflowsExecuteCmd.Flags().Bool("async", false, "Return immediately with run metadata; don't wait for the workflow to finish")
+	workflowsExecuteCmd.Flags().BoolP("follow", "f", false, "Async + tail run logs until Ctrl-C")
 	workflowsURLCmd.Flags().String("revision", "", "Revision ID")
 	workflowsAPIDocsCmd.Flags().String("revision", "", "Revision ID")
 

@@ -3,12 +3,10 @@ package logs
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -142,7 +140,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			// Already handled above (DecodeLine returned an error envelope).
 			continue
 		}
-		fmt.Println(formatEntry(entry, useColor))
+		fmt.Println(applogs.FormatEntry(entry, useColor))
 	}
 	if err := scanner.Err(); err != nil {
 		// Cancelled streams produce a context error — exit quietly.
@@ -191,58 +189,3 @@ func runPodStream(ctx context.Context, apiURL, apiToken, alias string) error {
 	}
 	return nil
 }
-
-// formatEntry renders one entry as `HH:MM:SS.mmm  LEVEL  body`. Level is
-// extracted from JSON-shaped lines (slog format) when present; otherwise
-// only the timestamp + raw line are printed.
-func formatEntry(e applogs.Entry, useColor bool) string {
-	ts := e.Timestamp.Local().Format("15:04:05.000")
-	level, msg := splitLevelAndMessage(e.Line)
-
-	if level == "" {
-		return ts + "  " + e.Line
-	}
-
-	tag := padRight(strings.ToUpper(level), 5)
-	if useColor {
-		tag = colorize(level, tag)
-	}
-	return ts + "  " + tag + "  " + msg
-}
-
-func splitLevelAndMessage(line string) (level, msg string) {
-	// Try slog JSON shape first: {"time":"...","level":"INFO","msg":"..."}
-	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
-		var obj struct {
-			Level string `json:"level"`
-			Msg   string `json:"msg"`
-		}
-		if err := json.Unmarshal([]byte(trimmed), &obj); err == nil && obj.Msg != "" {
-			return obj.Level, obj.Msg
-		}
-	}
-	return "", line
-}
-
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s
-	}
-	return s + strings.Repeat(" ", n-len(s))
-}
-
-func colorize(level, s string) string {
-	switch strings.ToUpper(level) {
-	case "ERROR", "ERR", "FATAL", "PANIC":
-		return "\033[31m" + s + "\033[0m" // red
-	case "WARN", "WARNING":
-		return "\033[33m" + s + "\033[0m" // yellow
-	case "INFO":
-		return "\033[36m" + s + "\033[0m" // cyan
-	case "DEBUG":
-		return "\033[90m" + s + "\033[0m" // bright-black
-	}
-	return s
-}
-
