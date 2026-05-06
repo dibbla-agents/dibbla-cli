@@ -143,6 +143,56 @@ dibbla deploy --cpu 500m --memory 512Mi --port 3000
 dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 ```
 
+#### Deploy a multi-service app (`dibbla.yaml`)
+
+Bundle multiple containers into one alias by adding a `dibbla.yaml` at the deploy root. Detection is automatic: present ⇒ multi-service path; absent ⇒ legacy single-`Dockerfile` path. Min example:
+
+```yaml
+# dibbla.yaml
+version: 1
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    environment:
+      REDIS_URL: ${DIBBLA_SVC_REDIS_URL}     # service-discovery substitution
+  worker:
+    build: ./worker
+  redis:
+    image: redis:7
+    port: 6379
+```
+
+```bash
+dibbla deploy --alias myapp -m "feat: ship multi-service"
+dibbla deploy --alias myapp --target-env staging --profile mailcatcher -m "deploy: staging"
+dibbla deploy --alias daily --no-public -m "feat: cron-only deploy"
+```
+
+The whole graph is built and applied atomically (rollback-on-failure). For env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, multiple public services, build-time secrets, and the runtime contract for service discovery + NetworkPolicy, see [`.claude/skills/dibbla/manifest.md`](.claude/skills/dibbla/manifest.md).
+
+#### Validate and preview before deploying
+
+```bash
+dibbla manifest validate                        # local schema check (no network)
+dibbla manifest validate ./myapp --json         # CI / pre-commit hook friendly
+dibbla preview --target-env prod                # server-authoritative dry run
+dibbla preview --profile mailcatcher --json     # raw PreviewResponse for jq
+```
+
+`manifest validate` covers parse + schema only. `preview` resolves env-aware fields, applies profiles, and runs the org quota check — server-side, no build, no apply.
+
+#### Operate a multi-service app
+
+```bash
+dibbla apps restart myapp --service worker     # rolling restart of one service
+dibbla logs myapp --service web -f              # filter Loki to one service
+dibbla logs myapp --service web --pod-stream -f # K8s-direct stream when Loki isn't set up
+dibbla secrets set NPM_TOKEN xxx -d myapp -s web  # per-service secret (only web sees it)
+dibbla secrets list -d myapp                     # deployment-wide entries (service_name='')
+```
+
 ### Manage Applications
 
 ```bash

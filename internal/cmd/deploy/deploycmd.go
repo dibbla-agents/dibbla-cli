@@ -29,6 +29,13 @@ var (
 	deployQuiet        bool
 	deployJSON         bool
 	deployVerboseBuild bool
+	// Multi-service flags. --target-env (not --env, which is reserved for
+	// KEY=value vars) selects the manifest env block; --profile activates a
+	// profile in addition to the env name; --no-public allows worker-only
+	// deploys (no service marked public:true).
+	deployTargetEnv string
+	deployProfiles  []string
+	deployNoPublic  bool
 )
 
 var deployCmd = &cobra.Command{
@@ -86,6 +93,9 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployQuiet, "quiet", false, "Suppress build progress; print one line on success/failure")
 	deployCmd.Flags().BoolVar(&deployJSON, "json", false, "Emit a single structured JSON object on completion")
 	deployCmd.Flags().BoolVar(&deployVerboseBuild, "verbose-build", false, "On build failure, request the full server build log instead of just the elided tail")
+	deployCmd.Flags().StringVar(&deployTargetEnv, "target-env", "", "Manifest env name to resolve (e.g. prod, staging, dev). Defaults to 'prod' server-side.")
+	deployCmd.Flags().StringArrayVar(&deployProfiles, "profile", nil, "Activate a manifest profile (repeatable)")
+	deployCmd.Flags().BoolVar(&deployNoPublic, "no-public", false, "Allow deploy with no public:true service (worker-only)")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 	deployCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 }
@@ -128,6 +138,9 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		GoogleScopes: deployGoogleScopes,
 		Message:      deployMessage,
 		VerboseBuild: deployVerboseBuild,
+		TargetEnv:    deployTargetEnv,
+		Profiles:     deployProfiles,
+		NoPublic:     deployNoPublic,
 	}
 
 	_, err = deploypkg.Run(opts, r)

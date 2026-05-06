@@ -46,8 +46,28 @@ func (q *Quiet) OnDone() int {
 		}
 		return 1
 	case q.result != nil:
-		fmt.Fprintf(q.out, "✓ %s  ·  %s  ·  %s\n",
-			q.result.Deployment.Alias, q.result.Deployment.URL, elapsed)
+		// Append a "(N services)" suffix for multi-service deploys so quiet
+		// output reflects the new shape; legacy single-app deploys keep the
+		// byte-stable line.
+		suffix := ""
+		if n := countDisplayServices(q.result.Deployment.Services); n > 0 {
+			suffix = fmt.Sprintf("  ·  %d services", n)
+		}
+		fmt.Fprintf(q.out, "✓ %s  ·  %s  ·  %s%s\n",
+			q.result.Deployment.Alias, q.result.Deployment.URL, elapsed, suffix)
 	}
 	return 0
+}
+
+// countDisplayServices returns the count of services to surface in user
+// output. Returns 0 for empty/legacy-shape (so the renderer suppresses the
+// suffix and stays byte-stable for legacy deploys).
+func countDisplayServices(svcs []ServiceView) int {
+	if len(svcs) == 0 {
+		return 0
+	}
+	if len(svcs) == 1 && svcs[0].Name == "app" {
+		return 0
+	}
+	return len(svcs)
 }

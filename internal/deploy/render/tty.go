@@ -313,11 +313,46 @@ func (t *TTY) finalize() {
 	if t.result.VCSCommit != "" {
 		t.prop("revision", t.paint(t.result.VCSCommit, colorMagenta+colorBold))
 	}
+	t.printServicesTable()
 	fmt.Fprintln(t.w)
 	fmt.Fprintf(t.w, "  %s %s\n",
 		t.paint("follow logs ·", colorDim),
 		t.paint(fmt.Sprintf("dibbla logs %s -f", t.result.Deployment.Alias), colorBright),
 	)
+}
+
+// printServicesTable prints a per-service summary line under the DEPLOYED
+// block, but only when the deployment actually has a multi-service shape
+// (more than one service, or a single service that isn't the synthesized
+// "app"). Empty/legacy deployments produce no output (byte-stable with
+// today's renderer).
+func (t *TTY) printServicesTable() {
+	svcs := t.result.Deployment.Services
+	if len(svcs) == 0 {
+		return
+	}
+	if len(svcs) == 1 && svcs[0].Name == "app" {
+		return
+	}
+	fmt.Fprintln(t.w)
+	fmt.Fprintln(t.w, t.paint("SERVICES", colorBrand+colorBold))
+	for _, s := range svcs {
+		role := "internal"
+		if s.IsPublic {
+			role = "public"
+		}
+		ready := fmt.Sprintf("%d/%d", s.ReadyReplicas, s.Replicas)
+		status := s.Status
+		if status == "" {
+			status = "starting"
+		}
+		fmt.Fprintf(t.w, "  %s  %s  %s  %s\n",
+			t.paint(padRight(s.Name, 12), colorBright+colorBold),
+			t.paint(padRight(role, 8), colorDim),
+			t.paint(padRight(status, 10), colorBrand),
+			t.paint(ready, colorDim),
+		)
+	}
 }
 
 // prop renders one "label  value" line with the design's column rhythm:

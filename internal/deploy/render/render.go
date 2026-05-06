@@ -44,10 +44,24 @@ type DeployResult struct {
 }
 
 type ResultDeployment struct {
-	ID     string `json:"id"`
-	Alias  string `json:"alias"`
-	URL    string `json:"url"`
-	Status string `json:"status"`
+	ID       string        `json:"id"`
+	Alias    string        `json:"alias"`
+	URL      string        `json:"url"`
+	Status   string        `json:"status"`
+	Services []ServiceView `json:"services,omitempty"`
+}
+
+// ServiceView is the per-service entry the renderers display. Mirrors the
+// server-side models.DeploymentServiceView.
+type ServiceView struct {
+	Name          string `json:"name"`
+	Image         string `json:"image,omitempty"`
+	Port          *int   `json:"port,omitempty"`
+	Replicas      int    `json:"replicas"`
+	ReadyReplicas int    `json:"ready_replicas"`
+	IsPublic      bool   `json:"is_public"`
+	IsBuilt       bool   `json:"is_built"`
+	Status        string `json:"status,omitempty"`
 }
 
 // DeployError is the failure payload. Mirrors the server's

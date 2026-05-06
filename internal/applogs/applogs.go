@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,11 +25,12 @@ type Entry struct {
 
 // Options controls the GET /deployments/{alias}/logs query string.
 type Options struct {
-	Since  time.Duration // 0 = server default (15m)
-	Limit  int           // 0 = server default
-	Tail   int           // 0 = none; >0 = last-N lines mode (kubectl --tail)
-	Grep   string        // optional regex line filter
-	Follow bool
+	Since   time.Duration // 0 = server default (15m)
+	Limit   int           // 0 = server default
+	Tail    int           // 0 = none; >0 = last-N lines mode (kubectl --tail)
+	Grep    string        // optional regex line filter
+	Follow  bool
+	Service string // optional per-service filter (forwarded as ?service=)
 }
 
 // Stream opens the streaming connection to the logs endpoint and returns the
@@ -58,6 +60,9 @@ func Stream(ctx context.Context, apiURL, apiToken, alias string, opts Options) (
 	if opts.Follow {
 		q.Set("follow", "true")
 	}
+	if opts.Service != "" {
+		q.Set("service", opts.Service)
+	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -80,6 +85,59 @@ func Stream(ctx context.Context, apiURL, apiToken, alias string, opts Options) (
 	}
 	return resp.Body, nil
 }
+
+// PodStreamOptions controls GET /deployments/{alias}/services/{service}/logs.
+// This endpoint streams text/plain (not NDJSON) — each line is prefixed with
+// the pod name as `[<pod>] <line>` so the caller can tell which replica
+// produced each row.
+type PodStreamOptions struct {
+	Tail   int  // 0 = no tail param; >0 = last-N lines per pod
+	Follow bool
+}
+
+// StreamPodService opens a pod-log stream for one service. Returns the raw
+// response body (text/plain). The caller closes it. Validates the service
+// name client-side so an obvious typo fails before the HTTP roundtrip.
+func StreamPodService(ctx context.Context, apiURL, apiToken, alias, service string, opts PodStreamOptions) (io.ReadCloser, error) {
+	if !servicePodNameRe.MatchString(service) {
+		return nil, fmt.Errorf("service name %q does not match %s", service, servicePodNameRe.String())
+	}
+	apiURL = strings.TrimSuffix(apiURL, "/")
+	u, err := url.Parse(fmt.Sprintf("%s/api/deploy/deployments/%s/services/%s/logs", apiURL, alias, service))
+	if err != nil {
+		return nil, fmt.Errorf("invalid api url: %w", err)
+	}
+	q := u.Query()
+	if opts.Follow {
+		q.Set("follow", "true")
+	}
+	if opts.Tail > 0 {
+		q.Set("tail", strconv.Itoa(opts.Tail))
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Accept", "text/plain")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("logs request: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, &HTTPError{Status: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+	}
+	return resp.Body, nil
+}
+
+// servicePodNameRe mirrors the server's restartServiceNameRe.
+var servicePodNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,29}$`)
 
 // HTTPError wraps a non-2xx response from the logs endpoint.
 type HTTPError struct {

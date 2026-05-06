@@ -237,7 +237,93 @@ fixtures/*.bin
 | | `--require-login` — Require authentication to access the app |
 | | `--access-policy` — Access policy: `all_members` or `invite_only` |
 | | `--google-scopes` — Google OAuth scope URL (repeatable) |
+| | `--target-env <name>` — Manifest env block to resolve (defaults to `prod` server-side). Only meaningful when a `dibbla.yaml` is at the deploy root. |
+| | `--profile <name>` — Activate a manifest profile (repeatable). Skipped services appear in the deploy event stream. |
+| | `--no-public` — Allow a deploy with no `public: true` service (worker- or cron-only deploy). |
 | **Note** | `--force` and `--update` are mutually exclusive |
+
+### Multi-service path vs single-Dockerfile path
+
+`dibbla deploy` picks the path automatically:
+
+- **Multi-service:** `dibbla.yaml` (or `dibbla.yml`) at the deploy root. The deploy-api parses + resolves the manifest, runs quota, builds every `build:` service in parallel, and applies the rendered K8s graph atomically (rollback-on-failure). The deploy event stream tags each event with the service name; the success response carries a `services:` map describing what got deployed.
+- **Single-Dockerfile (legacy):** no manifest at the root. Behaves exactly as before: one `Dockerfile`, `--cpu` / `--memory` / `--port` flags shape the single container, response shape unchanged. Backward compatible byte-for-byte.
+
+The two paths are mutually exclusive; the CLI fails fast (`MANIFEST_AMBIGUOUS`) if both `dibbla.yaml` and `dibbla.yml` are present.
+
+For the manifest schema, env-aware fields, profiles, service discovery, NetworkPolicy, init containers, healthchecks, custom domains, cron jobs, and build-time secrets — see [manifest.md](manifest.md).
+
+### Errors specific to manifest deploys
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `MANIFEST_AMBIGUOUS` | Both `dibbla.yaml` and `dibbla.yml` are present | Remove one |
+| `MANIFEST_INVALID` | Schema violation | Read the `path:` and `detail:` in the response |
+| `MANIFEST_UNSUPPORTED` | Reserved top-level key (`volumes`, `networks`, `secrets`, `cron`, `init`) | Use the per-service equivalent |
+| `SERVICE_NAME_INVALID` | Service name fails regex `^[a-z][a-z0-9-]{0,29}$` or is reserved | Rename |
+| `BUILD_CONTEXT_MISSING` / `DOCKERFILE_MISSING` | Path inside the archive is missing | Check `build.context` / `build.dockerfile` against the archive |
+| `PUBLIC_SERVICE_MISSING` | No `public: true` service and `--no-public` not set | Mark a service `public: true` or pass `--no-public` |
+| `PUBLIC_MISSING_PORT` | A `public: true` service has no `port:` | Add `port:` |
+| `QUOTA_EXCEEDED` | Resolved set exceeds an org quota | Trim `replicas` / `cpu` / `memory` / `volumes`, or talk to the platform operator |
+| `BUILD_FAILED` | A build step failed | Check the deploy event log; if it's a missing build secret, run `dibbla secrets set <NAME> <value> -d <alias>` first |
+| `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias | Wait or `dibbla apps cancel <alias>` |
+| `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy | Edit `dibbla.yaml` and redeploy with `--update` |
+
+---
+
+## manifest
+
+Local-only schema validation for `dibbla.yaml`. No server roundtrip; useful in CI, pre-commit hooks, and editor integrations.
+
+### manifest validate
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla manifest validate [path]` |
+| **Arguments** | `path` (optional) — path to a directory (looks for `dibbla.yaml` / `dibbla.yml`) or a manifest file directly. Defaults to `.`. |
+| **Flags** | `--target-env <name>` — informational; resolution runs server-side. |
+| | `--profile <name>` — repeatable; informational. |
+| | `--no-public` — informational; the local check accepts both. |
+| | `--json` — emit a structured JSON report instead of human text. |
+| **Exit codes** | `0` valid (or no manifest — legacy single-Dockerfile path); `1` invalid (first error printed). |
+| **Local coverage** | Schema version, service-name regex + reserved names, build/image XOR, image-must-have-tag, port range, ambiguous yaml/yml. |
+| **NOT covered locally** | Env-aware resolution, quota, multi-public, cross-service references, cycle detection. Use `dibbla preview` for those. |
+
+**Examples:**
+```bash
+dibbla manifest validate                 # validate ./dibbla.yaml
+dibbla manifest validate ./myapp         # validate ./myapp/dibbla.yaml
+dibbla manifest validate ./dibbla.yaml   # validate the file directly
+dibbla manifest validate --json          # machine-readable
+```
+
+---
+
+## preview
+
+Server-authoritative dry run. Uploads the archive, lets the server resolve the manifest + run quota, returns the resolved shape — no build, no apply, no deploy slot consumed.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla preview [path]` |
+| **Arguments** | `path` (optional) — directory; default `.` |
+| **Flags** | `-a`, `--alias <name>` — override directory-name alias. |
+| | `--target-env <name>` — manifest env (defaults to `prod` server-side). |
+| | `--profile <name>` — repeatable manifest profile. |
+| | `--no-public` — allow worker- or cron-only deploys. |
+| | `--port <N>` — forwarded as `port` field; used by the no-manifest synthesizer. |
+| | `--json` — emit raw `PreviewResponse` JSON. |
+| **Exit codes** | `0` valid; `1` invalid (errors printed) or HTTP/transport failure. |
+| **Output** | Active services + replica counts, public service name, env-aware-resolved values, skipped services with reason, quota-check result. |
+
+**Examples:**
+```bash
+dibbla preview                                          # ./, env=prod
+dibbla preview ./myapp --target-env staging
+dibbla preview --profile mailcatcher --profile metrics
+dibbla preview --no-public                              # cron-only deploy is OK
+dibbla preview --json | jq '.active_services'
+```
 
 ---
 
@@ -275,6 +361,27 @@ fixtures/*.bin
 | **Arguments** | `alias` (required) |
 | **Flags** | `--yes`, `-y` — skip confirmation |
 
+### apps restart
+
+Trigger a K8s rolling restart of one service in a multi-service deployment. Idempotent — calling twice in a row produces two pod rollouts. For single-service / legacy deployments, the conventional service name is `app`.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps restart <alias> --service <name>` |
+| **Arguments** | `alias` (required) — deployment alias |
+| **Flags** | `-s`, `--service <name>` (required) — service to restart; regex `^[a-z][a-z0-9-]{0,29}$` |
+| | `-q`, `--quiet` — print only the alias on success (script-friendly) |
+| | `--json` — print the JSON response body |
+| **Output** | Default: `✓ rolling restart triggered for <alias>/<service>`. JSON: full response. |
+| **Errors** | `404` (service not found) prints a hint to run `dibbla apps list`. `SERVICE_NAME_INVALID` is caught locally before the HTTP call. |
+
+**Examples:**
+```bash
+dibbla apps restart myapp --service worker
+dibbla apps restart myapp -s web --quiet
+dibbla apps restart myapp -s redis --json
+```
+
 ---
 
 ## logs
@@ -292,7 +399,23 @@ Print runtime logs for a deployed app, sourced from the platform's Loki backend.
 | | `--limit <N>` — cap lines fetched in range mode (server caps the value) |
 | | `--json` — emit raw NDJSON (one Loki entry per line) instead of the human format |
 | | `--no-color` — disable colour in the human format (set this for non-TTY callers) |
-| **Errors** | Returns 404 for apps outside your organisation. Returns 503 if the platform isn't configured for logs (`LOKI_URL` unset on the server). |
+| | `-s`, `--service <name>` — filter to a single service in a multi-service deployment (forwarded as `?service=`) |
+| | `--pod-stream` — stream pod logs via the K8s API instead of Loki (requires `--service`); output is text/plain with `[<pod>] ` line prefixes |
+| **Errors** | Returns 404 for apps outside your organisation, or for `--pod-stream` when no pods match the service. Returns 503 if Loki isn't configured (`LOKI_URL` unset) or `--pod-stream` is used and Kubernetes isn't configured. |
+
+### Two log sources
+
+`dibbla logs` has two backends; pick based on what's available and what you need:
+
+| | Loki (default) | K8s pod-stream (`--pod-stream`) |
+|---|---|---|
+| Server requirement | `LOKI_URL` configured | Kubernetes clientset configured |
+| Output format | NDJSON entries with `ts`, `line`, `labels` | text/plain, one `[<pod>] ` line per row |
+| Cross-service | Yes (omit `--service` to see all) | No (`--service` is required) |
+| Multi-pod | Merged by Loki | Merged client-side; line ordering is per-pod |
+| Time range | `--since`, `--tail` | `--tail` only |
+| Grep | Yes (LogQL `|~`) | No (filter client-side) |
+| Long retention | Yes (Loki retention) | No (just current pod logs) |
 
 **Examples:**
 
@@ -420,40 +543,79 @@ For older Prisma versions that don't recognise `no-verify`, use the `@prisma/ada
 
 ## secrets
 
-Secrets are **global** (omit `--deployment`) or **deployment-scoped** (`--deployment <alias>` or `-d <alias>`).
+Secrets have three scopes:
+
+- **Global** (no `--deployment`) — visible to every deployment in the org.
+- **Deployment-wide** (`--deployment <alias>` or `-d <alias>`, no `--service`) — visible to every service in the deployment.
+- **Per-service** (`-d <alias> --service <name>` or `-s <name>`) — visible only to the named service container, not to its peers.
+
+Precedence at deploy time (highest wins): per-service > deployment-wide > global. So a `DATABASE_URL` set globally can be overridden for one deployment by `dibbla secrets set DATABASE_URL ... -d myapp`, and that in turn can be overridden for the worker container by `dibbla secrets set DATABASE_URL ... -d myapp --service worker`.
+
+`--service` requires `--deployment`. Setting `--service` without `-d` is rejected client-side. Service names follow the regex `^[a-z][a-z0-9-]{0,29}$`.
 
 ### secrets list
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla secrets list [--deployment <alias> | -d <alias>]` |
-| **Flags** | `--deployment`, `-d` — list secrets for this deployment only; omit for global |
+| **Usage** | `dibbla secrets list [--deployment <alias> | -d <alias>] [--service <name> | -s <name>]` |
+| **Flags** | `--deployment`, `-d` — list secrets for this deployment; omit for global |
+| | `--service`, `-s` — scope to a single service (requires `-d`) |
+| **Output** | Table: NAME, DEPLOYMENT, SERVICE, UPDATED. Service `(all)` means deployment-wide; deployment `(global)` means org-global. |
 
 ### secrets set
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla secrets set <name> [value] [--deployment <alias> | -d <alias>]` |
+| **Usage** | `dibbla secrets set <name> [value] [-d <alias>] [-s <service>]` |
 | **Arguments** | `name` (required), `value` (optional — if omitted, read from stdin) |
 | **Flags** | `--deployment`, `-d` — attach to deployment; omit for global |
+| | `--service`, `-s` — scope to a single service (requires `-d`) |
+| **Notes** | Per-service secrets stack on top of deployment-wide and global; the higher-precedence value wins inside the service container. |
 
 ### secrets get
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla secrets get <name> [--deployment <alias> | -d <alias>]` |
+| **Usage** | `dibbla secrets get <name> [-d <alias>] [-s <service>]` |
 | **Arguments** | `name` (required) |
 | **Flags** | `--deployment`, `-d` — for deployment-scoped secret |
+| | `--service`, `-s` — for per-service secret (requires `-d`) |
 | **Output** | Secret value only (pipeline-friendly) |
+| **Notes** | Returns the exact (deployment, service) row — there is no implicit fall-through. To inspect what a service container actually sees at runtime, exec into the pod or use `dibbla logs <alias> --service <svc>` after a redeploy. |
 
 ### secrets delete
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla secrets delete <name> [--deployment <alias>] [--yes | -y]` |
+| **Usage** | `dibbla secrets delete <name> [-d <alias>] [-s <service>] [--yes | -y]` |
 | **Arguments** | `name` (required) |
 | **Flags** | `--deployment`, `-d` — for deployment-scoped secret |
+| | `--service`, `-s` — for per-service secret (requires `-d`) |
 | | `--yes`, `-y` — skip confirmation |
+
+---
+
+## admin
+
+Platform-admin commands gated by `DIBBLA_ADMIN_TOKEN`. The user's normal API token is **not** used; admin endpoints require a separate static token configured by the platform operator. If the token isn't configured server-side, the endpoints don't exist (the CLI will see a 404).
+
+### admin reconcile
+
+Force one synchronous orphan-resource sweep on the deploy-api instance. The reconciler normally runs on a periodic schedule; this command runs one tick immediately and prints the names of the K8s objects it deleted (or would have, depending on operator config).
+
+| Item | Details |
+|------|---------|
+| **Usage** | `DIBBLA_ADMIN_TOKEN=<tok> dibbla admin reconcile` |
+| **Flags** | `--json` — emit the raw JSON sweep result instead of human text |
+| **Auth** | Reads `DIBBLA_ADMIN_TOKEN` from env. The user's API token is NOT used. `DIBBLA_API_URL` (or default) selects the deploy-api instance. |
+| **Output** | `deployments`, `services`, `ingresses` — counts plus the names of the swept objects. |
+| **Errors** | Missing token → exit 1 with prompt. 401 → "unauthorized; check DIBBLA_ADMIN_TOKEN". 404 → "admin endpoints not enabled on this deploy-api instance". 503 → "reconciler not configured". |
+
+**Examples:**
+```bash
+DIBBLA_ADMIN_TOKEN=$ADMIN_TOKEN dibbla admin reconcile
+DIBBLA_ADMIN_TOKEN=$ADMIN_TOKEN dibbla admin reconcile --json | jq '.deployments'
+```
 
 ---
 

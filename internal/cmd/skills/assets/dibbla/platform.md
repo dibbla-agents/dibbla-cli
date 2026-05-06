@@ -107,6 +107,71 @@ Use `.dibblaignore` (gitignore syntax, at the deploy root) to silence server-sid
 
 ---
 
+## 8.5. Multi-service deployments (`dibbla.yaml`)
+
+When the deploy archive contains a `dibbla.yaml` at the root, the platform applies a **multi-service** path: one deploy bundle ships multiple containers (e.g. `web + worker + redis`) under a single alias, applied atomically with rollback-on-failure. The single-Dockerfile path stays byte-stable for archives without a manifest.
+
+The full schema lives in [manifest.md](manifest.md). This section covers what the *runtime* looks like under multi-service — the env-var contract, the cluster networking shape, and the anti-patterns that the legacy single-Dockerfile habits encourage.
+
+### Runtime contract
+
+Every service container in a multi-service deploy receives a fixed env-var set:
+
+| Variable | Set on every service | Value |
+|---|---|---|
+| `DIBBLA_DEPLOYMENT_ID` | yes | Stable id across versions of this alias (`dep_<random>`) |
+| `DIBBLA_ALIAS` | yes | Deployment alias (`myapp`) |
+| `DIBBLA_ENV` | yes | Active env name (`prod`, `staging`, `dev`) |
+| `DIBBLA_SERVICE_NAME` | yes | This container's own service name |
+| `DIBBLA_SVC_<NAME>_HOST` | one per service in the deploy | Cluster DNS hostname |
+| `DIBBLA_SVC_<NAME>_PORT` | one per service that declares `port:` | Container port |
+| `DIBBLA_SVC_<NAME>_URL` | one per service that declares `port:` | `http://<host>:<port>` |
+
+`<NAME>` is the service name uppercased with `-` → `_`. Use `${DIBBLA_SVC_*}` substitutions in the `environment:` block of your manifest — the platform substitutes them at render time, before the container starts.
+
+### Cluster networking & exposure
+
+- **Default open within deploy.** Every service can reach every other service over the cluster network unless `expose_to:` is set.
+- **`expose_to:` flips to deny-by-default.** A service with `expose_to: [web]` accepts traffic only from `web`. A service without `expose_to:` keeps the open default. NetworkPolicy enforcement requires a CNI that honors it (the platform's clusters do).
+- **Public traffic is platform-mediated.** The single (or multiple, in v2) `public: true` services are reached via the platform proxy/ingress, not pod-to-pod. NetworkPolicy on the public service does NOT need to whitelist external traffic — that path bypasses pod-to-pod policy.
+- **Internal-only services get no Service object.** A service without `port:` runs as a Deployment but has no K8s Service, so peers can't reach it. `DIBBLA_SVC_<NAME>_HOST` is still set so dependents can name it; `_PORT` and `_URL` are absent.
+
+### Public URL shape
+
+- **One public service:** `https://<alias>.dibbla.com` routes to that service. Backwards-compatible with the legacy single-Dockerfile path.
+- **Multiple public services (F14):** each gets `https://<service>.<alias>.dibbla.com`; the bare `<alias>.dibbla.com` 301-redirects to the alphabetically-first public service. Use `domain:` to claim a custom hostname instead.
+- **Custom domain (`domain:`):** the platform's ingress uses your hostname directly; the alias URL keeps working in parallel. DNS (CNAME to the platform's ingress hostname) is the user's responsibility; cert provisioning is automatic via Let's Encrypt.
+
+### Init containers and healthchecks
+
+- **Init containers run sequentially before the main container.** v1 supports `image:` only (pulled images, no `build:`). Each init must exit cleanly — an init that runs forever blocks the rollout and times out.
+- **Healthchecks map to K8s probes 1:1.** Three probe slots (`liveness`, `readiness`, `startup`); each probe is exactly one of `http_get` / `tcp_socket` / `exec`.
+- **Skip the field entirely** to use the platform-default health check (the same one the legacy single-Dockerfile path uses).
+
+### What does *not* work in a multi-service deploy
+
+| Habit | What happens |
+|---|---|
+| `dibbla deploy --cpu 500m --memory 512Mi --port 3000` | These flags are **ignored** when a manifest is present. CPU/memory/port live in the manifest. |
+| `dibbla apps update --replicas N` | Returns `PATCH_AMBIGUOUS` (which service?). Edit `dibbla.yaml` and redeploy with `--update` instead. |
+| `dibbla apps update --port N` | Same — port is per-service. Edit the manifest. |
+| Hard-coding cluster DNS (`http://myapp-redis:6379`) in app source | Brittle across alias renames + breaks if the service name changes. Use `${DIBBLA_SVC_REDIS_URL}` instead. |
+| Putting build-time secrets in `--env` | `--env` is runtime-only. Build-time secrets need `build.secrets:` in the manifest + BuildKit `--mount=type=secret`. |
+| Running multiple `public: true` services in v1 expecting both at the alias URL | v1 ships only the first public service at `<alias>.dibbla.com`; multi-public is F14 (per-service subdomain). |
+| `dibbla.yaml` AND `dibbla.yml` both present | `MANIFEST_AMBIGUOUS` — the deploy fails before the upload completes. |
+
+### Resource sums and quotas
+
+The deploy-api runs a quota check on the resolved set BEFORE building anything. Default org quotas: 8 services, 10 replicas/service, 20 replicas total, 8 CPU total, 16Gi memory total, 10Gi PVC/service, 50Gi PVC total. Quota errors surface as `QUOTA_EXCEEDED` with a `path:` like `services.worker.replicas`. See [manifest.md § 18](manifest.md) for the full table.
+
+### Cross-references
+
+- [manifest.md](manifest.md) — schema, env-aware fields, profiles, init, healthcheck, cron, build secrets, custom domains.
+- [examples.md](examples.md) — runnable transcripts for each pattern.
+- [guardrails.md](guardrails.md) Check 6 — pre-deploy multi-service safety.
+
+---
+
 ## 9. Public URL & access control
 
 - Default public URL: `https://<alias>.dibbla.com`.

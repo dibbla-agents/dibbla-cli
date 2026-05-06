@@ -27,8 +27,11 @@ Copy the `dibbla-cli/` folder into your project's `.claude/skills/` directory.
 The **dibbla-cli** skill gives your AI agent full knowledge of the `dibbla` CLI:
 
 - Deploying and managing applications
+- Multi-service deployments via `dibbla.yaml` (web + worker + redis style apps), with init containers, healthchecks, cron jobs, build-time secrets, custom domains, multiple public services, and per-service secret scoping
+- Per-service operations: `dibbla apps restart --service`, `dibbla logs --service` (Loki) / `--pod-stream` (K8s API), `dibbla secrets --service`
+- Manifest validation (`dibbla manifest validate`) and server-authoritative preview (`dibbla preview`)
 - Creating and connecting to managed databases
-- Managing secrets (global and per-deployment)
+- Managing secrets (global, per-deployment, or per-service)
 - Building and executing workflows, nodes, edges, and revisions
 - Scripting patterns and agent-friendly flags (`--yes`, `--quiet`)
 

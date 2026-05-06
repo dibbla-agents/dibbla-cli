@@ -21,19 +21,21 @@ type SecretsListResponse struct {
 
 // SecretListItem is a secret in a list (no value).
 type SecretListItem struct {
-	Name             string `json:"name"`
-	DeploymentAlias  string `json:"deployment_alias"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	Name            string `json:"name"`
+	DeploymentAlias string `json:"deployment_alias"`
+	ServiceName     string `json:"service_name,omitempty"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 }
 
 // SecretResponse is a full secret (includes value when getting one).
 type SecretResponse struct {
-	Name             string `json:"name"`
-	Value            string `json:"value,omitempty"`
-	DeploymentAlias  string `json:"deployment_alias"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	Name            string `json:"name"`
+	Value           string `json:"value,omitempty"`
+	DeploymentAlias string `json:"deployment_alias"`
+	ServiceName     string `json:"service_name,omitempty"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 }
 
 // SecretCreateResponse is the response for creating a secret.
@@ -98,11 +100,17 @@ func parseError(body []byte, statusCode int) error {
 	return fmt.Errorf("API request failed with status %d: %s", statusCode, string(body))
 }
 
-// ListSecrets returns secrets for a scope. If deployment is empty, returns global secrets only.
-func ListSecrets(apiURL, apiToken, deployment string) (*SecretsListResponse, error) {
+// ListSecrets returns secrets for a scope:
+//   - deployment empty                  → org-global only
+//   - deployment non-empty, service ""  → deployment-wide entries (service_name='')
+//   - deployment non-empty, service X   → per-service entries for X
+func ListSecrets(apiURL, apiToken, deployment, service string) (*SecretsListResponse, error) {
 	query := url.Values{}
 	if deployment != "" {
 		query.Set("deployment", deployment)
+	}
+	if service != "" {
+		query.Set("service", service)
 	}
 	client := &http.Client{Timeout: requestTimeout}
 	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/secrets", query), nil)
@@ -134,11 +142,16 @@ func ListSecrets(apiURL, apiToken, deployment string) (*SecretsListResponse, err
 	return &out, nil
 }
 
-// CreateSecret creates or updates a secret. deploymentAlias can be empty for a global secret.
-func CreateSecret(apiURL, apiToken, name, value, deploymentAlias string) (*SecretCreateResponse, error) {
+// CreateSecret creates or updates a secret. deploymentAlias can be empty for a
+// global secret. serviceName scopes the secret to a single service in the
+// deployment (server requires deploymentAlias when serviceName is set).
+func CreateSecret(apiURL, apiToken, name, value, deploymentAlias, serviceName string) (*SecretCreateResponse, error) {
 	payload := map[string]string{"name": name, "value": value}
 	if deploymentAlias != "" {
 		payload["deployment_alias"] = deploymentAlias
+	}
+	if serviceName != "" {
+		payload["service_name"] = serviceName
 	}
 	raw, _ := json.Marshal(payload)
 
@@ -173,11 +186,15 @@ func CreateSecret(apiURL, apiToken, name, value, deploymentAlias string) (*Secre
 	return &out, nil
 }
 
-// GetSecret returns a secret by name. deployment can be empty for a global secret.
-func GetSecret(apiURL, apiToken, name, deployment string) (*SecretResponse, error) {
+// GetSecret returns a secret by name. deployment can be empty for a global
+// secret. service scopes to a per-service entry within the deployment.
+func GetSecret(apiURL, apiToken, name, deployment, service string) (*SecretResponse, error) {
 	query := url.Values{}
 	if deployment != "" {
 		query.Set("deployment", deployment)
+	}
+	if service != "" {
+		query.Set("service", service)
 	}
 	client := &http.Client{Timeout: requestTimeout}
 	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/secrets/"+url.PathEscape(name), query), nil)
@@ -209,11 +226,15 @@ func GetSecret(apiURL, apiToken, name, deployment string) (*SecretResponse, erro
 	return &out, nil
 }
 
-// DeleteSecret deletes a secret by name. deployment can be empty for a global secret.
-func DeleteSecret(apiURL, apiToken, name, deployment string) (*DeleteResponse, error) {
+// DeleteSecret deletes a secret by name. deployment can be empty for a global
+// secret. service scopes the delete to a per-service entry within the deployment.
+func DeleteSecret(apiURL, apiToken, name, deployment, service string) (*DeleteResponse, error) {
 	query := url.Values{}
 	if deployment != "" {
 		query.Set("deployment", deployment)
+	}
+	if service != "" {
+		query.Set("service", service)
 	}
 	client := &http.Client{Timeout: requestTimeout}
 	req, err := http.NewRequest("DELETE", makeAPIURL(apiURL, "/api/deploy/secrets/"+url.PathEscape(name), query), nil)

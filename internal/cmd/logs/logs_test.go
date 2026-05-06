@@ -68,3 +68,26 @@ func TestFlagDefaults(t *testing.T) {
 		t.Errorf("--tail default should be 0")
 	}
 }
+
+func TestNewFlagsExist(t *testing.T) {
+	if logsCmd.Flags().Lookup("service") == nil {
+		t.Error("--service flag missing")
+	}
+	if logsCmd.Flags().Lookup("pod-stream") == nil {
+		t.Error("--pod-stream flag missing")
+	}
+}
+
+func TestRunLogs_PodStreamRequiresService(t *testing.T) {
+	// runLogs reads package globals — set them and call directly.
+	defer func() { flagPodStream = false; flagService = "" }()
+	flagPodStream = true
+	flagService = ""
+	err := runLogs(logsCmd, []string{"myapp"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "--pod-stream requires --service") {
+		t.Errorf("unexpected err: %v", err)
+	}
+}

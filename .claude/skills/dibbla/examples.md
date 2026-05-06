@@ -206,6 +206,321 @@ Recovery:
 
 ---
 
+## Multi-service deployments (`dibbla.yaml`)
+
+For the schema and runtime contract see [manifest.md](manifest.md). The transcripts below are the day-to-day shapes.
+
+### A minimal multi-service app
+
+```yaml
+# dibbla.yaml
+version: 1
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    environment:
+      REDIS_URL: ${DIBBLA_SVC_REDIS_URL}     # service discovery
+  worker:
+    build: ./worker
+  redis:
+    image: redis:7
+    port: 6379
+```
+
+```bash
+dibbla deploy --alias myapp -m "feat: ship multi-service"
+```
+
+The deploy-api builds web + worker in parallel, pulls redis, applies the K8s graph atomically, and rolls back on any failure. The success line names every active service.
+
+### Validate a manifest locally (no network)
+
+```bash
+dibbla manifest validate                       # ./dibbla.yaml
+dibbla manifest validate ./apps/myapp          # validate ./apps/myapp/dibbla.yaml
+dibbla manifest validate --json | jq '.services[] | select(.public)'
+```
+
+CI use:
+```bash
+dibbla manifest validate --json > validate.json && jq -e '.valid' validate.json
+```
+
+Local check covers schema only: parse, version, service-name regex, build/image XOR, image-must-have-tag, port range. Env-aware resolution and quota run server-side — for those, use `dibbla preview`.
+
+### Server-authoritative preview before a real deploy
+
+```bash
+dibbla preview --target-env prod
+dibbla preview --target-env staging --profile mailcatcher
+dibbla preview --no-public                    # cron-only or worker-only is OK
+dibbla preview --json | jq '.active_services[] | {name, replicas}'
+```
+
+The server resolves env-aware fields, applies profiles, runs quota, and reports the final shape — no build, no apply, no deploy slot used.
+
+### Target a specific environment block
+
+```yaml
+# dibbla.yaml fragment
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    replicas:
+      default: 1
+      staging: 2
+      prod: 5
+    environment:
+      default: { LOG_LEVEL: info }
+      prod:    { LOG_LEVEL: warn, SENTRY_DSN: ${SENTRY_DSN} }
+```
+
+```bash
+dibbla deploy --alias myapp --target-env staging -m "deploy: staging"
+dibbla deploy --alias myapp --target-env prod    -m "release: v2.4"
+```
+
+Env-aware fields resolve in this order: explicit env-key → `default:` → field's documented default. The CLI's `--target-env prod` is the same string the manifest resolver uses.
+
+### Activate manifest profiles
+
+```yaml
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+  mailcatcher:
+    image: mailhog/mailhog:v1.0.1
+    port: 8025
+    profiles: [dev]                           # only deployed when profile is active
+  metrics-shipper:
+    image: prom/prometheus:v2.50
+    port: 9090
+    profiles: [observability]
+```
+
+```bash
+dibbla deploy --alias myapp --profile dev --profile observability -m "feat: ship"
+```
+
+Profiles are additive. Skipped services appear in the deploy event stream and in `dibbla preview` output.
+
+### Worker-only deploy (`--no-public`)
+
+```yaml
+services:
+  worker:
+    build: .                                  # no public service
+```
+
+```bash
+dibbla deploy --alias background-jobs --no-public -m "feat: nightly job runner"
+```
+
+Without `--no-public` the validator emits `PUBLIC_SERVICE_MISSING`. Cron-only deploys (top-level `jobs:` only, no `services:`) also need `--no-public`.
+
+### Cron-only deploy (top-level `jobs:`)
+
+```yaml
+version: 1
+jobs:
+  daily-report:
+    schedule: "0 9 * * *"
+    image: alpine:3.20
+    command: [sh, -c, "/run-report.sh"]
+    environment:
+      SLACK_WEBHOOK: ${SLACK_WEBHOOK}
+```
+
+```bash
+dibbla secrets set SLACK_WEBHOOK https://hooks.slack.com/... -d daily
+dibbla deploy --alias daily --no-public -m "feat: daily report job"
+```
+
+### Inspect per-service status
+
+```bash
+dibbla apps list                              # alias, URL, status, last deployed
+dibbla apps update myapp --replicas 3         # rejected with PATCH_AMBIGUOUS on multi-service
+                                              # (edit dibbla.yaml + redeploy --update instead)
+```
+
+### Restart a single service (rolling)
+
+```bash
+dibbla apps restart myapp --service worker
+dibbla apps restart myapp -s web --quiet
+dibbla apps restart myapp -s redis --json | jq '.status'
+```
+
+Idempotent — calling twice in a row produces two pod rollouts.
+
+### Follow one service's logs
+
+```bash
+dibbla logs myapp --service web -f --since 5m
+dibbla logs myapp --service worker --grep "ERROR"
+dibbla logs myapp --service redis --json | jq '.line'
+```
+
+Server forwards `?service=worker` to the existing Loki backend (cross-service, retained, supports `--grep`).
+
+### Stream pod logs without Loki
+
+```bash
+dibbla logs myapp --service web --pod-stream -f --tail 100
+```
+
+When Loki isn't configured (or you specifically want the K8s-direct stream), `--pod-stream` switches to the K8s API endpoint. Each line is prefixed with `[<pod>] ` — useful for tracing which replica produced an error.
+
+### Scope a secret to one service
+
+```bash
+# Per-service secret: only the web container sees this
+dibbla secrets set NPM_TOKEN xxx -d myapp --service web
+
+# Deployment-wide: every service sees this
+dibbla secrets set DATABASE_URL postgres://... -d myapp
+
+# Org-global: every deployment sees this
+dibbla secrets set SHARED_API_KEY abc
+
+# List by scope
+dibbla secrets list -d myapp                  # deployment-wide entries (service_name='')
+dibbla secrets list -d myapp --service web    # per-web entries only
+dibbla secrets list                           # global only
+```
+
+Precedence inside the web container at runtime: per-web (`NPM_TOKEN`) > deployment-wide (`DATABASE_URL`) > global (`SHARED_API_KEY`).
+
+### Init container for migrations
+
+```yaml
+services:
+  api:
+    build: ./api
+    port: 8080
+    public: true
+    init:
+      - name: migrate
+        image: registry.example.com/migrate:v1
+        command: [migrate, up]
+        environment:
+          DATABASE_URL: ${DATABASE_URL}       # from a deployment-wide secret
+```
+
+```bash
+dibbla secrets set DATABASE_URL postgres://... -d api
+dibbla deploy --alias api -m "feat: add migrate-on-deploy"
+```
+
+The `migrate` init runs to completion before the main `api` container starts on every pod.
+
+### Healthchecks (liveness / readiness / startup)
+
+```yaml
+services:
+  api:
+    build: ./api
+    port: 8080
+    public: true
+    healthcheck:
+      liveness:
+        http_get: { path: /healthz, port: 8080 }
+        period_seconds: 10
+        failure_threshold: 3
+      readiness:
+        http_get: { path: /ready }
+        period_seconds: 5
+      startup:
+        tcp_socket: { port: 8080 }
+        failure_threshold: 30
+```
+
+`startup` lets a slow-booting container have 30 × 10s = 5 minutes before liveness kicks in — protects JVM/Rails-style apps from being killed at second 10.
+
+### Multiple public services (subdomain shape)
+
+```yaml
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true                              # https://web.myapp.dibbla.com
+  api:
+    build: ./api
+    port: 8080
+    public: true                              # https://api.myapp.dibbla.com
+```
+
+The bare alias `https://myapp.dibbla.com` 301-redirects to the alphabetically-first public service (here, `api`). To pin which service owns the bare alias, use a custom domain (`domain:`) on that service.
+
+### Custom domain
+
+```yaml
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    domain: api.example.com
+```
+
+DNS is your job: point `CNAME api.example.com → <region>.ingress.dibbla.com` (the platform operator publishes the target). Once DNS is live, the platform issues a TLS cert via Let's Encrypt automatically. `https://<alias>.dibbla.com` keeps working in addition to the custom domain.
+
+### Build-time secret
+
+```yaml
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      secrets:
+        - id: npm_token
+          source: NPM_TOKEN_SECRET
+    port: 3000
+    public: true
+```
+
+```dockerfile
+# web/Dockerfile fragment
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
+```
+
+```bash
+dibbla secrets set NPM_TOKEN_SECRET <token> -d myapp
+dibbla deploy --alias myapp -m "feat: private dep added"
+```
+
+The secret value is mounted into the BuildKit Solve via the named id and never lands in the image layer.
+
+### Re-running a failed deploy
+
+```bash
+dibbla deploy --alias myapp --update -m "fix: handle null org in /api/me"   # rolling, zero downtime
+dibbla deploy --alias myapp --force  -m "redeploy: nuke and restart"        # tears down + recreates
+```
+
+`--update` and `--force` are mutually exclusive. Prefer `--update`. `--force` is appropriate when you've corrupted state and want the deployment recreated from scratch.
+
+### Admin: force an orphan sweep
+
+```bash
+DIBBLA_ADMIN_TOKEN=$ADMIN_TOKEN dibbla admin reconcile
+DIBBLA_ADMIN_TOKEN=$ADMIN_TOKEN dibbla admin reconcile --json | jq .deployments
+```
+
+Reads `DIBBLA_ADMIN_TOKEN` from env (NOT the user's API token). Reaches the deploy-api at `DIBBLA_API_URL`. Prints the K8s objects the reconciler swept (Deployments, Services, Ingresses). The endpoint only exists if the operator configured it; you'll see a 404 otherwise.
+
+---
+
 ## Apps
 
 ```bash

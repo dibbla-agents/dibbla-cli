@@ -7,6 +7,9 @@ import (
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/initcmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/manifestcmd"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/admincmd"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/preview"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
@@ -60,6 +63,9 @@ func init() {
 	skills.Register(rootCmd)
 	updatecmd.Register(rootCmd, Version)
 	initcmd.Register(rootCmd)
+	manifestcmd.Register(rootCmd)
+	preview.Register(rootCmd)
+	admincmd.Register(rootCmd)
 }
 
 // Execute runs the root command.

@@ -35,6 +35,23 @@ type Deployment struct {
 	CreatedAt   string       `json:"created_at"`
 	DeployedAt  string       `json:"deployed_at"`
 	HealthCheck *HealthCheck `json:"health_check,omitempty"`
+	// Services is the per-service breakdown for multi-service deployments.
+	// Empty for legacy single-container deployments.
+	Services []ServiceView `json:"services,omitempty"`
+}
+
+// ServiceView is the per-service entry returned in API responses.
+type ServiceView struct {
+	Name          string `json:"name"`
+	Image         string `json:"image,omitempty"`
+	Port          *int   `json:"port,omitempty"`
+	Replicas      int    `json:"replicas"`
+	ReadyReplicas int    `json:"ready_replicas"`
+	CPU           string `json:"cpu,omitempty"`
+	Memory        string `json:"memory,omitempty"`
+	IsPublic      bool   `json:"is_public"`
+	IsBuilt       bool   `json:"is_built"`
+	Status        string `json:"status,omitempty"`
 }
 
 // HealthCheck contains health check details
@@ -92,6 +109,15 @@ type Options struct {
 	// failure events (instead of relying on parsed compile diagnostics
 	// alone). Surfaced as `?verbose=1` on the upload URL.
 	VerboseBuild bool
+
+	// Multi-service deploy fields. TargetEnv selects which env block in the
+	// manifest's env-aware fields gets resolved (defaults to "prod" server-
+	// side). Profiles activates additional service profiles beyond the env
+	// name. NoPublic skips the "exactly one public service" enforcement —
+	// useful for worker-only deploys.
+	TargetEnv string
+	Profiles  []string
+	NoPublic  bool
 }
 
 // excludedPaths are paths that should not be included in the archive
@@ -137,6 +163,13 @@ func Run(opts Options, r render.Renderer) (*DeployResponse, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
+	}
+
+	// Multi-service: detect dibbla.yaml/dibbla.yml at the project root and
+	// validate locally so common mistakes fail before the archive upload.
+	// The server is authoritative; this is a best-effort fast path.
+	if err := validateLocalManifest(absPath); err != nil {
+		return nil, err
 	}
 
 	archive, err := createArchive(absPath)
@@ -515,6 +548,19 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 	if len(opts.GoogleScopes) > 0 {
 		scopesJSON, _ := json.Marshal(opts.GoogleScopes)
 		_ = writeField("google_scopes", string(scopesJSON))
+	}
+
+	// Multi-service fields: only sent when explicitly set so the wire shape
+	// stays byte-identical for legacy callers (no manifest, no flags).
+	if opts.TargetEnv != "" {
+		_ = writeField("env", opts.TargetEnv)
+	}
+	if len(opts.Profiles) > 0 {
+		profilesJSON, _ := json.Marshal(opts.Profiles)
+		_ = writeField("profiles", string(profilesJSON))
+	}
+	if opts.NoPublic {
+		_ = writeField("no_public", "true")
 	}
 
 	if err := writer.Close(); err != nil {

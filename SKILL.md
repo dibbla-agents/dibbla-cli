@@ -106,6 +106,20 @@ Deletes a deployed application.
     -   `--yes`, `-y`: Skip the confirmation prompt.
 -   **Example:** `dibbla apps delete my-old-app -y`
 
+#### `apps restart`
+
+Trigger a K8s rolling restart of one service in a multi-service deployment. Idempotent — calling twice in a row produces two pod rollouts. For single-service / legacy deployments, the conventional service name is `app`.
+
+-   **Usage:** `dibbla apps restart <alias> --service <name>`
+-   **Arguments:**
+    -   `alias` (required): The deployment alias.
+-   **Flags:**
+    -   `-s`, `--service <name>` (required): Service to restart. Regex `^[a-z][a-z0-9-]{0,29}$`.
+    -   `-q`, `--quiet`: Print only the alias on success (script-friendly).
+    -   `--json`: Print the JSON response body.
+-   **Errors:** 404 (service not found) prints a hint to run `dibbla apps list`. Bad service-name regex is caught locally before the HTTP call.
+-   **Example:** `dibbla apps restart myapp --service worker` — **Quiet:** `dibbla apps restart myapp -s web -q`
+
 ### `logs`
 
 Print logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes of logs and exits.
@@ -121,7 +135,9 @@ Print logs for a deployed app, sourced from the platform's Loki backend. By defa
     -   `--limit <N>`: Cap lines fetched in range mode (server caps the value).
     -   `--json`: Emit raw NDJSON (one Loki entry per line) instead of the human format.
     -   `--no-color`: Disable color in the human format.
--   **Authorization:** Returns 404 for apps outside your organization. Returns 503 if the platform isn't configured for logs (`LOKI_URL` unset on the server).
+    -   `-s`, `--service <name>`: Filter to a single service in a multi-service deployment (forwarded as `?service=`).
+    -   `--pod-stream`: Stream pod logs via the K8s API instead of Loki (requires `--service`). Output is text/plain with `[<pod>] ` line prefixes — useful when Loki isn't configured on the platform.
+-   **Authorization:** Returns 404 for apps outside your organization, or for `--pod-stream` when no pods match the service. Returns 503 if Loki isn't configured (`LOKI_URL` unset) or `--pod-stream` is used and Kubernetes isn't configured.
 -   **Examples:**
     -   `dibbla logs expense-reporter`
     -   `dibbla logs expense-reporter --since 24h`
@@ -237,56 +253,66 @@ Prints a psql-compatible connection string for connecting to a database via the 
 
 ### `secrets`
 
-The `secrets` command manages secrets on the Dibbla platform. Secrets can be **global** (omit `--deployment`) or **scoped to a deployment** (use `--deployment <alias>`).
+The `secrets` command manages secrets on the Dibbla platform. Secrets have **three** scopes:
+
+-   **Global** (no `--deployment`) — visible to every deployment in the org.
+-   **Deployment-wide** (`--deployment <alias>` / `-d <alias>`, no `--service`) — visible to every service in the deployment.
+-   **Per-service** (`-d <alias> --service <name>` / `-s <name>`) — visible only to the named service container.
+
+Precedence inside a service container at runtime (highest wins): per-service > deployment-wide > global. `--service` requires `--deployment`. Service names follow `^[a-z][a-z0-9-]{0,29}$`.
 
 #### `secrets list`
 
 Lists secrets (global or for one deployment).
 
--   **Usage:** `dibbla secrets list [--deployment <alias> | -d <alias>]`
+-   **Usage:** `dibbla secrets list [-d <alias>] [-s <service>]`
 -   **Flags:**
     -   `--deployment`, `-d`: List only secrets for this deployment. Omit for global secrets.
--   **Output:** A table with name, deployment (or "(global)"), and updated-at.
--   **Example:** `dibbla secrets list` — **Per-app:** `dibbla secrets list -d myapp`
+    -   `--service`, `-s`: Scope to a single service in the deployment (requires `-d`).
+-   **Output:** A table with name, deployment (or "(global)"), service (or "(all)") and updated-at.
+-   **Example:** `dibbla secrets list` — **Per-app:** `dibbla secrets list -d myapp` — **Per-service:** `dibbla secrets list -d myapp -s web`
 
 #### `secrets set`
 
 Creates or updates a secret.
 
--   **Usage:** `dibbla secrets set <name> [value] [--deployment <alias> | -d <alias>]`
+-   **Usage:** `dibbla secrets set <name> [value] [-d <alias>] [-s <service>]`
 -   **Arguments:**
     -   `name` (required): The secret name (e.g. `API_KEY`).
     -   `value` (optional): The secret value. If omitted, the value is read from stdin.
 -   **Flags:**
     -   `--deployment`, `-d`: Attach the secret to this deployment. Omit for a global secret.
--   **Example:** `dibbla secrets set API_KEY "my-secret"` — **From stdin:** `echo "secret" | dibbla secrets set API_KEY` — **Per-app:** `dibbla secrets set API_KEY "x" -d myapp`
+    -   `--service`, `-s`: Scope to a single service (requires `-d`).
+-   **Example:** `dibbla secrets set API_KEY "my-secret"` — **Per-app:** `dibbla secrets set API_KEY "x" -d myapp` — **Per-service:** `dibbla secrets set NPM_TOKEN xxx -d myapp -s web`
 
 #### `secrets get`
 
 Prints a secret's value (suitable for piping).
 
--   **Usage:** `dibbla secrets get <name> [--deployment <alias> | -d <alias>]`
+-   **Usage:** `dibbla secrets get <name> [-d <alias>] [-s <service>]`
 -   **Arguments:**
     -   `name` (required): The secret name.
 -   **Flags:**
     -   `--deployment`, `-d`: For a deployment-scoped secret.
--   **Example:** `dibbla secrets get API_KEY` — **Per-app:** `dibbla secrets get API_KEY -d myapp`
+    -   `--service`, `-s`: For a per-service secret (requires `-d`).
+-   **Example:** `dibbla secrets get API_KEY` — **Per-app:** `dibbla secrets get API_KEY -d myapp` — **Per-service:** `dibbla secrets get NPM_TOKEN -d myapp -s web`
 
 #### `secrets delete`
 
 Deletes a secret.
 
--   **Usage:** `dibbla secrets delete <name> [--deployment <alias>] [--yes | -y]`
+-   **Usage:** `dibbla secrets delete <name> [-d <alias>] [-s <service>] [--yes | -y]`
 -   **Arguments:**
     -   `name` (required): The secret name to delete.
 -   **Flags:**
     -   `--deployment`, `-d`: For a deployment-scoped secret.
+    -   `--service`, `-s`: For a per-service secret (requires `-d`).
     -   `--yes`, `-y`: Skip the confirmation prompt.
--   **Example:** `dibbla secrets delete API_KEY --yes` — **Per-app:** `dibbla secrets delete API_KEY -d myapp -y`
+-   **Example:** `dibbla secrets delete API_KEY --yes` — **Per-app:** `dibbla secrets delete API_KEY -d myapp -y` — **Per-service:** `dibbla secrets delete NPM_TOKEN -d myapp -s web -y`
 
 ### `deploy`
 
-The `deploy` command deploys a project to the Dibbla platform.
+The `deploy` command deploys a project to the Dibbla platform. **Detection is by file:** if `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root, the multi-service path runs (manifest parse + resolve + parallel build + atomic apply with rollback). Otherwise the legacy single-`Dockerfile` path runs unchanged.
 
 -   **Usage:** `dibbla deploy [path]`
 -   **Arguments:**
@@ -297,11 +323,93 @@ The `deploy` command deploys a project to the Dibbla platform.
     -   `--force`, `-f`: Force a redeployment if an application with the same alias already exists (causes downtime).
     -   `--update`, `-u`: Rolling update of existing deployment (zero downtime). Mutually exclusive with `--force`.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style).
-    -   `--cpu <value>`: CPU request (e.g. `500m`).
-    -   `--memory <value>`: Memory request (e.g. `512Mi`).
-    -   `--port <value>`: Container port (e.g. `3000`).
+    -   `--cpu <value>`: CPU request (e.g. `500m`). **Ignored under multi-service** — set CPU per service in `dibbla.yaml`.
+    -   `--memory <value>`: Memory request (e.g. `512Mi`). **Ignored under multi-service.**
+    -   `--port <value>`: Container port (e.g. `3000`). **Ignored under multi-service.**
     -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
--   **Example:** `dibbla deploy ./my-app -m "feat: initial deploy" --force` — **Rolling update:** `dibbla deploy -m "fix: resolve 500 on /search" --update` — **With options:** `dibbla deploy -m "feat: add healthcheck" --cpu 500m --memory 512Mi --port 3000 -e NODE_ENV=production -e LOG_LEVEL=info`
+    -   `--target-env <name>`: Manifest env block to resolve (defaults to `prod` server-side). Multi-service only.
+    -   `--profile <name>`: Activate a manifest profile (repeatable). Multi-service only.
+    -   `--no-public`: Allow a deploy with no `public: true` service (worker- or cron-only deploys). Multi-service only.
+-   **Example:** `dibbla deploy ./my-app -m "feat: initial deploy" --force` — **Rolling update:** `dibbla deploy -m "fix: resolve 500 on /search" --update` — **Multi-service:** `dibbla deploy --alias myapp --target-env prod -m "feat: ship multi-service" --profile observability`
+
+### Multi-service deployments (`dibbla.yaml`)
+
+A `dibbla.yaml` at the deploy root bundles multiple services (e.g. `web + worker + redis`) into one alias, applied atomically. Min example:
+
+```yaml
+version: 1
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    environment:
+      REDIS_URL: ${DIBBLA_SVC_REDIS_URL}
+  worker:
+    build: ./worker
+  redis:
+    image: redis:7
+    port: 6379
+```
+
+Validate locally before commit:
+
+```bash
+dibbla manifest validate
+dibbla preview --target-env prod
+```
+
+For the full schema (env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, build secrets, multiple public services, quotas, and the runtime contract for service discovery + NetworkPolicy), see `.claude/skills/dibbla/manifest.md` (and `.claude/skills/dibbla/platform.md § 8.5` for the runtime model).
+
+### `manifest`
+
+Local-only schema validation for `dibbla.yaml`. No server roundtrip.
+
+#### `manifest validate`
+
+-   **Usage:** `dibbla manifest validate [path]`
+-   **Arguments:**
+    -   `path` (optional): A directory (looks for `dibbla.yaml` / `dibbla.yml`) or a manifest file directly. Defaults to `.`.
+-   **Flags:**
+    -   `--target-env <name>`: Recorded in the report (informational; resolution runs server-side).
+    -   `--profile <name>`: Repeatable, informational.
+    -   `--no-public`: Informational; the local check accepts both.
+    -   `--json`: Emit a structured JSON report.
+-   **Coverage:** schema version, service-name regex + reserved names, build/image XOR, image-must-have-tag, port range, ambiguous yaml/yml. Env-aware resolution and quota run server-side — use `dibbla preview` for those.
+-   **Example:** `dibbla manifest validate` — **JSON for CI:** `dibbla manifest validate --json | jq -e '.valid'`
+
+### `preview`
+
+Server-authoritative dry run. Uploads the archive and lets the server resolve the manifest + run quota — no build, no apply.
+
+-   **Usage:** `dibbla preview [path]`
+-   **Arguments:**
+    -   `path` (optional): Directory to preview; default `.`.
+-   **Flags:**
+    -   `-a`, `--alias <name>`: Override directory-name alias.
+    -   `--target-env <name>`: Manifest env (defaults to `prod` server-side).
+    -   `--profile <name>`: Repeatable manifest profile.
+    -   `--no-public`: Allow worker- or cron-only deploys.
+    -   `--port <N>`: Forwarded as the `port` field; used by the no-manifest synthesizer.
+    -   `--json`: Emit raw `PreviewResponse` JSON.
+-   **Output:** Active services + replica counts, public service name, env-aware-resolved values, skipped services with reasons, quota-check result.
+-   **Example:** `dibbla preview --target-env staging` — **JSON:** `dibbla preview --json | jq '.active_services'`
+
+### `admin`
+
+Platform-admin commands gated by `DIBBLA_ADMIN_TOKEN`. The user's normal API token is **not** used.
+
+#### `admin reconcile`
+
+Force one synchronous orphan-resource sweep on the deploy-api instance.
+
+-   **Usage:** `DIBBLA_ADMIN_TOKEN=<tok> dibbla admin reconcile`
+-   **Flags:**
+    -   `--json`: Emit the raw JSON sweep result.
+-   **Auth:** Reads `DIBBLA_ADMIN_TOKEN` from env. `DIBBLA_API_URL` (or default) selects the deploy-api instance.
+-   **Output:** `deployments`, `services`, `ingresses` — counts plus the names of the swept K8s objects.
+-   **Errors:** Missing token → exit 1 with prompt. 401 → "unauthorized; check DIBBLA_ADMIN_TOKEN". 404 → "admin endpoints not enabled". 503 → "reconciler not configured".
+-   **Example:** `DIBBLA_ADMIN_TOKEN=$ADMIN_TOKEN dibbla admin reconcile`
 
 ### `skills`
 

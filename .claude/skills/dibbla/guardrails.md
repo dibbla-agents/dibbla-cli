@@ -1,6 +1,8 @@
 # Dibbla CLI — Pre-deploy guardrails
 
-Before calling `dibbla deploy`, you **MUST** complete all four checks below and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
+Before calling `dibbla deploy`, you **MUST** complete all six checks below and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
+
+Checks 1–4 are mandatory for every deploy. Check 5 only fires when running task files from URLs (`dibbla run <url>` / `dibbla template install`). Check 6 only fires when a `dibbla.yaml` is present at the deploy root.
 
 ---
 
@@ -85,11 +87,34 @@ When the user asks you to run a `dibbla-task.yaml` from a URL (via `dibbla run <
 
 ---
 
+## Check 6: Multi-service manifest safety
+
+Run when a `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root. Skip otherwise.
+
+| What to check | Severity | Examples |
+|----------------|----------|----------|
+| Every `public: true` service has a `port:` | BLOCKER | A service `public: true` without `port:` fails the deploy with `PUBLIC_MISSING_PORT`. |
+| `depends_on:` references real services in the manifest | BLOCKER | `depends_on: [redis]` when no `redis` service exists. |
+| No `depends_on:` cycle | BLOCKER | `web → worker → web`. The validator detects cycles. |
+| `expose_to:` references real services in the manifest | BLOCKER | `expose_to: [api]` when no `api` service exists. |
+| Resource sums fit org quota (8 services, 20 replicas, 8 CPU, 16Gi mem, 50Gi PVC) | BLOCKER | A `replicas: 12` per service that pushes the total over 20. Surfaces as `QUOTA_EXCEEDED`. |
+| Image refs include a tag | BLOCKER | `image: redis` (rejected); use `image: redis:7`. |
+| No reserved service names (`proxy`, `auth`, `system`, `dibbla`, `kube-*`) | BLOCKER | `services: { proxy: ... }`. |
+| Build context exists in the archive | BLOCKER | `build: ./web` when no `./web` directory exists. |
+| Init containers exit cleanly | WARNING | An init that runs forever (e.g. `command: [sh, -c, "while true; do sleep 60; done"]`) blocks the rollout and times out the deploy. Inits are for migrations, schema sync, asset hydration — not long-running processes. |
+| Healthcheck `failure_threshold` ≥ 3 in production | WARNING | `failure_threshold: 1` will kill the pod on a single transient failure. |
+| Build-time secrets referenced in `build.secrets:` exist as dibbla secrets | BLOCKER | `secrets: [{id: npm, source: NPM_TOKEN}]` requires `dibbla secrets list -d <alias>` to show `NPM_TOKEN`. |
+| Multiple `public: true` services | WARNING | v1 ships only the first as the alias URL; multi-public uses per-service subdomains (F14). Confirm the user knows the URL shape will change. |
+
+When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deploy and confirm the result with the user. For env-aware / quota / cross-service-reference checks, also run `dibbla preview --target-env <env>` — the local validator can't see env-aware values or org quotas.
+
+---
+
 ## Interactive workflow
 
-### Step 1: Run all four checks
+### Step 1: Run all applicable checks
 
-Review the application source code against every check above. Note each finding with its file path and line number.
+Review the application source code against every applicable check above (1–4 always; 5 if running task files from URLs; 6 if a `dibbla.yaml` is at the deploy root). Note each finding with its file path and line number.
 
 ### Step 2: Present the report
 

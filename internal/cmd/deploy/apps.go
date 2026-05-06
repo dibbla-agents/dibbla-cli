@@ -1,7 +1,9 @@
 package deploy
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -41,6 +43,27 @@ var appsUpdateCmd = &cobra.Command{
 	Run:   runAppsUpdate,
 }
 
+var appsRestartCmd = &cobra.Command{
+	Use:   "restart <alias>",
+	Short: "Trigger a rolling restart of a single service",
+	Long: `Restart one service in a multi-service deployment.
+
+Triggers a K8s rolling restart of the named service Deployment. Idempotent —
+calling twice in a row produces two pod rollouts. The deployment alias plus
+--service together identify exactly one Deployment object.
+
+For single-service / legacy deployments, the conventional service name is
+'app'. For manifest-based deployments, use the service name as it appears in
+dibbla.yaml.
+
+Examples:
+  dibbla apps restart myapp --service worker
+  dibbla apps restart myapp -s web
+  dibbla apps restart myapp --service worker --quiet`,
+	Args: cobra.ExactArgs(1),
+	Run:  runAppsRestart,
+}
+
 var (
 	deleteYes          bool
 	updateEnv          []string
@@ -52,13 +75,25 @@ var (
 	updateRequireLogin string
 	updateAccessPolicy string
 	updateGoogleScopes []string
+	restartService     string
+	restartQuiet       bool
+	restartJSON        bool
 )
 
 func init() {
 	appsCmd.AddCommand(appsListCmd)
 	appsCmd.AddCommand(appsDeleteCmd)
 	appsCmd.AddCommand(appsUpdateCmd)
+	appsCmd.AddCommand(appsRestartCmd)
 	appsDeleteCmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation prompt")
+	appsRestartCmd.Flags().StringVarP(&restartService, "service", "s", "",
+		"Service to restart (required); regex ^[a-z][a-z0-9-]{0,29}$")
+	appsRestartCmd.Flags().BoolVarP(&restartQuiet, "quiet", "q", false,
+		"Print only the alias on success (script-friendly)")
+	appsRestartCmd.Flags().BoolVar(&restartJSON, "json", false,
+		"Print the JSON response body")
+	_ = appsRestartCmd.MarkFlagRequired("service")
+	appsRestartCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
 	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
 	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
@@ -214,6 +249,46 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 	if dep.HealthCheck != nil {
 		fmt.Printf("   Health: %s (%dms)\n", dep.HealthCheck.Status, dep.HealthCheck.ResponseTimeMs)
 	}
+}
+
+func runAppsRestart(cmd *cobra.Command, args []string) {
+	cfg := config.Load()
+	requireToken(cfg)
+	os.Exit(runAppsRestartCore(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0], restartService, restartQuiet, restartJSON))
+}
+
+// runAppsRestartCore is the testable inner implementation of `apps restart`.
+// Returns the exit code. Side-effect-free apart from writing to the given
+// writers and one HTTP POST.
+func runAppsRestartCore(stdout, stderr io.Writer, apiURL, apiToken, alias, service string, quiet, jsonOut bool) int {
+	if !apps.ServiceNameRe.MatchString(service) {
+		fmt.Fprintf(stderr, "%s service name %q does not match %s\n",
+			platform.Icon("❌", "[X]"), service, apps.ServiceNameRe.String())
+		return 1
+	}
+
+	out, err := apps.RestartService(apiURL, apiToken, alias, service)
+	if err != nil {
+		// Distinguish 404 from generic failures so users get a focused hint.
+		if strings.Contains(err.Error(), "NOT_FOUND") || strings.Contains(strings.ToLower(err.Error()), "not found") {
+			fmt.Fprintf(stderr, "%s service not found: %s/%s\n", platform.Icon("❌", "[X]"), alias, service)
+			fmt.Fprintln(stderr, "  hint: run 'dibbla apps list' to see available aliases.")
+			return 1
+		}
+		fmt.Fprintf(stderr, "%s restart failed: %v\n", platform.Icon("❌", "[X]"), err)
+		return 1
+	}
+
+	switch {
+	case jsonOut:
+		_ = json.NewEncoder(stdout).Encode(out)
+	case quiet:
+		fmt.Fprintln(stdout, out.Alias)
+	default:
+		fmt.Fprintf(stdout, "%s rolling restart triggered for %s/%s\n",
+			platform.Icon("✓", "[OK]"), out.Alias, out.Service)
+	}
+	return 0
 }
 
 func envPairsToMap(pairs []string) map[string]string {
