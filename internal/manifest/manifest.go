@@ -127,6 +127,14 @@ func ParseAndValidate(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, &Error{Code: ErrCodeManifestInvalid, Detail: err.Error()}
 	}
+	return ParseAndValidateBytes(data)
+}
+
+// ParseAndValidateBytes is the byte-input variant of ParseAndValidate.
+// Use this when the manifest content has already been read (e.g. after
+// shell-var substitution by the deploy package) so the validator works
+// against the resolved YAML, not the placeholder version.
+func ParseAndValidateBytes(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := yaml.Unmarshal(data, &m); err != nil {
 		return nil, &Error{Code: ErrCodeManifestInvalid, Detail: "yaml parse: " + err.Error()}

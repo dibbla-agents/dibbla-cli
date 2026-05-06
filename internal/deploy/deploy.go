@@ -268,19 +268,46 @@ func createArchive(dir string) ([]byte, error) {
 			header.Name += "/"
 		}
 
+		// Shell ${VAR} substitution for the root-level manifest file.
+		// We only intercept dibbla.yaml / dibbla.yml at the deploy root —
+		// subdirectory files with the same name pass through unchanged,
+		// matching the manifest discovery rule. Substitution is text-level
+		// so YAML formatting and comments are preserved byte-for-byte
+		// except where placeholders are replaced. The substituted bytes
+		// (which differ in length) require an updated header.Size before
+		// WriteHeader.
+		var substituted []byte
+		if info.Mode().IsRegular() && isRootManifestFile(relPath) {
+			raw, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return rerr
+			}
+			subbed, serr := SubstituteShellVarsFromOSEnv(raw)
+			if serr != nil {
+				return fmt.Errorf("dibbla.yaml shell-var substitution: %w", serr)
+			}
+			substituted = subbed
+			header.Size = int64(len(substituted))
+		}
+
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 
 		if info.Mode().IsRegular() {
-			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			if _, err := io.Copy(tw, file); err != nil {
-				return err
+			if substituted != nil {
+				if _, err := tw.Write(substituted); err != nil {
+					return err
+				}
+			} else {
+				file, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer file.Close()
+				if _, err := io.Copy(tw, file); err != nil {
+					return err
+				}
 			}
 		}
 
