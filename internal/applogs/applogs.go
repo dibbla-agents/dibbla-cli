@@ -81,6 +81,62 @@ func Stream(ctx context.Context, apiURL, apiToken, alias string, opts Options) (
 	return resp.Body, nil
 }
 
+// RunOptions controls the GET /api/wf/slim/runs/{runId}/logs query string.
+type RunOptions struct {
+	Since  time.Time     // Zero = server default (now-15m)
+	Tail   int           // 0 = none; >0 = last-N persisted entries
+	Level  string        // "debug" | "info" | "warn" | "error"; empty = info
+	Follow bool
+}
+
+// StreamRun opens a streaming connection to workflow-server's run logs
+// endpoint and returns the raw response body. Each line is one JSON object
+// matching the same shape as Stream() — Entry or {"error":"..."}.
+//
+// The endpoint is hosted by workflow-server, mounted under the dibbla gateway
+// at /api/wf/slim/runs/{runId}/logs.
+func StreamRun(ctx context.Context, apiURL, apiToken, runID string, opts RunOptions) (io.ReadCloser, error) {
+	apiURL = strings.TrimSuffix(apiURL, "/")
+	u, err := url.Parse(fmt.Sprintf("%s/api/wf/slim/runs/%s/logs", apiURL, runID))
+	if err != nil {
+		return nil, fmt.Errorf("invalid api url: %w", err)
+	}
+
+	q := u.Query()
+	if !opts.Since.IsZero() {
+		q.Set("since", opts.Since.UTC().Format(time.RFC3339))
+	}
+	if opts.Tail > 0 {
+		q.Set("tail", strconv.Itoa(opts.Tail))
+	}
+	if opts.Level != "" {
+		q.Set("level", opts.Level)
+	}
+	if opts.Follow {
+		q.Set("follow", "true")
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Accept", "application/x-ndjson")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("logs request: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, &HTTPError{Status: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+	}
+	return resp.Body, nil
+}
+
 // HTTPError wraps a non-2xx response from the logs endpoint.
 type HTTPError struct {
 	Status int
