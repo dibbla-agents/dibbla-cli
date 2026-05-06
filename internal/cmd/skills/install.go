@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cliout "github.com/dibbla-agents/dibbla-cli/internal/output"
+	"github.com/dibbla-agents/dibbla-cli/internal/skillregistry"
 )
 
 var (
@@ -109,6 +110,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		}
+	}
+
+	// Best-effort: track this install location so `dibbla uninstall` can
+	// find and clean it later. A failure here does not fail the install.
+	if err := skillregistry.Record(entry.id, root); err != nil {
+		cliout.Stderr("note: could not update skill-installs registry: %v", err)
 	}
 
 	cliout.Stderr("✓ installed skill %q (dibbla %s) into %s", entry.id, cliVersion, root)

@@ -13,6 +13,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/template"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/uninstall"
 	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
@@ -62,6 +63,7 @@ func init() {
 	template.Register(rootCmd)
 	skills.Register(rootCmd)
 	updatecmd.Register(rootCmd, Version)
+	uninstall.Register(rootCmd, Version)
 	initcmd.Register(rootCmd)
 	manifestcmd.Register(rootCmd)
 	preview.Register(rootCmd)

@@ -223,3 +223,22 @@ func UpgradeCommand(m Method) string {
 	}
 	return ""
 }
+
+// UninstallCommand returns the package-manager-native uninstall command
+// for a given install method, or "" if dibbla manages removal itself
+// (Script) or can't help (GoInstall, SystemDir, Unknown).
+func UninstallCommand(m Method) string {
+	switch m {
+	case MethodHomebrew:
+		return "brew uninstall dibbla"
+	case MethodDebian:
+		return "sudo apt-get remove dibbla"
+	case MethodRPM:
+		return "sudo dnf remove dibbla   # or: sudo yum remove dibbla"
+	case MethodScoop:
+		return "scoop uninstall dibbla"
+	case MethodChocolatey:
+		return "choco uninstall dibbla"
+	}
+	return ""
+}

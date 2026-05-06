@@ -60,6 +60,30 @@ func TestUpgradeCommand(t *testing.T) {
 	}
 }
 
+func TestUninstallCommand(t *testing.T) {
+	cases := []struct {
+		m        Method
+		contains string
+	}{
+		{MethodHomebrew, "brew uninstall dibbla"},
+		{MethodDebian, "apt-get remove dibbla"},
+		{MethodRPM, "dnf remove dibbla"},
+		{MethodScoop, "scoop uninstall dibbla"},
+		{MethodChocolatey, "choco uninstall dibbla"},
+	}
+	for _, c := range cases {
+		got := UninstallCommand(c.m)
+		if !strings.Contains(got, c.contains) {
+			t.Errorf("UninstallCommand(%v) = %q, want substring %q", c.m, got, c.contains)
+		}
+	}
+	for _, m := range []Method{MethodScript, MethodGoInstall, MethodSystemDir, MethodUnknown} {
+		if got := UninstallCommand(m); got != "" {
+			t.Errorf("expected empty for %v, got %q", m, got)
+		}
+	}
+}
+
 func TestMethodString(t *testing.T) {
 	for _, m := range []Method{
 		MethodUnknown, MethodHomebrew, MethodDebian, MethodRPM,
