@@ -268,6 +268,15 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `BUILD_FAILED` | A build step failed | Check the deploy event log; if it's a missing build secret, run `dibbla secrets set <NAME> <value> -d <alias>` first |
 | `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias | Wait or `dibbla apps cancel <alias>` |
 | `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy | Edit `dibbla.yaml` and redeploy with `--update` |
+| `ALIAS_HOSTNAME_COLLISION` | Multi-public deploy would produce a hostname `<alias>-<service>.<base>` that another existing alias in the org owns | Rename either deploy |
+| `ALIAS_EXISTS` | Alias is already in use; pass `--update` (rolling) or `--force` (recreate) | Pick the right mode |
+| `RESERVED_ALIAS` | The chosen alias matches a platform-reserved name | Rename |
+| `DEPENDS_ON_UNKNOWN` | `depends_on:` references a non-existent service | Fix the service name reference |
+| `VOLUME_UNSUPPORTED` | Top-level `volumes:` block is reserved for a future schema version | Use per-service `volumes:` instead |
+| `IMAGE_REGISTRY_DENIED` | `image:` references a registry not on the platform's allowlist | Pull from an allowlisted registry, or push to the org's registry |
+| `INVALID_HEALTHCHECK` / `MISSING_HEALTHCHECK` | Healthcheck declaration violates the schema (multiple probes / missing required fields) | See manifest.md § 12 |
+| `HEALTHCHECK_FAILED` / `HEALTHCHECK_TIMEOUT` | Probe didn't pass at deploy time | Check pod logs; relax `failure_threshold` / `initial_delay_seconds` for slow boots |
+| `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars | Shorten the alias or service name |
 
 ---
 

@@ -359,7 +359,27 @@ dibbla manifest validate
 dibbla preview --target-env prod
 ```
 
-For the full schema (env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, build secrets, multiple public services, quotas, and the runtime contract for service discovery + NetworkPolicy), see `.claude/skills/dibbla/manifest.md` (and `.claude/skills/dibbla/platform.md § 8.5` for the runtime model).
+**Multiple public URLs.** Two services with `public: true` get one URL each: the lex-first ("primary") at `https://<alias>.dibbla.com`; subsequent ones at `https://<alias>-<service>.dibbla.com`. Per-service auth (`auth.require_login`, `auth.access_policy`, `auth.google_scopes`) is env-aware so the canonical pattern works:
+
+```yaml
+services:
+  web:
+    public: true                         # always open
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    port: 80
+    public:
+      default: false
+      dev: true
+      prod: true
+    auth:
+      require_login: { dev: false, prod: true }
+      access_policy: { prod: invite_only }
+```
+
+**Shell variable substitution.** `${VAR}` and `${VAR:-default}` in `dibbla.yaml` are resolved from your shell env at `dibbla deploy` time (compose-style). `DIBBLA_*` is reserved for the server's discovery contract — those pass through to the server unchanged regardless of your shell.
+
+For the full schema (env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, build secrets, multiple public services + per-service auth, shell-var substitution, quotas, and the runtime contract for service discovery + NetworkPolicy), see `.claude/skills/dibbla/manifest.md` (and `.claude/skills/dibbla/platform.md § 8.5` for the runtime model).
 
 ### `manifest`
 

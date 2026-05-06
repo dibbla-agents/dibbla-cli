@@ -139,7 +139,7 @@ Every service container in a multi-service deploy receives a fixed env-var set:
 ### Public URL shape
 
 - **One public service:** `https://<alias>.dibbla.com` routes to that service. Backwards-compatible with the legacy single-Dockerfile path.
-- **Multiple public services (F14):** each gets `https://<service>.<alias>.dibbla.com`; the bare `<alias>.dibbla.com` 301-redirects to the alphabetically-first public service. Use `domain:` to claim a custom hostname instead.
+- **Multiple public services (F14):** the lex-first ("primary") public service serves at `https://<alias>.dibbla.com`; subsequent public services serve at `https://<alias>-<service>.dibbla.com` (one DNS label deep, covered by the existing `*.dibbla.com` wildcard cert). Use `domain:` to claim a custom hostname instead. Per-service auth (`auth.require_login` / `auth.access_policy` / `auth.google_scopes`) is supported and env-aware so a service can be open in dev and locked down in prod with one manifest.
 - **Custom domain (`domain:`):** the platform's ingress uses your hostname directly; the alias URL keeps working in parallel. DNS (CNAME to the platform's ingress hostname) is the user's responsibility; cert provisioning is automatic via Let's Encrypt.
 
 ### Init containers and healthchecks
@@ -157,7 +157,7 @@ Every service container in a multi-service deploy receives a fixed env-var set:
 | `dibbla apps update --port N` | Same — port is per-service. Edit the manifest. |
 | Hard-coding cluster DNS (`http://myapp-redis:6379`) in app source | Brittle across alias renames + breaks if the service name changes. Use `${DIBBLA_SVC_REDIS_URL}` instead. |
 | Putting build-time secrets in `--env` | `--env` is runtime-only. Build-time secrets need `build.secrets:` in the manifest + BuildKit `--mount=type=secret`. |
-| Running multiple `public: true` services in v1 expecting both at the alias URL | v1 ships only the first public service at `<alias>.dibbla.com`; multi-public is F14 (per-service subdomain). |
+| Expecting `<service>.<alias>.dibbla.com` (subdomain-of-subdomain) for multi-public | Two-label depth requires per-deploy wildcard certs; v1 uses the hyphenated `<alias>-<service>.dibbla.com` scheme that fits the existing `*.dibbla.com` wildcard. |
 | `dibbla.yaml` AND `dibbla.yml` both present | `MANIFEST_AMBIGUOUS` — the deploy fails before the upload completes. |
 
 ### Resource sums and quotas

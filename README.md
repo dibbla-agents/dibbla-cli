@@ -170,7 +170,11 @@ dibbla deploy --alias myapp --target-env staging --profile mailcatcher -m "deplo
 dibbla deploy --alias daily --no-public -m "feat: cron-only deploy"
 ```
 
-The whole graph is built and applied atomically (rollback-on-failure). For env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, multiple public services, build-time secrets, and the runtime contract for service discovery + NetworkPolicy, see [`.claude/skills/dibbla/manifest.md`](.claude/skills/dibbla/manifest.md).
+The whole graph is built and applied atomically (rollback-on-failure). For env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, multiple public services, per-service auth, build-time secrets, shell variable substitution, and the runtime contract for service discovery + NetworkPolicy, see [`.claude/skills/dibbla/manifest.md`](.claude/skills/dibbla/manifest.md).
+
+**Multiple public URLs.** Two services with `public: true` get one URL each — the lex-first one at `https://<alias>.dibbla.com` (bare alias for backcompat); subsequent ones at `https://<alias>-<service>.dibbla.com`. Per-service auth (`auth.require_login`, `auth.access_policy`) is env-aware so `pgadmin` can be open in dev and locked down in prod with one manifest.
+
+**Shell variable substitution.** Compose-style `${VAR}` and `${VAR:-default}` placeholders in `dibbla.yaml` are resolved from your shell env when `dibbla deploy` runs. `DIBBLA_*` is reserved for server-side discovery vars and passes through unchanged.
 
 #### Validate and preview before deploying
 

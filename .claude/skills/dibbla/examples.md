@@ -444,21 +444,67 @@ services:
 
 `startup` lets a slow-booting container have 30 × 10s = 5 minutes before liveness kicks in — protects JVM/Rails-style apps from being killed at second 10.
 
-### Multiple public services (subdomain shape)
+### Multiple public services (hyphenated host)
 
 ```yaml
 services:
   web:
     build: ./web
     port: 3000
-    public: true                              # https://web.myapp.dibbla.com
+    public: true                              # https://myapp.dibbla.com (lex-first → bare alias)
   api:
     build: ./api
     port: 8080
-    public: true                              # https://api.myapp.dibbla.com
+    public: true                              # https://myapp-api.dibbla.com
 ```
 
-The bare alias `https://myapp.dibbla.com` 301-redirects to the alphabetically-first public service (here, `api`). To pin which service owns the bare alias, use a custom domain (`domain:`) on that service.
+URL shape:
+
+- The lex-first public service ("primary") owns the bare `<alias>.<base-domain>` for backwards compatibility — here `api` (alphabetical), so `https://myapp.dibbla.com` serves the API. Edit: with `web` lex-first, the bare alias would serve `web` instead.
+- Other public services get `<alias>-<service>.<base-domain>` — one DNS label deep so the existing `*.dibbla.com` wildcard cert covers them without per-deploy wildcard issuance.
+- Want a specific service at the bare alias regardless of lex order? Give it a `domain:` field with a custom hostname, or just rename the service so it's first alphabetically.
+
+If your alias plus a service name would collide with another existing alias (e.g. you deploy `myapp` with a `web` service while `myapp-web` already exists), the deploy fails with `ALIAS_HOSTNAME_COLLISION` before any side effects.
+
+### Per-service auth — open web + locked-down pgadmin
+
+The canonical pattern for the dev-vs-prod admin UI question. Web is open to the world; pgadmin is reachable but only for invited users. Env-aware fields make the manifest one file across environments.
+
+```yaml
+version: 1
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true                              # always open
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    port: 80
+    public:
+      default: false                          # not deployed in unspecified envs
+      dev: true
+      prod: true
+    auth:
+      require_login:
+        dev: false                            # anyone in your Dibbla org can reach it in dev
+        prod: true                            # locked down in prod
+      access_policy:
+        prod: invite_only                     # only specifically-invited users in prod
+```
+
+Resulting URLs after deploy:
+
+```bash
+dibbla deploy . --alias myapp --target-env dev -m "deploy dev"
+# https://myapp.dibbla.com              (web — open)
+# https://myapp-pgadmin.dibbla.com      (pgadmin — open within Dibbla)
+
+dibbla deploy . --alias myapp --target-env prod -m "deploy prod"
+# https://myapp.dibbla.com              (web — open)
+# https://myapp-pgadmin.dibbla.com      (pgadmin — login + invite_only)
+```
+
+A public service without an `auth:` block falls back to the deploy-level `--require-login` / `--access-policy` flags, so existing single-public deploys keep working without changes.
 
 ### Custom domain
 
@@ -497,6 +543,50 @@ RUN --mount=type=secret,id=npm_token \
 ```bash
 dibbla secrets set NPM_TOKEN_SECRET <token> -d myapp
 dibbla deploy --alias myapp -m "feat: private dep added"
+```
+
+The secret value is mounted into the BuildKit Solve via the named id and never lands in the image layer. After `dibbla deploy`, `kubectl exec deploy/myapp-web -- ls /run/secrets/` will be empty in the running container — the secret only existed during the build step that referenced it.
+
+### Shell variable substitution (`${VAR}` in dibbla.yaml)
+
+Compose-style shell-env substitution lets you parametrize the manifest from CI or your local shell without committing values to the file:
+
+```yaml
+# dibbla.yaml
+services:
+  web:
+    image: ghcr.io/example/web:${BUILD_VERSION:-dev}
+    port: 3000
+    public: true
+    environment:
+      APP_VERSION: ${BUILD_VERSION:-dev}
+      SENTRY_DSN:  ${SENTRY_DSN:-}
+      USER_HOME:   ${HOME}
+      REDIS_URL:   ${DIBBLA_SVC_REDIS_URL}
+```
+
+```bash
+BUILD_VERSION=v1.2.3 SENTRY_DSN=https://x@sentry.io/123 dibbla deploy . --alias myapp -m "release v1.2.3"
+```
+
+Rules:
+
+- `${VAR}` is substituted from the shell env at the moment `dibbla deploy` runs.
+- `${VAR:-default}` provides a fallback when the var is unset.
+- `${VAR}` with no shell value AND no default — the CLI errors before upload, naming the variable. Catches typos like `${DAATBASE_URL}`.
+- Variables starting with `DIBBLA_` are **reserved** — they pass through to the server unchanged, regardless of your shell. Lets `${DIBBLA_SVC_REDIS_URL}` and friends work as documented (server fills them in at render time).
+- Use `$$` to escape — `$${LITERAL}` ships as the literal text `${LITERAL}` in the YAML the server sees.
+
+CI integration with GitHub Actions:
+
+```yaml
+# .github/workflows/deploy.yml
+env:
+  BUILD_VERSION: ${{ github.sha }}
+  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+steps:
+  - uses: actions/checkout@v4
+  - run: dibbla deploy . --alias myapp --target-env prod -m "deploy ${{ github.sha }}"
 ```
 
 The secret value is mounted into the BuildKit Solve via the named id and never lands in the image layer.

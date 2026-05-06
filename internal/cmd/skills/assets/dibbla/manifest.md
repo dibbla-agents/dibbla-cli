@@ -88,6 +88,7 @@ Reserved top-level keys (rejected today, kept for future versions): `volumes:`, 
 | `init` | list of init containers | no | no | empty | Run-once containers before main; see § 11 |
 | `healthcheck` | object | no | no | platform default | Liveness/readiness/startup probes; see § 12 |
 | `domain` | string | no | no | `<alias>.dibbla.com` | Custom hostname for the public service; see § 14 |
+| `auth` | object | no | yes (per-field) | fall back to deploy flags | Per-service auth policy (`require_login`, `access_policy`, `google_scopes`); see § 13 |
 
 Service names must match `^[a-z][a-z0-9-]{0,29}$`. Reserved names: `proxy`, `auth`, `system`, `dibbla`, `kube-*`. Service names appear in DNS, in env-var names (`DIBBLA_SVC_<NAME>_HOST` becomes upper-case-with-`_`), and in K8s object names — keep them short and DNS-safe.
 
@@ -400,25 +401,81 @@ Skip the field entirely to use the platform default health check, which is the s
 
 ---
 
-## 13. Multiple public services
+## 13. Multiple public services + per-service auth
 
-V1 ships with one `public: true` service per deploy, exposed at `https://<alias>.dibbla.com`. **F14 widens this** to multiple public services, each at its own subdomain.
+A deploy can mark more than one service `public: true`. Each gets its own URL using the **hyphenated subdomain scheme** so the platform's existing single-label wildcard cert (`*.dibbla.com`) covers every public service without per-deploy wildcard issuance.
 
 ```yaml
 services:
   web:
     build: ./web
     port: 3000
-    public: true                      # https://web.myapp.dibbla.com
+    public: true                       # https://myapp.dibbla.com
   api:
     build: ./api
     port: 8080
-    public: true                      # https://api.myapp.dibbla.com
+    public: true                       # https://myapp-api.dibbla.com
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    port: 80
+    public: true                       # https://myapp-pgadmin.dibbla.com
+    auth:
+      require_login: true
+      access_policy: invite_only
 ```
 
-When more than one service is public, each gets `https://<service>.<alias>.dibbla.com` and the alias-only URL `https://<alias>.dibbla.com` 301-redirects to the alphabetically-first public service. If you want a specific service to own the bare alias, use a custom domain (§ 14).
+URL shape:
 
-Backwards compat: a single-public deploy still serves at `https://<alias>.dibbla.com` directly — no per-service prefix.
+- **Primary** (lex-first public service in the manifest's active set): `https://<alias>.<base-domain>` — the bare alias. Backwards compatible with single-public deploys.
+- **Secondary** public services: `https://<alias>-<service>.<base-domain>`. One DNS label deep, so the existing wildcard cert covers it.
+- **Custom domain** override: a service with `domain: api.example.com` claims that hostname instead. User owns the DNS (CNAME to the platform's ingress hostname); platform issues a Let's Encrypt cert. See § 14.
+
+**Hostname-collision check.** If your alias plus a service name would shadow a different existing alias (e.g. you deploy `myapp` with a `web` public service while alias `myapp-web` already exists in the same org), the deploy fails with `ALIAS_HOSTNAME_COLLISION` before any side effects. Rename either deploy.
+
+### Per-service auth policy
+
+Today's deploy-level `--require-login` / `--access-policy` / `--google-scopes` flags apply to every public service in the deploy. With multi-public, that's almost never what you want — the canonical case is open-`web` + login-gated `pgadmin`. Use the per-service `auth:` block instead:
+
+```yaml
+services:
+  web:
+    public: true                       # open to anyone
+  pgadmin:
+    public: true
+    auth:
+      require_login: true
+      access_policy: invite_only       # only invited users
+      google_scopes: []                # optional, list-of-strings
+```
+
+| Field | Type | Env-aware | Purpose |
+|---|---|---|---|
+| `auth.require_login` | bool | yes | When true, the proxy gates the service behind Dibbla auth |
+| `auth.access_policy` | string | yes | One of `all_members`, `invite_only`, `email_domain` (case-sensitive); empty falls back to deploy-level |
+| `auth.google_scopes` | list-of-strings | no | Additional Google OAuth scopes the proxy ensures the user has consented to |
+
+**Env-aware admin UI pattern** — open in dev, locked down in prod, one manifest:
+
+```yaml
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    port: 80
+    public:
+      default: false
+      dev: true
+      prod: true
+    auth:
+      require_login:
+        default: true
+        dev: false                     # open access for local dev exploration
+      access_policy:
+        default: invite_only
+```
+
+**Fallback semantics.** A public service without an `auth:` block falls back to the deploy-level flags — so existing single-public deploys keep working byte-identically. An empty `auth: {}` block is equivalent to no `auth:` block at all (still falls back). A `require_login: true` without an explicit `access_policy` defaults to `all_members`. A `require_login: false` explicitly clears the deploy-level policy, ensuring the proxy lets traffic through unauthenticated for that service.
+
+**Validation.** Unknown `access_policy` values are rejected at parse time (`MANIFEST_INVALID`). Use `dibbla manifest validate` to catch typos in CI.
 
 ---
 
@@ -508,7 +565,68 @@ The platform mounts the secret value into the BuildKit Solve via the named id; t
 
 ---
 
-## 17. Schema validation
+## 17. Shell variable substitution
+
+`dibbla.yaml` accepts docker-compose-style `${VAR}` placeholders that are resolved from your **shell environment** at the moment `dibbla deploy` runs. Useful for `${IMAGE_VERSION}`, `${HOME}`, CI-injected values, etc.
+
+```yaml
+version: 1
+services:
+  web:
+    image: ghcr.io/example/web:${BUILD_VERSION:-dev}
+    port: 3000
+    public: true
+    environment:
+      APP_VERSION: ${BUILD_VERSION:-dev}
+      USER_HOME:   ${HOME}
+      REDIS_URL:   ${DIBBLA_SVC_REDIS_URL}
+```
+
+**Syntax** (compose-compatible):
+
+| Form | Behavior |
+|---|---|
+| `${VAR}` | Substitute with `VAR` from the shell env. Fails if `VAR` is unset and has no default. |
+| `${VAR:-default}` | Use `default` when `VAR` is unset (`default` may be empty). |
+| `$$` | Escape — produces a literal `$`. So `$${VAR}` ships as the literal text `${VAR}` (useful when you want a placeholder in the YAML that the platform DOES NOT substitute). |
+| `$VAR` (no braces) | **Not** substituted. Only the brace form is recognized. |
+
+**Reserved prefix: `DIBBLA_*`.** Variables whose name starts with `DIBBLA_` are NEVER substituted by the CLI, even if they happen to be set in your shell. They're reserved for the server's discovery contract (`DIBBLA_SVC_<NAME>_HOST`, `DIBBLA_DEPLOYMENT_ID`, `DIBBLA_ALIAS`, `DIBBLA_ENV`, `DIBBLA_SERVICE_NAME`, etc.) and are filled in at deploy time when the values are actually known. So `${DIBBLA_SVC_REDIS_URL}` in your YAML stays as-is through the CLI and gets substituted server-side; a stray `DIBBLA_ALIAS` in your shell can't shadow the platform value.
+
+**Where it happens.** The CLI substitutes the **root-level `dibbla.yaml`** (or `.yml`) **before uploading the archive**. Files in subdirectories pass through unchanged, so a Dockerfile's `${VAR}` for build args is untouched (BuildKit handles those at build time). Substitution is text-level — comments, blank lines, anchors, and formatting are preserved byte-for-byte except where placeholders are replaced.
+
+**Failure modes.** If `${VAR}` references a variable that's unset and has no default and isn't `DIBBLA_*`, the CLI exits before upload with a clear error naming the variable. So you catch typos like `${DAATBASE_URL}` immediately rather than after a successful deploy with an empty env var.
+
+**Worked example** with CI:
+
+```bash
+# .github/workflows/deploy.yml
+env:
+  BUILD_VERSION: ${{ github.sha }}
+  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+steps:
+  - run: dibbla deploy . --alias myapp --target-env prod -m "deploy ${{ github.sha }}"
+```
+
+```yaml
+# dibbla.yaml — referenced from CI
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    environment:
+      APP_VERSION: ${BUILD_VERSION}    # GitHub SHA
+      SENTRY_DSN:  ${SENTRY_DSN:-}     # empty default if unset
+      LOG_LEVEL:   info
+```
+
+**Difference from server-side `${DIBBLA_*}`:** two non-overlapping substitution layers. The CLI handles user shell vars (anything NOT starting with `DIBBLA_`); the server handles platform discovery vars (`DIBBLA_*`) at render time. Both pass through unchanged on the other side.
+
+---
+
+## 18. Schema validation
 
 Two layers, two purposes:
 
@@ -533,12 +651,21 @@ Error codes (subset — full set in `reference.md`):
 | `BUILD_FAILED` | A build step failed (missing build secret, Dockerfile error, …) |
 | `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias; wait or cancel |
 | `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy |
+| `ALIAS_HOSTNAME_COLLISION` | A multi-public deploy would produce a hostname `<alias>-<service>.<base>` that another existing alias in your org already owns. Rename either deploy. |
+| `DEPENDS_ON_UNKNOWN` | `depends_on:` references a service name that doesn't exist in the manifest |
+| `VOLUME_UNSUPPORTED` | Top-level `volumes:` block is reserved for future versions; use per-service `volumes:` instead |
+| `IMAGE_REGISTRY_DENIED` | `image:` references a registry not on the platform's allowlist |
+| `INVALID_HEALTHCHECK` / `MISSING_HEALTHCHECK` | Healthcheck declaration violates the schema (e.g. multiple of http_get/tcp_socket/exec, missing required fields) |
+| `HEALTHCHECK_FAILED` / `HEALTHCHECK_TIMEOUT` | Probe didn't pass at deploy time — pod won't go ready |
+| `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars; shorten one |
+| `ALIAS_EXISTS` | Alias is already in use; pass `--update` or `--force` (single-public deploys) |
+| `RESERVED_ALIAS` | The chosen alias matches a platform-reserved name |
 
 Local validation cannot detect everything: env-aware errors (e.g. `replicas: { prod: -1 }`) and quota violations are server-side. A manifest that passes `dibbla manifest validate` may still fail `dibbla preview`.
 
 ---
 
-## 18. Quotas
+## 19. Quotas
 
 Default org quotas (the platform operator can override):
 
@@ -558,7 +685,7 @@ Default org quotas (the platform operator can override):
 
 ---
 
-## 19. Reserved keys
+## 20. Reserved keys
 
 The schema accepts these top-level keys at parse time but rejects them at validate time with `MANIFEST_UNSUPPORTED`. They're held for future versions to avoid users squatting on names that will mean something specific.
 
@@ -572,7 +699,7 @@ If you set one of these the validator emits `MANIFEST_UNSUPPORTED at <key>` and 
 
 ---
 
-## 20. Worked example: web + worker + redis
+## 21. Worked example: web + worker + redis
 
 Annotated, end-to-end. This is the canonical multi-service shape — copy and adapt.
 
