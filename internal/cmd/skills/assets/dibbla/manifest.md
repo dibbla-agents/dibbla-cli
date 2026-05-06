@@ -74,8 +74,8 @@ Reserved top-level keys (rejected today, kept for future versions): `volumes:`, 
 | `build` | string \| object | one of build/image | no | — | Path or build spec; see § 5 |
 | `image` | string \| env-map | one of build/image | yes | — | Pulled image; must include a tag |
 | `port` | int | when `public: true` | no | — | 1–65535; container port the service listens on |
-| `public` | bool \| env-map | no | yes | `false` | Routes the public URL to this service; **at most one** in v1 (see § 13) |
-| `replicas` | int \| env-map | no | yes | `1` | Number of pods; capped by org quota (§ 18) |
+| `public` | bool \| env-map | no | yes | `false` | Routes a public URL to this service; multiple `public: true` services per deploy supported (see § 13) |
+| `replicas` | int \| env-map | no | yes | `1` | Number of pods; capped by org quota (§ 19) |
 | `cpu` | string \| env-map | no | yes | platform default | K8s CPU spec (`500m`, `1`, `2`); resource quota applies |
 | `memory` | string \| env-map | no | yes | platform default | K8s memory spec (`256Mi`, `1Gi`) |
 | `environment` | string-map \| env-map-of-string-maps | no | yes | empty | Env vars; supports `${VAR}` substitution (§ 8) |
