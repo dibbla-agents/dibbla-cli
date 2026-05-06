@@ -263,7 +263,7 @@ A service with no `port:` gets a Deployment but no Service object — it's reach
 
 ## 9. `expose_to:` and NetworkPolicy
 
-By default services in the same deploy are mutually reachable on the cluster network. `expose_to:` switches the service to **deny by default** and allows traffic only from the listed services.
+`expose_to:` is a **deploy-level switch**, not a per-service toggle. The moment ANY service in the active set declares it, the platform emits a default-deny NetworkPolicy covering every pod in the deploy (`app: <alias>`). After that, peers can only reach a service through an explicit allow rule.
 
 ```yaml
 services:
@@ -281,12 +281,15 @@ services:
     expose_to: [web, worker]          # both can talk to redis
 ```
 
-This translates to a Kubernetes NetworkPolicy per service. Effects:
+Effects:
 
-- A service with `expose_to:` set generates a NetworkPolicy that whitelists the listed peers.
-- A service WITHOUT `expose_to:` retains the default open-within-deploy posture.
-- A service in `expose_to:` must exist in the manifest; references to non-existent services error with `MANIFEST_INVALID`.
-- The public service (the one with `public: true`) does NOT need `expose_to:` for its public traffic — that path comes through the platform proxy/ingress, not pod-to-pod.
+- **No service uses `expose_to:` → no NetworkPolicies are emitted** and the deploy stays fully permissive (every service reaches every other service via cluster DNS).
+- **Any service uses `expose_to:` → default-deny applies to every pod in the deploy.** A service that does NOT declare `expose_to:` is then *silently unreachable* from siblings — there is no "stays open" carve-out for individual services once the switch is flipped.
+- **Public services keep their public URL.** The renderer auto-emits an allow rule for each `public: true` service that admits traffic from the ingress-controller namespace, so `https://<alias>.dibbla.com` keeps working through the default-deny without any extra declaration on the public service.
+- **Pod-to-pod traffic to a public service is still gated.** If `worker` calls `http://web:3000/` directly via cluster DNS, the call is denied unless `web` also declares `expose_to: [worker]`. The auto-allow only covers the ingress controller, not internal siblings.
+- **References are validated.** A service named in `expose_to:` must exist in the manifest; unknown peers fail with `MANIFEST_INVALID`.
+
+A practical pattern: if you need internal segmentation (e.g. lock down a database), declare `expose_to:` on the segmented service AND on every public service that you also want callable from internal siblings. If you don't need segmentation, leave `expose_to:` off everywhere — the open default is far simpler.
 
 NetworkPolicy enforcement requires a CNI that honors it (Calico, Cilium, etc.). The platform's clusters use such a CNI; outside that you'll get the policies as plain YAML with no enforcement.
 

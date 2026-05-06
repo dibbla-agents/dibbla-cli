@@ -131,9 +131,9 @@ Every service container in a multi-service deploy receives a fixed env-var set:
 
 ### Cluster networking & exposure
 
-- **Default open within deploy.** Every service can reach every other service over the cluster network unless `expose_to:` is set.
-- **`expose_to:` flips to deny-by-default.** A service with `expose_to: [web]` accepts traffic only from `web`. A service without `expose_to:` keeps the open default. NetworkPolicy enforcement requires a CNI that honors it (the platform's clusters do).
-- **Public traffic is platform-mediated.** The single (or multiple, in v2) `public: true` services are reached via the platform proxy/ingress, not pod-to-pod. NetworkPolicy on the public service does NOT need to whitelist external traffic — that path bypasses pod-to-pod policy.
+- **Default open within deploy — until `expose_to:` is used anywhere.** When NO service declares `expose_to:`, the deploy is fully permissive: every service can reach every other service over the cluster network. As soon as ANY service declares `expose_to:`, a default-deny NetworkPolicy covers every pod in the deploy (`app: <alias>`) and reachability is gated by explicit allow rules from that point on.
+- **There is no per-service "stays open" carve-out** once the switch is flipped. A service without `expose_to:` in a deploy where some other service uses it becomes silently unreachable from siblings. To keep a service callable, either drop `expose_to:` everywhere or declare it on every service that needs to receive traffic.
+- **Public traffic is auto-allowed at the ingress edge.** Each `public: true` service gets an automatic allow rule for traffic from the ingress-controller namespace, so `https://<alias>.dibbla.com` keeps serving through the default-deny without any extra declaration. **Internal pod-to-pod calls to a public service are NOT auto-allowed** — if `worker` calls `http://web:3000` over cluster DNS, `web` must also declare `expose_to: [worker]`. NetworkPolicy enforcement requires a CNI that honors it (the platform's clusters do).
 - **Internal-only services get no Service object.** A service without `port:` runs as a Deployment but has no K8s Service, so peers can't reach it. `DIBBLA_SVC_<NAME>_HOST` is still set so dependents can name it; `_PORT` and `_URL` are absent.
 
 ### Public URL shape
