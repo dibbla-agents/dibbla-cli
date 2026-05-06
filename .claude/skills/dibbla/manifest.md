@@ -475,6 +475,16 @@ services:
 
 **Fallback semantics.** A public service without an `auth:` block falls back to the deploy-level flags — so existing single-public deploys keep working byte-identically. An empty `auth: {}` block is equivalent to no `auth:` block at all (still falls back). A `require_login: true` without an explicit `access_policy` defaults to `all_members`. A `require_login: false` explicitly clears the deploy-level policy, ensuring the proxy lets traffic through unauthenticated for that service.
 
+**Precedence rule.** `require_login` is the master gate. `require_login: false` (after env-aware resolution) **overrides any `access_policy` value, including one set in the same `auth:` block**. This is what makes the canonical "open in dev, locked in prod" pattern work with a default-everywhere `access_policy`:
+
+```yaml
+auth:
+  require_login: { default: true, dev: false }    # false in dev, true everywhere else
+  access_policy: { default: invite_only }         # applies in every env including dev
+```
+
+In dev, env-aware resolution yields `require_login=false` AND `access_policy=invite_only`. The master-gate rule clears the policy → service is open. In prod, `require_login=true` AND `access_policy=invite_only` → service is gated by `invite_only`. One manifest, two behaviors.
+
 **Validation.** Unknown `access_policy` values are rejected at parse time (`MANIFEST_INVALID`). Use `dibbla manifest validate` to catch typos in CI.
 
 ---

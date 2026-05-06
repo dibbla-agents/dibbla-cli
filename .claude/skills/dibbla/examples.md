@@ -506,6 +506,16 @@ dibbla deploy . --alias myapp --target-env prod -m "deploy prod"
 
 A public service without an `auth:` block falls back to the deploy-level `--require-login` / `--access-policy` flags, so existing single-public deploys keep working without changes.
 
+**Precedence rule:** `require_login` is the master gate. `require_login: false` overrides any `access_policy` value — including one set in the same block. So you can write the equivalent variant with `access_policy: { default: invite_only }` instead of `prod: invite_only` and the dev override still works:
+
+```yaml
+auth:
+  require_login: { default: true, dev: false }    # false in dev, true elsewhere
+  access_policy: { default: invite_only }         # applies in every env
+# In dev: require_login=false → policy is cleared, service open.
+# In prod: require_login=true + invite_only → service gated.
+```
+
 ### Custom domain
 
 ```yaml
