@@ -22,6 +22,8 @@ Keep the legacy single-`Dockerfile` path when:
 
 The two paths are mutually exclusive at deploy time: detection is `dibbla.yaml` present at the root of the archive ⇒ multi-service; absent ⇒ single-Dockerfile. The CLI fails fast if `dibbla.yaml` AND `dibbla.yml` are both present (`MANIFEST_AMBIGUOUS`) so you don't have to guess which one ships.
 
+> **Local iteration.** The platform does not run `dibbla.yaml` locally — there is no `dibbla up`. `dibbla preview` is a server-authoritative dry run, not a local stack. For tight inner-loop development (edit code → see it live in seconds) mirror the manifest into a `docker-compose.yml` next to it. The two formats diverge in details (no `${DIBBLA_SVC_*}` substitution locally, no NetworkPolicy enforcement, no env-aware/profile resolution) but match in shape — same containers, same ports, same env vars, same volumes. See [examples.md](examples.md) "Local iteration with docker-compose" for a side-by-side mapping cheat-sheet.
+
 ---
 
 ## 2. Mental model
@@ -83,7 +85,7 @@ Reserved top-level keys (rejected today, kept for future versions): `volumes:`, 
 | `entrypoint` | list-of-strings | no | no | image default | Overrides the container `ENTRYPOINT` |
 | `volumes` | list of `{path, size, access?}` | no | no | empty | Per-service PVCs; see § 10 |
 | `profiles` | list-of-strings | no | no | empty | Activation gates; see § 7 |
-| `depends_on` | list-of-strings | no | no | empty | Boot ordering hint; rolls out in topological order |
+| `depends_on` | list-of-strings | no | no | empty | Boot ordering hint; rolls out in topological order. References resolve against the manifest, not the post-profile-filter set — so `depends_on: [dep]` with `dep` profile-gated stays valid in all envs; in envs where `dep` is filtered out the hint is a no-op (no error, no boot ordering). For cross-profile dependencies, prefer application-level retry over `depends_on`. |
 | `expose_to` | list-of-strings | no | no | open | NetworkPolicy whitelist; see § 9 |
 | `init` | list of init containers | no | no | empty | Run-once containers before main; see § 11 |
 | `healthcheck` | object | no | no | platform default | Liveness/readiness/startup probes; see § 12 |
@@ -220,6 +222,54 @@ services:
 Activation is additive: `dibbla deploy --profile dev --profile observability` activates both. A service with no `profiles:` is always active. Skipped services appear in `PreviewResponse.skipped_services` with the reason.
 
 **Profiles vs env-aware:** profiles toggle whether a service exists at all; env-aware fields shape an existing service. If you want one less service in prod, use a profile. If you want the same service with `replicas: 1` in dev and `replicas: 5` in prod, use env-aware `replicas:`.
+
+### Worked example: inline DB in dev, external in prod
+
+The canonical multi-env pattern for stateful apps — run a DB container alongside in dev for fast iteration, point at managed/external storage in prod. Three pieces working together: a profiled inline service, env-aware connection strings on the consumer, and (optionally) `depends_on` for boot ordering in dev.
+
+```yaml
+services:
+  web:
+    build: ./web
+    port: 3000
+    public: true
+    environment:
+      default:
+        # In non-dev, MONGO_URL must come from somewhere outside the deploy:
+        #   — `dibbla apps update <alias> -e MONGO_URL=...`,
+        #   — a deployment secret, or
+        #   — shell-substituted from CI: `MONGO_URL=... dibbla deploy ...`.
+        MONGO_URL: ${MONGO_URL}
+      dev:
+        # Service-discovery vars only resolve when `mongo` is in the active deploy.
+        MONGO_URL: mongodb://${DIBBLA_SVC_MONGO_HOST}:${DIBBLA_SVC_MONGO_PORT}/
+
+  mongo:
+    image: mongo:7
+    port: 27017
+    profiles: [dev]                    # only included when --profile dev is passed
+    expose_to: [web]
+    volumes:
+      - { path: /data/db, size: 1Gi }
+```
+
+Deploy commands:
+
+```bash
+# Dev — inline mongo container is part of the deploy, web reads ${DIBBLA_SVC_MONGO_*}
+dibbla deploy --target-env dev --profile dev -m "feat: ..."
+
+# Prod — mongo service is filtered out, web reads MONGO_URL from a managed source
+MONGO_URL=mongodb+srv://... dibbla deploy --target-env prod -m "feat: ..."
+```
+
+Three things to know for this pattern:
+
+1. **`${DIBBLA_SVC_MONGO_*}` only resolves when `mongo` is in the active deploy.** That's why the `default:` branch above can't reuse those vars — they don't exist when mongo is profiled out. Use a different value source (managed-DB connection string, secret, shell var) for non-dev.
+2. **`depends_on` references are not env-filtered.** `depends_on: [mongo]` would stay valid in prod even though mongo is gone — at runtime the hint is just dropped (no `DEPENDS_ON_UNKNOWN`). Best practice for cross-profile deps: omit `depends_on` and rely on application-level retry (PyMongo reconnect, libpq retry, etc.) for connection robustness.
+3. **`--target-env dev` and `--profile dev` are independent flags.** The first selects the env-aware `dev:` branch; the second activates `profiles: [dev]` services. You almost always want both together for the dev variant — combine them in your dev deploy command (or wrap in a `make dev-deploy` target so you don't have to remember).
+
+For local iteration on this same shape (no Dibbla cluster involved), see [examples.md](examples.md) "Local iteration with docker-compose".
 
 ---
 

@@ -235,6 +235,93 @@ dibbla deploy --alias myapp -m "feat: ship multi-service"
 
 The deploy-api builds web + worker in parallel, pulls redis, applies the K8s graph atomically, and rolls back on any failure. The success line names every active service.
 
+### Local iteration with docker-compose
+
+The Dibbla platform doesn't run `dibbla.yaml` locally — `dibbla preview` is a server-side dry run, not a local stack. For tight inner-loop dev (edit code → see it live in seconds), mirror the manifest into a `docker-compose.yml` next to it.
+
+```yaml
+# dibbla.yaml — what runs on Dibbla
+version: 1
+services:
+  web:
+    build: ./web
+    port: 80
+    public: true
+    environment:
+      MONGO_URL: mongodb://${DIBBLA_SVC_MONGO_HOST}:${DIBBLA_SVC_MONGO_PORT}/
+    depends_on: [mongo]
+  mongo:
+    image: mongo:7
+    port: 27017
+    expose_to: [web]
+    volumes:
+      - { path: /data/db, size: 1Gi }
+```
+
+```yaml
+# docker-compose.yml — what runs on your laptop
+services:
+  web:
+    build: ./web
+    ports:
+      - "8080:80"                                  # bind to host port (avoid clashes)
+    environment:
+      MONGO_URL: mongodb://mongo:27017/            # compose DNS uses the service name
+    depends_on:
+      - mongo
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+volumes:
+  mongo-data:
+```
+
+Mapping cheat-sheet — the two formats line up almost field-for-field:
+
+| `dibbla.yaml` | `docker-compose.yml` | Notes |
+|---|---|---|
+| `services.<name>` | `services.<name>` | Same |
+| `build: ./dir` | `build: ./dir` | Same |
+| `image: foo:tag` | `image: foo:tag` | Same |
+| `port: 80` | `ports: ["8080:80"]` | Compose binds container port to a host port; pick an unused one |
+| `environment:` | `environment:` | Same shape (compose has no env-aware maps) |
+| `${DIBBLA_SVC_MONGO_HOST}` | `mongo` (service name) | Compose uses Docker DNS — no substitution layer |
+| `${DIBBLA_SVC_MONGO_URL}` | `http://mongo:<port>` | Spell out protocol + port locally |
+| `volumes: [{path: /data/db, size: 1Gi}]` | named volume + `mongo-data:/data/db` | Compose has no size enforcement |
+| `expose_to: [...]` | (omit) | No NetworkPolicy equivalent; default open |
+| `profiles: [dev]` | (omit, or compose's own `profiles:`) | Run all locally, or use compose profiles for parity |
+| `public: true` | (omit) | The `ports:` host binding is your local "public" |
+| `auth:` / `domain:` | (omit) | Platform-only |
+| `init:` containers | compose has no native init | Use `depends_on` + a healthcheck, or run the init manually |
+| Cron `jobs:` | (move to a shell script or compose `command`) | Compose has no native CronJob |
+| Build-time secrets (`build.secrets`) | shell env / `.env` next to compose | Compose passes `.env` automatically |
+
+Run it:
+
+```bash
+docker compose up --build -d
+docker compose logs -f web
+docker compose down       # stop, keep volumes
+docker compose down -v    # stop and wipe volumes
+```
+
+When the app behaves locally, `dibbla preview --target-env <env>` is the right next step (server-authoritative env-aware/profile/quota check), then deploy:
+
+```bash
+dibbla deploy . --alias myapp -m "feat: ..."
+```
+
+**Caveats — the two stacks are similar but not identical:**
+
+- No `${DIBBLA_SVC_*}` substitution locally — compose uses plain Docker DNS.
+- No NetworkPolicy locally — `expose_to:` is silently relaxed.
+- No env-aware resolution or profile filtering locally — you run whatever is in the compose file.
+- No build-time secrets injected from `dibbla secrets` — set them via shell env or `.env` instead.
+- No TLS, public URLs, custom `domain:`, or `auth:` gating — those are platform-only.
+
+So compose is the inner loop; `dibbla preview` is the right outer-loop check before the actual deploy.
+
 ### Validate a manifest locally (no network)
 
 ```bash
