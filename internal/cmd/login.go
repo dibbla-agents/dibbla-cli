@@ -198,6 +198,18 @@ func runLogin(cmd *cobra.Command, args []string) {
 	default:
 		fmt.Printf("%s Logged in to %s\n", platform.Icon("✅", "[OK]"), baseURL)
 	}
+
+	// If env vars are shadowing the just-saved credentials (the classic
+	// stale-tmux-env footgun), warn now — at the moment of creation —
+	// rather than letting the user discover it on the next 401. We
+	// suppress when --no-keychain was used without --write-env: in that
+	// case nothing was actually persisted to be shadowed and the hint's
+	// "saved credentials" wording would be misleading.
+	if !(loginNoKeychain && !loginWriteEnv) {
+		if hint := apiclient.AuthShadowHint(); hint != "" {
+			fmt.Printf("%s %s\n", platform.Icon("⚠", "[!]"), hint)
+		}
+	}
 }
 
 // writeEnvAndGitignore persists DIBBLA_API_TOKEN + DIBBLA_API_URL into

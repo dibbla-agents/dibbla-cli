@@ -123,9 +123,15 @@ func (c *Client) doWithHeaders(method, path string, body interface{}, extra map[
 	}
 
 	if resp.StatusCode >= 400 {
+		msg := string(respBody)
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			if hint := AuthShadowHint(); hint != "" {
+				msg = strings.TrimRight(msg, "\n") + "\n  " + hint
+			}
+		}
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
-			Message:    string(respBody),
+			Message:    msg,
 			Headers:    resp.Header,
 		}
 	}
@@ -190,6 +196,11 @@ func ValidateToken(baseURL, token string) error {
 			msg = "access denied"
 		default:
 			msg = fmt.Sprintf("validation failed (HTTP %d)", resp.StatusCode)
+		}
+	}
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		if hint := AuthShadowHint(); hint != "" {
+			msg = msg + "\n  " + hint
 		}
 	}
 	return &APIError{StatusCode: resp.StatusCode, Message: msg}
