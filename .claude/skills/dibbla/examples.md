@@ -447,6 +447,17 @@ dibbla apps restart myapp -s redis --json | jq '.status'
 
 Idempotent — calling twice in a row produces two pod rollouts.
 
+### Tail logs for the whole deployment (all services merged)
+
+```bash
+dibbla logs myapp                       # last 15 min, every service in the deployment
+dibbla logs myapp -f --since 10m        # backfill 10 min then follow, all services
+dibbla logs myapp --grep "ERROR" --since 1h
+dibbla logs myapp --json | jq '{svc: .labels.service, line}'
+```
+
+Omit `--service` and Loki returns lines from every container in the deployment, interleaved by timestamp. Each NDJSON entry carries a `labels.service` field so you can attribute lines to the originating service when reading `--json`. This is the default and the right starting point for "what is my deployment doing right now" or "where's the error coming from across services".
+
 ### Follow one service's logs
 
 ```bash
@@ -455,7 +466,7 @@ dibbla logs myapp --service worker --grep "ERROR"
 dibbla logs myapp --service redis --json | jq '.line'
 ```
 
-Server forwards `?service=worker` to the existing Loki backend (cross-service, retained, supports `--grep`).
+Server forwards `?service=worker` to the existing Loki backend (cross-service, retained, supports `--grep`). Use this once the aggregated view points you at a specific service.
 
 ### Stream pod logs without Loki
 

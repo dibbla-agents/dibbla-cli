@@ -37,7 +37,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Manifest   | `manifest validate [path]` — local schema check for `dibbla.yaml` (no network) |
 | Preview    | `preview [path] [--target-env <env>] [--profile <p>] [--no-public]` — server-authoritative dry run; full env-aware resolution + quota check, no build, no apply |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>`, `apps restart <alias> --service <name>` (per-service rolling restart) |
-| Logs       | `logs <app>` (last 15m), `logs <app> --since 24h`, `logs <app> -f` (follow), `logs <app> -n 200` (tail), `logs <app> --grep <regex>`, `logs <app> --json` — runtime logs from Loki; `logs <app> --service <name>` filters to one service; `logs <app> --service <name> --pod-stream` streams pod logs via the K8s API when Loki isn't available |
+| Logs       | `logs <app>` (last 15m, **merged across all services in the deployment** by default), `logs <app> --since 24h`, `logs <app> -f` (follow), `logs <app> -n 200` (tail), `logs <app> --grep <regex>`, `logs <app> --json` — runtime logs from Loki; **omit `--service` for accumulated deployment-wide logs**, add `logs <app> --service <name>` to filter to one service; `logs <app> --service <name> --pod-stream` streams pod logs via the K8s API when Loki isn't available |
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete` (global, `-d <alias>` for deployment-wide, or `-d <alias> --service <name>` for per-service) |
 | Admin      | `admin reconcile` — force one orphan-resource sweep on the deploy-api instance (gated by `DIBBLA_ADMIN_TOKEN`) |

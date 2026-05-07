@@ -397,6 +397,13 @@ dibbla apps restart myapp -s redis --json
 
 Print runtime logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes and exits. **This is the primary way to debug a deployed app without redeploying** — when a deploy succeeds but the app 500s, errors out, or behaves unexpectedly, run `dibbla logs <app>` first rather than adding `console.log` and redeploying.
 
+**Two scopes, controlled by `--service`:**
+
+- **Accumulated / deployment-wide (default — omit `--service`):** returns lines from every service in the deployment, interleaved by timestamp. Each `--json` entry carries a `labels.service` field so you can attribute lines to the originating container. Use this as the entry point — "what is the whole deployment doing?" or "which service is producing this error?".
+- **Single service (`-s <name>` / `--service <name>`):** filters server-side to one named service from a multi-service `dibbla.yaml`. Use this once the aggregated view points at a specific service.
+
+For a single-service deployment the two scopes return the same lines.
+
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla logs <app>` |
@@ -429,12 +436,13 @@ Print runtime logs for a deployed app, sourced from the platform's Loki backend.
 **Examples:**
 
 ```bash
-dibbla logs expense-reporter                         # last 15 min, exit
-dibbla logs expense-reporter --since 24h             # last 24 hours
-dibbla logs expense-reporter --since 10m -f          # backfill 10 min, then follow
-dibbla logs expense-reporter -n 200                  # last 200 lines
-dibbla logs expense-reporter --grep "timeout"        # server-side filter
-dibbla logs expense-reporter --json | jq '.line'     # NDJSON for scripting
+dibbla logs expense-reporter                         # last 15 min, ALL services merged
+dibbla logs expense-reporter --since 24h             # last 24 hours, all services
+dibbla logs expense-reporter --since 10m -f          # backfill 10 min, then follow (all services)
+dibbla logs expense-reporter -n 200                  # last 200 lines, all services
+dibbla logs expense-reporter --grep "timeout"        # server-side filter, all services
+dibbla logs expense-reporter --json | jq '{svc: .labels.service, line}'  # attribute lines per service
+dibbla logs expense-reporter --service worker -f     # narrow to one service after triage
 ```
 
 **Agent guidance:** when a deploy succeeds but the app misbehaves, the debugging loop is `dibbla logs <app> --since 30m --grep <error-substring>` → identify the failure → fix code → redeploy with `--update`. Only resort to "redeploy with extra logging" if the existing logs don't surface the issue.
