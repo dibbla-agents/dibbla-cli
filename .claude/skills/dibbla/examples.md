@@ -68,6 +68,31 @@ dibbla logout
 
 ---
 
+## Status (which API server, am I logged in, what version?)
+
+```bash
+# Human-readable: version + API URL + token + live validation
+dibbla status
+
+# Skip the network validation call (offline / fast diagnostic)
+dibbla status --no-validate
+
+# Machine-readable for scripts and CI gates
+dibbla status --json | jq '.logged_in'
+dibbla status --json | jq -r '.api_url'
+
+# Use as a precondition before commands that require login
+if ! dibbla status --json | jq -e '.logged_in' >/dev/null; then
+  echo "Not logged in" >&2; exit 1
+fi
+```
+
+Output annotates each value with the source it was read from (`env (DIBBLA_API_URL)`, `env (DIBBLA_API_TOKEN)`, `keyring`, `credentials file`, `default`, `none`). Useful for diagnosing "this shell deploys somewhere different from that one" — it's almost always a stray `DIBBLA_API_URL` in one shell's environment shadowing the keyring value.
+
+Exit codes: `0` when logged in (or `--no-validate` and a token is configured), `3` when not logged in or the token was rejected.
+
+---
+
 ## Running task files locally
 
 ```bash

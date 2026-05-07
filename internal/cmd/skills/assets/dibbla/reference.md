@@ -40,6 +40,56 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 
 ---
 
+## status
+
+Print the CLI version, the API server this CLI will talk to, and whether a valid login is configured. Useful for "where is this CLI pointing?" diagnostics — particularly across multiple shells where one has `DIBBLA_API_URL` exported and another doesn't, or after editing `.env`.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla status` |
+| **Flags** | `--json` — emit a machine-readable JSON report instead of human text |
+| | `--no-validate` — skip the live token validation request (report only what's stored locally) |
+| **Validation** | When a token is configured, `status` calls `POST /api/auth/v1/tokens/validate` against the resolved API URL so "logged in" reflects the *live* state of the token (revoked / expired tokens show as not logged in). Skip with `--no-validate` for offline use. |
+| **Resolution order** | API URL: `DIBBLA_API_URL` > `DIBBLA_AUTH_SERVICE_URL` > keyring > credentials file > default (`https://api.dibbla.com`). Token: `DIBBLA_API_TOKEN` > keyring > credentials file > none. The `source` annotation in the output identifies which won. |
+| **Exit codes** | `0` — logged in, or `--no-validate` and a token is configured. `3` — not logged in / token rejected. `1` — unexpected error (network, malformed response). |
+
+**Human output:**
+
+```
+Dibbla CLI 1.2.24
+API:     https://api.dibbla.com  (default)
+Token:   configured  (source: keyring)
+Status:  ✅ logged in
+```
+
+**JSON shape:**
+
+```json
+{
+  "version": "1.2.24",
+  "api_url": "https://api.dibbla.com",
+  "api_url_source": "default",
+  "token_configured": true,
+  "token_source": "keyring",
+  "validated": true,
+  "logged_in": true
+}
+```
+
+`validation_error` is added when a token was rejected; omitted otherwise.
+
+**Examples:**
+
+```bash
+dibbla status                          # human text + live validation
+dibbla status --no-validate            # offline; skips network
+dibbla status --json | jq '.api_url'   # script-friendly endpoint extraction
+```
+
+**Agent guidance:** before running anything that depends on a working login (`deploy`, `wf execute`, etc.), you can use `dibbla status --json` to detect a missing/invalid token and surface a clear error rather than waiting for the downstream 401. In CI, `DIBBLA_API_TOKEN` always wins over any cached keyring/file credential — `status` will report `source: env (DIBBLA_API_TOKEN)` so you can confirm CI is using the token you think it is.
+
+---
+
 ## run
 
 Run a `dibbla-task.yaml` pipeline locally using the dibbla-tasks steprunner.

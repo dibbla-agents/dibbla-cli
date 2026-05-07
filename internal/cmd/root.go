@@ -55,6 +55,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&skillPrompt, "skill-prompt", false, "Show detailed instructions for LLM-based tools")
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
+	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(feedbackCmd)
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
