@@ -14,6 +14,7 @@ import (
 type APIError struct {
 	StatusCode int
 	Message    string
+	Headers    http.Header
 }
 
 func (e *APIError) Error() string {
@@ -24,6 +25,7 @@ func (e *APIError) Error() string {
 type Response struct {
 	StatusCode int
 	Body       []byte
+	Headers    http.Header
 }
 
 // Client is an HTTP client wrapper for the Dibbla API.
@@ -56,6 +58,11 @@ func (c *Client) Put(path string, body interface{}) (*Response, error) {
 	return c.do("PUT", path, body)
 }
 
+// PutWithHeaders is Put with extra request headers (e.g. If-Match).
+func (c *Client) PutWithHeaders(path string, body interface{}, headers map[string]string) (*Response, error) {
+	return c.doWithHeaders("PUT", path, body, headers)
+}
+
 func (c *Client) Patch(path string, body interface{}) (*Response, error) {
 	return c.do("PATCH", path, body)
 }
@@ -65,6 +72,10 @@ func (c *Client) Delete(path string) (*Response, error) {
 }
 
 func (c *Client) do(method, path string, body interface{}) (*Response, error) {
+	return c.doWithHeaders(method, path, body, nil)
+}
+
+func (c *Client) doWithHeaders(method, path string, body interface{}, extra map[string]string) (*Response, error) {
 	if c.http == nil {
 		c.http = &http.Client{}
 	}
@@ -87,6 +98,9 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
 
 	if c.Verbose {
 		fmt.Fprintf(os.Stderr, "%s %s\n", method, url)
@@ -112,12 +126,14 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    string(respBody),
+			Headers:    resp.Header,
 		}
 	}
 
 	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
+		Headers:    resp.Header,
 	}, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -107,12 +108,19 @@ var workflowsCreateCmd = &cobra.Command{
 var workflowsUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
 	Short: "Replace a workflow definition",
-	Args:  cobra.ExactArgs(1),
+	Long: `Replace a workflow definition.
+
+By default, the CLI fetches the current ETag and sends it as If-Match so
+the server rejects the write (412) if another writer (browser editor,
+parallel CLI invocation) modified the workflow after the local file was
+last in sync. Use --force to skip this check and overwrite unconditionally.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath, _ := cmd.Flags().GetString("file")
 		if filePath == "" {
 			return fmt.Errorf("--file (-f) is required")
 		}
+		force, _ := cmd.Flags().GetBool("force")
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return fmt.Errorf("reading file: %w", err)
@@ -121,8 +129,34 @@ var workflowsUpdateCmd = &cobra.Command{
 		if err := parseFileContent(data, &body); err != nil {
 			return err
 		}
-		resp, err := getClient().Put("/api/wf/slim/workflows/"+args[0]+"?include_result=true&format=json", body)
+
+		client := getClient()
+		path := "/api/wf/slim/workflows/" + args[0] + "?include_result=true&format=json"
+
+		headers := map[string]string{}
+		if !force {
+			// Optimistic concurrency: fetch current ETag, send as If-Match.
+			// On 412 the server reports another writer beat us to it.
+			getResp, err := client.Get("/api/wf/slim/workflows/" + args[0] + "?format=json")
+			if err == nil {
+				if etag := getResp.Headers.Get("ETag"); etag != "" {
+					headers["If-Match"] = etag
+				}
+			}
+		}
+
+		resp, err := client.PutWithHeaders(path, body, headers)
 		if err != nil {
+			if apiErr, ok := err.(*apiclient.APIError); ok && apiErr.StatusCode == 412 {
+				var detail map[string]interface{}
+				_ = json.Unmarshal([]byte(apiErr.Message), &detail)
+				output.Stderr("Conflict: workflow %q was modified by another writer since the local copy was synced.", args[0])
+				if cur, ok := detail["current_etag"].(string); ok {
+					output.Stderr("Current server ETag: %s", cur)
+				}
+				output.Stderr("Re-fetch with `dibbla wf get %s` and reapply your changes, or pass --force to overwrite.", args[0])
+				return err
+			}
 			return err
 		}
 		var result map[string]interface{}
@@ -448,6 +482,7 @@ func init() {
 	workflowsGetCmd.Flags().String("revision", "", "Revision ID")
 	workflowsCreateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsUpdateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
+	workflowsUpdateCmd.Flags().Bool("force", false, "Skip If-Match concurrency check and overwrite unconditionally")
 	workflowsDeleteCmd.Flags().Bool("yes", false, "Skip confirmation")
 	workflowsValidateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsExecuteCmd.Flags().String("data", "", "JSON data to send")
