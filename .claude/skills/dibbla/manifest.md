@@ -84,6 +84,8 @@ Reserved top-level keys (rejected today, kept for future versions): `volumes:`, 
 | `command` | list-of-strings | no | no | image default | Overrides the container `CMD` |
 | `entrypoint` | list-of-strings | no | no | image default | Overrides the container `ENTRYPOINT` |
 | `volumes` | list of `{path, size, access?}` | no | no | empty | Per-service PVCs; see § 10 |
+| `stateful` | bool | no | no | `false` | Render as StatefulSet + headless Service; requires at least one volume. See § 10.5 |
+| `routes` | list of `{type, port, tls?, hostname?}` | no | no | empty | Externally-routable endpoints. `type: tcp` exposes raw TCP with TLS at the edge; `type: https`/`http` produces a standard Ingress. See § 10.5 |
 | `profiles` | list-of-strings | no | no | empty | Activation gates; see § 7 |
 | `depends_on` | list-of-strings | no | no | empty | Boot ordering hint; rolls out in topological order. References resolve against the manifest, not the post-profile-filter set — so `depends_on: [dep]` with `dep` profile-gated stays valid in all envs; in envs where `dep` is filtered out the hint is a no-op (no error, no boot ordering). For cross-profile dependencies, prefer application-level retry over `depends_on`. |
 | `expose_to` | list-of-strings | no | no | open | NetworkPolicy whitelist; see § 9 |
@@ -375,6 +377,157 @@ Field rules:
 - Lifecycle: created on first deploy, retained across redeploys, **deleted with the deployment**. There is no "keep PVC across delete" knob in v1 — back up before `dibbla apps delete`.
 
 Reserved top-level `volumes:` (for shared/named PVCs) is parsed but rejected today (`MANIFEST_UNSUPPORTED`). Per-service volumes are the only supported form.
+
+---
+
+## 10.5. Stateful services + TCP routes
+
+Two paired features for running databases (MongoDB, Redis), message brokers (RabbitMQ, NATS), and similar wire-protocol services on Dibbla — and connecting to them from outside the cluster over real TLS.
+
+### `stateful: true`
+
+Setting `stateful: true` on a service changes the workload shape from `Deployment` (the default) to `StatefulSet`, and renders a paired headless Service so each pod has stable per-replica DNS. Per-replica PVCs come from `volumeClaimTemplates` — each replica gets its **own** independent volume, materialized as `<vol-name>-<sts>-<ordinal>` (e.g. `vol-0-myapp-db-0`).
+
+```yaml
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 10Gi
+```
+
+Field rules:
+
+- `stateful: true` requires at least one entry in `volumes:` — fails validation with `STATEFUL_NO_VOLUME` otherwise. The whole point of stateful is durable storage.
+- Pod DNS: `<sts>-<ordinal>.<sts>-headless.<ns>.svc.cluster.local` (e.g. `myapp-db-0.myapp-db-headless...`). The regular ClusterIP Service at `<alias>-<svc>` also exists for clients that don't care which replica they hit.
+- StatefulSet pods restart in ordinal order — a stuck pod blocks the rest. Tune healthchecks tighter than for stateless workloads.
+
+**`replicas > 1` on a stateful service is allowed but produces N independent pods, each with its own PVC and its own data set.** The platform does **not** bootstrap clustering protocols (Mongo replica set initiation, Redis sentinel/cluster, RabbitMQ join_cluster, etc.) — you'd need to wire that up yourself with init containers + your own config. For most use cases stick with `replicas: 1` unless you have a clustering recipe ready. Managed-cluster recipes per engine are a follow-up.
+
+### `routes:` — externally-routable endpoints
+
+A `routes:` list per service declares how clients outside the cluster reach the service. Each route is one hostname:port pair with a TLS strategy:
+
+```yaml
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 10Gi
+    routes:
+      - type: tcp
+        port: 27017
+        tls: edge                  # platform-managed wildcard cert
+        hostname: my-mongo         # → my-mongo.<base-domain>:443
+```
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `type` | enum | yes | — | `tcp` \| `https` \| `http` |
+| `port` | int | yes | — | Container port the route forwards to |
+| `tls` | enum | no | see below | `edge` \| `passthrough` \| `none` |
+| `hostname` | string | no | `<alias>-<svc>` | Subdomain label (DNS-label rules); the renderer appends the base domain |
+
+`tls` defaults to `edge` for `tcp`/`https` and `none` for `http`. Reserved combinations:
+
+- `type: http` + `tls: edge` → `ROUTE_INVALID` (use `type: https` for managed TLS)
+- `type: tcp` + `tls: none` → `ROUTE_INVALID` (no way to disambiguate without TLS SNI on shared :443)
+- `hostname:` must match `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$` (DNS label, max 63 chars)
+
+### TCP route mechanics — and why Postgres/MySQL don't work yet
+
+`type: tcp` routes are realized as Traefik `IngressRouteTCP` CRDs that route by **SNI** on a single shared port (`:443`). The platform inspects the TLS Client Hello, reads the SNI hostname, and forwards to the right backend Service. With `tls: edge` the platform terminates TLS using its wildcard cert; with `tls: passthrough` the server presents its own cert and the platform just passes bytes through.
+
+This works for **TLS-on-connect protocols** — protocols where the very first bytes on the wire are a TLS Client Hello:
+
+- MongoDB (with `tls: true`)
+- Redis with TLS
+- RabbitMQ AMQPS (port 5671)
+- NATS with TLS
+- Kafka with TLS
+- Anything else that does TLS handshake first, application protocol second
+
+It does **not** work for **STARTTLS-style protocols** that send plaintext bytes before upgrading:
+
+- **Postgres** — the client first sends an 8-byte plaintext `SSLRequest`, the server responds `S` or `N`, *then* TLS begins. SNI routing on `:443` can't read those first 8 bytes as a TLS Client Hello, so it can't pick a backend. Routing Postgres requires a Postgres-aware proxy (Neon's pgproxy is the reference design) or a dedicated port per instance.
+- **MySQL / MariaDB** — same shape: server greets first, client replies with capability flags including a "want SSL" bit, *then* TLS upgrades.
+
+If a user asks for a TCP route to Postgres or MySQL, the platform can render the manifest but the connection won't work. Tell them to use the managed `dibbla db` subsystem for Postgres, and that engine-aware TCP routes for STARTTLS protocols are a follow-up.
+
+### Cloudflare Tunnel bypass
+
+When the platform's routing strategy is `cloudflare-tunnel` or `cloudflare-tunnel-ingress`, HTTP traffic flows through the tunnel as usual. **TCP routes bypass the tunnel** because Cloudflare Tunnel is HTTP-only — they get a direct A record straight to the cluster's TCP load balancer (`INGRESS_HOST_TARGET`). The user-visible consequence: a TCP route's hostname resolves to a different IP than the deployment's HTTPS hostname; the TCP route is **not** behind Cloudflare's edge protection unless the operator stands up Cloudflare Spectrum separately.
+
+### Connecting from your laptop
+
+After a successful deploy, the CLI prints a connection-info line per TCP route. Engine-agnostic shape: `tcp+tls://<hostname>:443`. Translate to your engine's URI scheme as needed:
+
+```bash
+# MongoDB on port 27017 → my-mongo.dibbla.app:443 over TLS
+mongosh "mongodb://my-mongo.dibbla.app:443/?tls=true"
+
+# Redis-with-TLS on port 6379 → my-cache.dibbla.app:443
+redis-cli --tls -h my-cache.dibbla.app -p 443
+
+# RabbitMQ AMQPS on port 5671 → my-broker.dibbla.app:443
+rabbitmqadmin --ssl --host my-broker.dibbla.app --port 443 ...
+```
+
+Note that the **connection port from the laptop is 443**, not the protocol's native port — SNI-based multiplexing on a single port is the whole point. The container still listens on its native port internally; only the externally-visible port is rewritten to 443.
+
+### Delete is destructive
+
+`dibbla apps delete <alias>` on a deployment that includes stateful services removes:
+
+- The StatefulSet (and its pods)
+- The headless + regular Services
+- The IngressRouteTCP CRDs
+- The TCP route DNS records
+- **The PVCs and all their data**
+- Any HTTP Ingresses, ConfigMaps, NetworkPolicies, etc. (the rest of the legacy delete path)
+
+There is **no `--preserve-volumes` flag in v1**. If you might want the data, back it up before deleting (database-engine native dump → S3, etc.). Engine-aware backups in the manifest itself are a deferred feature.
+
+### Validation error codes
+
+| Code | Meaning |
+|---|---|
+| `STATEFUL_NO_VOLUME` | `stateful: true` set but no `volumes:` declared |
+| `ROUTE_INVALID` | One of: bad `type`, bad `tls`, port out of range, invalid hostname, illegal type/tls combination |
+
+### Worked example — MongoDB exposed to your laptop
+
+```yaml
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    replicas: 1
+    cpu: 500m
+    memory: 1Gi
+    volumes:
+      - path: /data/db
+        size: 10Gi
+    healthcheck:
+      readiness:
+        tcp_socket: { port: 27017 }
+        period_seconds: 5
+    routes:
+      - type: tcp
+        port: 27017
+        tls: edge
+        hostname: my-mongo
+```
+
+After `dibbla deploy --target-env prod`, the CLI prints `tcp+tls://my-mongo.dibbla.app:443`. Connect with `mongosh "mongodb://my-mongo.dibbla.app:443/?tls=true"`.
 
 ---
 

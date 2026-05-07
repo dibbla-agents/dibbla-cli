@@ -27,6 +27,8 @@ const (
 	ErrCodeServiceNameInvalid    = "SERVICE_NAME_INVALID"
 	ErrCodeBuildContextMissing   = "BUILD_CONTEXT_MISSING"
 	ErrCodeDockerfileMissing     = "DOCKERFILE_MISSING"
+	ErrCodeStatefulNoVolume      = "STATEFUL_NO_VOLUME"
+	ErrCodeRouteInvalid          = "ROUTE_INVALID"
 )
 
 // Error is the structured error returned by the CLI validator.
@@ -68,6 +70,8 @@ type Service struct {
 	Profiles    []string    `yaml:"profiles,omitempty"`
 	DependsOn   []string    `yaml:"depends_on,omitempty"`
 	ExposeTo    []string    `yaml:"expose_to,omitempty"`
+	Stateful    *bool       `yaml:"stateful,omitempty"`
+	Routes      []Route     `yaml:"routes,omitempty"`
 }
 
 // Volume is a per-service persistent volume entry.
@@ -75,6 +79,16 @@ type Volume struct {
 	Path   string `yaml:"path"`
 	Size   string `yaml:"size"`
 	Access string `yaml:"access,omitempty"`
+}
+
+// Route is one externally-routable endpoint on a service. Validation rules
+// mirror deploy-api/internal/manifest.Route so users get matching error
+// codes locally and from the server.
+type Route struct {
+	Type     string `yaml:"type"`               // "tcp" | "https" | "http"
+	Port     int    `yaml:"port"`               // container port to forward to
+	TLS      string `yaml:"tls,omitempty"`      // "edge" | "passthrough" | "none"
+	Hostname string `yaml:"hostname,omitempty"` // subdomain label
 }
 
 // Discover scans the project root for dibbla.yaml/dibbla.yml and returns
@@ -106,6 +120,12 @@ func fileExists(p string) bool {
 var (
 	serviceNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,29}$`)
 	imageWithTagRe = regexp.MustCompile(`^[^\s]+:[^\s/:@]+$`)
+	dnsLabelRe     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+)
+
+var (
+	validRouteTypes = map[string]bool{"tcp": true, "https": true, "http": true}
+	validRouteTLS   = map[string]bool{"edge": true, "passthrough": true, "none": true}
 )
 
 var reservedServiceNames = map[string]bool{
@@ -190,6 +210,48 @@ func validateService(name string, s *Service) error {
 			return &Error{Code: ErrCodeManifestInvalid, Path: "services." + name + ".image",
 				Detail: fmt.Sprintf("image reference %q must include a tag", ref)}
 		}
+	}
+	if s.Stateful != nil && *s.Stateful && len(s.Volumes) == 0 {
+		return &Error{Code: ErrCodeStatefulNoVolume, Path: "services." + name + ".stateful",
+			Detail: "stateful: true requires at least one entry in volumes"}
+	}
+	for i, r := range s.Routes {
+		if err := validateRoute(name, i, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRoute(svc string, idx int, r Route) error {
+	path := fmt.Sprintf("services.%s.routes[%d]", svc, idx)
+	if r.Type == "" {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path + ".type",
+			Detail: "route.type is required (one of tcp | https | http)"}
+	}
+	if !validRouteTypes[r.Type] {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path + ".type",
+			Detail: fmt.Sprintf("route.type %q must be one of tcp | https | http", r.Type)}
+	}
+	if r.Port < 1 || r.Port > 65535 {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path + ".port",
+			Detail: fmt.Sprintf("route.port must be between 1 and 65535, got %d", r.Port)}
+	}
+	if r.TLS != "" && !validRouteTLS[r.TLS] {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path + ".tls",
+			Detail: fmt.Sprintf("route.tls %q must be one of edge | passthrough | none", r.TLS)}
+	}
+	if r.Type == "http" && r.TLS == "edge" {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path,
+			Detail: "route.type=http with tls=edge is invalid (use type=https for managed TLS)"}
+	}
+	if r.Type == "tcp" && r.TLS == "none" {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path,
+			Detail: "route.type=tcp with tls=none is not supported (no way to disambiguate without TLS SNI)"}
+	}
+	if r.Hostname != "" && !dnsLabelRe.MatchString(r.Hostname) {
+		return &Error{Code: ErrCodeRouteInvalid, Path: path + ".hostname",
+			Detail: fmt.Sprintf("route.hostname %q must be a valid DNS label (a-z, 0-9, -; max 63 chars)", r.Hostname)}
 	}
 	return nil
 }

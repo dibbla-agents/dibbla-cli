@@ -207,3 +207,202 @@ func expectErrCode(t *testing.T, err error, code string) {
 		t.Errorf("expected code %s, got %s (detail=%s)", code, e.Code, e.Detail)
 	}
 }
+
+func TestParseAcceptsStatefulWithRoutes(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 5Gi
+    routes:
+      - type: tcp
+        port: 27017
+        tls: edge
+        hostname: my-db
+`)
+	m, err := ParseAndValidate(p)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	db := m.Services["db"]
+	if db == nil {
+		t.Fatal("missing db service")
+	}
+	if db.Stateful == nil || !*db.Stateful {
+		t.Errorf("expected stateful=true")
+	}
+	if len(db.Routes) != 1 || db.Routes[0].Type != "tcp" || db.Routes[0].Hostname != "my-db" {
+		t.Errorf("unexpected routes: %+v", db.Routes)
+	}
+}
+
+func TestParseRejectsStatefulWithoutVolume(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeStatefulNoVolume)
+}
+
+func TestParseRejectsRouteBadType(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 1Gi
+    routes:
+      - type: udp
+        port: 27017
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseRejectsRouteBadTLS(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 1Gi
+    routes:
+      - type: tcp
+        port: 27017
+        tls: weird
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseRejectsTcpWithTLSNone(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 1Gi
+    routes:
+      - type: tcp
+        port: 27017
+        tls: none
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseRejectsHttpWithEdgeTLS(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  web:
+    build: .
+    port: 3000
+    routes:
+      - type: http
+        port: 3000
+        tls: edge
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseRejectsRouteBadHostname(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 1Gi
+    routes:
+      - type: tcp
+        port: 27017
+        hostname: "Bad_Host"
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseRejectsRouteBadPort(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 1Gi
+    routes:
+      - type: tcp
+        port: 99999
+`)
+	_, err := ParseAndValidate(p)
+	expectErrCode(t, err, ErrCodeRouteInvalid)
+}
+
+func TestParseAcceptsMultiRoute(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  broker:
+    image: rabbitmq:3-management
+    port: 15672
+    stateful: true
+    volumes:
+      - path: /var/lib/rabbitmq
+        size: 2Gi
+    routes:
+      - type: https
+        port: 15672
+        tls: edge
+        hostname: broker-admin
+      - type: tcp
+        port: 5671
+        tls: passthrough
+        hostname: broker-amqp
+`)
+	m, err := ParseAndValidate(p)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(m.Services["broker"].Routes) != 2 {
+		t.Errorf("expected 2 routes, got %d", len(m.Services["broker"].Routes))
+	}
+}

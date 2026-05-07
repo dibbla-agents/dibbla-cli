@@ -54,14 +54,41 @@ type ResultDeployment struct {
 // ServiceView is the per-service entry the renderers display. Mirrors the
 // server-side models.DeploymentServiceView.
 type ServiceView struct {
-	Name          string `json:"name"`
-	Image         string `json:"image,omitempty"`
-	Port          *int   `json:"port,omitempty"`
-	Replicas      int    `json:"replicas"`
-	ReadyReplicas int    `json:"ready_replicas"`
-	IsPublic      bool   `json:"is_public"`
-	IsBuilt       bool   `json:"is_built"`
-	Status        string `json:"status,omitempty"`
+	Name          string      `json:"name"`
+	Image         string      `json:"image,omitempty"`
+	Port          *int        `json:"port,omitempty"`
+	Replicas      int         `json:"replicas"`
+	ReadyReplicas int         `json:"ready_replicas"`
+	IsPublic      bool        `json:"is_public"`
+	IsBuilt       bool        `json:"is_built"`
+	Status        string      `json:"status,omitempty"`
+	Stateful      bool        `json:"stateful,omitempty"`
+	Routes        []RouteView `json:"routes,omitempty"`
+}
+
+// RouteView is one externally-routable endpoint surfaced from the server.
+// Hostname is the resolved FQDN; the renderer prints copy-pasteable
+// connection info from this directly.
+type RouteView struct {
+	Type     string `json:"type"`
+	Port     int    `json:"port"`
+	TLS      string `json:"tls,omitempty"`
+	Hostname string `json:"hostname"`
+}
+
+// ConnectionURL returns a copy-pasteable connection string for one route.
+// Engine-agnostic: we infer a scheme from type+tls and let the user fill in
+// credentials. Returns "" for the http/https types since those already show
+// up as the deployment's primary URL.
+func (r RouteView) ConnectionURL() string {
+	if r.Type != "tcp" {
+		return ""
+	}
+	// type=tcp + tls: edge|passthrough → external connection over TLS on
+	// the route port. We print a generic tcp+tls scheme so users see the
+	// host and port; the actual protocol scheme depends on what they're
+	// running (mongodb, rediss, amqps, ...).
+	return fmt.Sprintf("tcp+tls://%s:%d", r.Hostname, r.Port)
 }
 
 // DeployError is the failure payload. Mirrors the server's

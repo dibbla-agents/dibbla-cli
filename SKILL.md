@@ -379,7 +379,34 @@ services:
 
 **Shell variable substitution.** `${VAR}` and `${VAR:-default}` in `dibbla.yaml` are resolved from your shell env at `dibbla deploy` time (compose-style). `DIBBLA_*` is reserved for the server's discovery contract — those pass through to the server unchanged regardless of your shell.
 
-For the full schema (env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, build secrets, multiple public services + per-service auth, shell-var substitution, quotas, and the runtime contract for service discovery + NetworkPolicy), see `.claude/skills/dibbla/manifest.md` (and `.claude/skills/dibbla/platform.md § 8.5` for the runtime model).
+**Stateful services + TCP routes (F19).** A service with `stateful: true` renders as a Kubernetes StatefulSet plus a headless Service so each pod gets stable per-replica DNS, and each replica owns its own PVC via `volumeClaimTemplates`. Combined with a per-service `routes:` list this lets you expose databases and message brokers over real TLS to your laptop:
+
+```yaml
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true                  # → StatefulSet + headless Service
+    volumes:
+      - path: /data/db
+        size: 10Gi
+    routes:
+      - type: tcp                   # raw TCP route at the edge
+        port: 27017
+        tls: edge                   # platform-managed wildcard cert
+        hostname: my-mongo          # → my-mongo.<base-domain>:443
+```
+
+After deploy, connect from your laptop with the connection string the CLI prints (e.g. `mongosh "mongodb://my-mongo.<base-domain>:443/?tls=true"`).
+
+Two limits to know:
+1. **TLS-on-connect protocols only** in v1: MongoDB, Redis-with-TLS, AMQPS, NATS-with-TLS, Kafka-with-TLS. Postgres and MySQL use STARTTLS-style upgrades that don't carry SNI in the first packet, so they are deferred.
+2. **`replicas > 1` on a stateful service yields N independent pods**, each with its own PVC and its own data. The platform does **not** bootstrap clustering protocols (Mongo replica set, Redis sentinel, etc.). Use `replicas: 1` unless you're wiring clustering yourself with init containers + your own config. Managed-cluster recipes are a follow-up.
+
+`dibbla apps delete` is destructive on stateful services: it deletes the StatefulSet, the IngressRouteTCP CRDs, the DNS record, **and the PVCs** with all their data. There is no `--preserve-volumes` flag in v1 — back up before deleting.
+
+For the full schema (env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, build secrets, multiple public services + per-service auth, shell-var substitution, quotas, the runtime contract for service discovery + NetworkPolicy, and stateful services + TCP routes), see `.claude/skills/dibbla/manifest.md` (stateful + routes are § 10.5; runtime model is `platform.md § 8.5` for multi-service basics and `§ 8.6` for the stateful + TCP-routes runtime).
 
 ### `manifest`
 

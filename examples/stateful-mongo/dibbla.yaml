@@ -1,0 +1,14 @@
+version: 1
+services:
+  db:
+    image: mongo:7
+    port: 27017
+    stateful: true
+    volumes:
+      - path: /data/db
+        size: 10Gi
+    routes:
+      - type: tcp
+        port: 27017
+        tls: edge
+        hostname: my-mongo

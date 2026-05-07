@@ -346,12 +346,29 @@ func (t *TTY) printServicesTable() {
 		if status == "" {
 			status = "starting"
 		}
-		fmt.Fprintf(t.w, "  %s  %s  %s  %s\n",
+		marker := ""
+		if s.Stateful {
+			marker = " " + t.paint("[stateful]", colorDim)
+		}
+		fmt.Fprintf(t.w, "  %s  %s  %s  %s%s\n",
 			t.paint(padRight(s.Name, 12), colorBright+colorBold),
 			t.paint(padRight(role, 8), colorDim),
 			t.paint(padRight(status, 10), colorBrand),
 			t.paint(ready, colorDim),
+			marker,
 		)
+		// Per-route connection info: one indented line per TCP route.
+		// HTTPS/HTTP routes are already covered by the deployment's URL
+		// header, so we only surface tcp here.
+		for _, r := range s.Routes {
+			if r.Type != "tcp" {
+				continue
+			}
+			fmt.Fprintf(t.w, "    %s  %s\n",
+				t.paint(padRight("tcp", 4), colorDim),
+				t.paint(r.ConnectionURL(), colorBright),
+			)
+		}
 	}
 }
 

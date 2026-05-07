@@ -166,9 +166,77 @@ The deploy-api runs a quota check on the resolved set BEFORE building anything. 
 
 ### Cross-references
 
-- [manifest.md](manifest.md) — schema, env-aware fields, profiles, init, healthcheck, cron, build secrets, custom domains.
+- [manifest.md](manifest.md) — schema, env-aware fields, profiles, init, healthcheck, cron, build secrets, custom domains, **stateful services + TCP routes (§ 10.5)**.
 - [examples.md](examples.md) — runnable transcripts for each pattern.
 - [guardrails.md](guardrails.md) Check 6 — pre-deploy multi-service safety.
+
+---
+
+## 8.6. Stateful services + TCP routes — runtime model
+
+`stateful: true` and per-service `routes:` are the F19 features that let users deploy databases (MongoDB, Redis), brokers (RabbitMQ, NATS), and other wire-protocol services and connect to them from outside the cluster over real TLS. The schema lives in [manifest.md § 10.5](manifest.md); this section covers the runtime — what K8s objects get created, how clients reach them, and the limits operators need to know.
+
+### Workload shape
+
+A service with `stateful: true` renders as:
+
+- An `appsv1.StatefulSet` (instead of the default `Deployment`) with pod-template fields identical to what the Deployment path would produce — same env, image, probes, init containers — so behavior parity is maintained.
+- A **headless** `Service` (`ClusterIP: None`) named `<alias>-<svc>-headless`. It has the same selector and ports as the regular Service but no virtual IP; that's what gives each pod stable DNS at `<sts>-<ordinal>.<headless>` (e.g. `myapp-db-0.myapp-db-headless...`).
+- The regular `<alias>-<svc>` ClusterIP Service alongside the headless one, for clients that don't care which replica they hit.
+- One `volumeClaimTemplate` per declared volume. K8s materializes a per-pod PVC named `<vct-name>-<sts>-<ordinal>` (e.g. `vol-0-myapp-db-0`) on first replica boot.
+
+`replicas > 1` produces N independent pods each with its own PVC. The platform does **not** bootstrap clustering; there is no managed Mongo replica set, no Redis sentinel, no RabbitMQ join. Operators wiring this manually use init containers + headless DNS to discover peers.
+
+### TCP route shape
+
+Each `type: tcp` route renders as a Traefik `IngressRouteTCP` CRD on `traefik.io/v1alpha1`. Traffic flow:
+
+```
+client → <hostname>:443 → Traefik LB (TCP entrypoint) → IngressRouteTCP (HostSNI match)
+       → ClusterIP Service → StatefulSet pod
+```
+
+The TLS choice is per-route:
+
+- `tls: edge` → Traefik terminates TLS using `TraefikTLSCertSecret` (default: `wildcard-tls`). The platform's wildcard cert covers any single-label hostname under the base domain.
+- `tls: passthrough` → Traefik does SNI-route-and-forward; the backend pod presents its own cert. Use when the user wants end-to-end TLS or mTLS.
+
+Because routing is **SNI-based on a single shared port (`:443`)**, multiple databases can share that port — the Client Hello SNI value disambiguates. This is exactly why the v1 design only supports TLS-on-connect protocols (Mongo, Redis-TLS, AMQPS, NATS-TLS, Kafka-TLS): protocols that put a TLS Client Hello as the first bytes on the wire are routable; STARTTLS-style protocols (Postgres, MySQL) are not, because their first bytes aren't a TLS handshake. Postgres support requires a Postgres-aware proxy (à la Neon's pgproxy) and is deferred.
+
+### The `:443` port is non-negotiable
+
+Clients connect to the route hostname on **port 443**, not the database's native port. This is the cost of SNI multiplexing — every TCP route on the cluster shares one external port. The container still listens on its native port internally (e.g. Mongo on 27017), but external connection strings target 443:
+
+- `mongodb://my-mongo.dibbla.app:443/?tls=true`
+- `redis-cli --tls -h my-cache.dibbla.app -p 443`
+
+Some legacy clients hardcode the protocol's default port. Newer ones (modern MongoDB drivers, redis-cli with `-p`, RabbitMQ ≥ 3.x) accept any port.
+
+### Cloudflare Tunnel cannot carry TCP
+
+Cloudflare Tunnel is HTTP/HTTPS only — it has no concept of L4/TCP forwarding. So when the cluster's `RoutingStrategy` is `cloudflare-tunnel` or `cloudflare-tunnel-ingress`, TCP routes **bypass the tunnel** and use a direct A record:
+
+- HTTP/HTTPS routes still get tunnel ingress rules + CNAME-to-tunnel DNS (legacy behavior, unchanged).
+- TCP routes get an A record pointing straight at `INGRESS_HOST_TARGET` (the cluster's TCP-capable LB IP). No Cloudflare in the path.
+
+Operators on tunnel strategies need to ensure `INGRESS_HOST_TARGET` is set to a reachable LB IP. If they want Cloudflare protection for TCP, they need a Cloudflare Spectrum app (paid) — the platform does not stand that up automatically.
+
+### Cluster requirements
+
+- **Traefik as ingress controller.** The TCP route renderer emits `IngressRouteTCP` CRDs (Traefik-specific). Clusters with nginx-ingress or other controllers will see the CRDs go un-applied (the dynamic-client apply is skipped silently). Traefik is the production cluster's choice; alternative-controller support is a follow-up.
+- **Wildcard TLS cert in the secret named by `TraefikTLSCertSecret`** (default `wildcard-tls`) for `tls: edge` routes. Provision via cert-manager or kubeseal; the renderer references it by name.
+- **`TraefikTCPEntrypoint`** (default `websecure`) is the Traefik entrypoint that terminates TCP+TLS. Reusing the standard 443 entrypoint is the v1 default — SNI disambiguates HTTPS vs database traffic on the same port.
+
+### Delete semantics
+
+`dibbla apps delete <alias>` removes everything the deploy created — including PVCs and IngressRouteTCP CRDs. There is no "preserve volumes" path in v1. The orchestration:
+
+1. List IngressRouteTCP CRDs by `<base-domain>/app-name=<alias>` label, extract the SNI hostname from each spec, call `RemoveTCPRoute` (which deletes the DNS record), then delete the CRD.
+2. Call the legacy `RemoveRoute` (HTTP route DNS cleanup).
+3. Label-based delete of K8s objects: Ingresses, Services (both regular and headless), Deployments, StatefulSets, ConfigMaps, **PVCs**.
+4. Remove local project files.
+
+The PVC delete step is the destructive part. Tell users to back up first if the data matters.
 
 ---
 

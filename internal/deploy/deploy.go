@@ -42,16 +42,28 @@ type Deployment struct {
 
 // ServiceView is the per-service entry returned in API responses.
 type ServiceView struct {
-	Name          string `json:"name"`
-	Image         string `json:"image,omitempty"`
-	Port          *int   `json:"port,omitempty"`
-	Replicas      int    `json:"replicas"`
-	ReadyReplicas int    `json:"ready_replicas"`
-	CPU           string `json:"cpu,omitempty"`
-	Memory        string `json:"memory,omitempty"`
-	IsPublic      bool   `json:"is_public"`
-	IsBuilt       bool   `json:"is_built"`
-	Status        string `json:"status,omitempty"`
+	Name          string       `json:"name"`
+	Image         string       `json:"image,omitempty"`
+	Port          *int         `json:"port,omitempty"`
+	Replicas      int          `json:"replicas"`
+	ReadyReplicas int          `json:"ready_replicas"`
+	CPU           string       `json:"cpu,omitempty"`
+	Memory        string       `json:"memory,omitempty"`
+	IsPublic      bool         `json:"is_public"`
+	IsBuilt       bool         `json:"is_built"`
+	Status        string       `json:"status,omitempty"`
+	Stateful      bool         `json:"stateful,omitempty"`
+	Routes        []RouteView  `json:"routes,omitempty"`
+}
+
+// RouteView is one externally-routable endpoint surfaced from the server.
+// Hostname is the resolved FQDN (`<label>.<base-domain>`); the CLI uses it
+// directly to print copy-pasteable connection strings.
+type RouteView struct {
+	Type     string `json:"type"`
+	Port     int    `json:"port"`
+	TLS      string `json:"tls,omitempty"`
+	Hostname string `json:"hostname"`
 }
 
 // HealthCheck contains health check details

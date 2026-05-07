@@ -59,6 +59,71 @@ func TestQuietRendererShowsServiceCountForMultiService(t *testing.T) {
 	}
 }
 
+// TestTTYPrintsRouteConnectionInfo verifies that the TTY renderer prints a
+// connection-string line under each TCP-route service. ANSI colors are
+// disabled to keep the assertion plain-text-stable.
+func TestTTYPrintsRouteConnectionInfo(t *testing.T) {
+	var buf bytes.Buffer
+	tty := NewTTY(&buf, false /* enableANSI */)
+	tty.OnEvent(DeployEvent{Type: "result", Result: &DeployResult{
+		Status: "success",
+		Deployment: ResultDeployment{
+			Alias:  "rt",
+			URL:    "https://rt.dibbla.app",
+			Status: "running",
+			Services: []ServiceView{{
+				Name:          "db",
+				Replicas:      1,
+				ReadyReplicas: 1,
+				Status:        "running",
+				Stateful:      true,
+				Routes: []RouteView{
+					{Type: "tcp", Port: 27017, TLS: "edge", Hostname: "rt-db.dibbla.app"},
+				},
+			}},
+		},
+	}})
+	tty.OnDone()
+	out := buf.String()
+	if !strings.Contains(out, "tcp+tls://rt-db.dibbla.app:27017") {
+		t.Errorf("expected connection URL in TTY output; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[stateful]") {
+		t.Errorf("expected [stateful] marker in TTY output; got:\n%s", out)
+	}
+}
+
+// TestTTYHidesNonTCPRoutesUnderServices verifies non-tcp routes are not
+// surfaced in the per-service block (they're already covered by the top
+// deployment URL).
+func TestTTYHidesNonTCPRoutesUnderServices(t *testing.T) {
+	var buf bytes.Buffer
+	tty := NewTTY(&buf, false)
+	tty.OnEvent(DeployEvent{Type: "result", Result: &DeployResult{
+		Status: "success",
+		Deployment: ResultDeployment{
+			Alias:  "x",
+			URL:    "https://x.dibbla.app",
+			Status: "running",
+			Services: []ServiceView{{
+				Name:          "web",
+				IsPublic:      true,
+				Replicas:      1,
+				ReadyReplicas: 1,
+				Status:        "running",
+				Routes: []RouteView{
+					{Type: "https", Port: 3000, TLS: "edge", Hostname: "x.dibbla.app"},
+				},
+			}},
+		},
+	}})
+	tty.OnDone()
+	out := buf.String()
+	if strings.Contains(out, "tcp+tls://") {
+		t.Errorf("https route must NOT produce a tcp+tls connection line; got:\n%s", out)
+	}
+}
+
 func TestCountDisplayServices(t *testing.T) {
 	cases := []struct {
 		name string
