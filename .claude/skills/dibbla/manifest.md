@@ -483,6 +483,33 @@ rabbitmqadmin --ssl --host my-broker.dibbla.app --port 443 ...
 
 Note that the **connection port from the laptop is 443**, not the protocol's native port — SNI-based multiplexing on a single port is the whole point. The container still listens on its native port internally; only the externally-visible port is rewritten to 443.
 
+### Updating a stateful service — what's mutable, what isn't
+
+Kubernetes treats most of a `StatefulSet`'s spec as **immutable after creation**. You can update:
+
+- `replicas` (scale up/down)
+- `template` (the pod spec — image tag, env, healthcheck, resources)
+- `updateStrategy`, `revisionHistoryLimit`, `minReadySeconds`, `persistentVolumeClaimRetentionPolicy`
+
+You **cannot** in-place update:
+
+- `volumeClaimTemplates` (so resizing a `volumes:` entry, or adding a new one, is not a `--update` operation)
+- `selector`, `serviceName`, `podManagementPolicy`
+
+Routine `dibbla deploy --update` works for what you'd actually want most of the time: rolling out a new image, changing env vars, tuning resources. If you need to change a field K8s won't let you mutate, the deploy errors out with a clear message that names the immutable categories and points at the recovery procedure:
+
+```
+StatefulSet "myapp-db" rejected: a change in this deploy touches an immutable field
+on the existing StatefulSet (volumeClaimTemplates, selector, serviceName, or
+podManagementPolicy). To apply such a change you must delete the StatefulSet and
+let the next deploy recreate it; preserve the underlying PVCs by deleting the
+StatefulSet with --cascade=orphan first (e.g. `kubectl delete statefulset myapp-db
+--cascade=orphan -n <ns>`), then redeploy. The new StatefulSet will adopt the
+existing PVCs because their names match the volumeClaimTemplates.
+```
+
+The cascade-orphan trick keeps the PVCs alive (and the data on them) while letting K8s recreate a fresh StatefulSet that picks up the new spec. The volumeClaimTemplate names are stable across deploys (the platform doesn't churn them), so adoption Just Works.
+
 ### Delete is destructive
 
 `dibbla apps delete <alias>` on a deployment that includes stateful services removes:

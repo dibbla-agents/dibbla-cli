@@ -229,6 +229,16 @@ Operators on tunnel strategies need to ensure `INGRESS_HOST_TARGET` is set to a 
 
 If a TCP route is published but Traefik logs `Error configuring TLS error="secret <ns>/<name> does not exist"` repeatedly, the deploy succeeded at the K8s layer but the cert lookup is failing — almost always because the cluster has no default TLSStore AND `TRAEFIK_TLS_CERT_SECRET` was set to a name that doesn't exist in the tenant namespace. The fix is one of: provision a default TLSStore (preferred), unset `TRAEFIK_TLS_CERT_SECRET` so Traefik uses the default, or seed the named secret in every tenant namespace.
 
+### Update semantics — what `--update` can and cannot change
+
+K8s treats most of `StatefulSet.spec` as immutable after create. Allowed: `replicas`, `template` (image, env, resources, probes), `updateStrategy`, `revisionHistoryLimit`, `minReadySeconds`, `persistentVolumeClaimRetentionPolicy`. Forbidden: `volumeClaimTemplates`, `selector`, `serviceName`, `podManagementPolicy`.
+
+Two implications:
+
+1. The platform deliberately renders **stable labels** on `volumeClaimTemplates.metadata` — only the workload-identity set (`app`, `app-name`, `managed-by`, `service`, `role`, `organization-id`). Per-deploy stamps like `deployment-id` are NOT included on VCTs because they would roll on every redeploy and trigger an immutability rejection on something the user didn't actually change. Renderer code: `volumeClaimTemplateLabels()` in `internal/deployer/render/labels.go`.
+
+2. When a deploy DOES touch an immutable field (volume size change, service rename), `applyStatefulSet` wraps the K8s 422 with a clear human-friendly message that points the user at `kubectl delete statefulset <name> --cascade=orphan` followed by a redeploy. The orphan cascade keeps the PVCs intact; the next deploy creates a fresh StatefulSet that adopts them by volumeClaimTemplate-name match.
+
 ### Delete semantics
 
 `dibbla apps delete <alias>` removes everything the deploy created — including PVCs and IngressRouteTCP CRDs. There is no "preserve volumes" path in v1. The orchestration:
