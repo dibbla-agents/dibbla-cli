@@ -10,11 +10,35 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 )
+
+// IsSSHSession reports whether the current process is running inside an
+// SSH shell. The localhost-callback OAuth flow cannot complete here:
+// the callback URL points at this host's loopback, but the user's
+// browser is on the other side of the SSH connection. Detection is
+// heuristic but reliable — sshd sets SSH_CONNECTION/SSH_TTY for every
+// real SSH session.
+func IsSSHSession() bool {
+	return os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != ""
+}
+
+// HasGraphicalSession reports whether xdg-open/open/rundll32 is likely
+// to actually launch a browser. On Linux that requires a running
+// graphical session ($DISPLAY for X11, $WAYLAND_DISPLAY for Wayland);
+// on macOS and Windows a desktop is assumed. When false, callers
+// should print the login URL as the primary instruction instead of
+// pretending to launch a browser that will silently die.
+func HasGraphicalSession() bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+}
 
 // CallbackResult holds the token received from the browser callback.
 type CallbackResult struct {

@@ -18,7 +18,7 @@ Most commands that interact with the Dibbla platform require an API token.
 - **CI:** Set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`); the CLI uses env vars in CI and does not read the keychain.
 - **Fallback:** The token can also be provided via the `DIBBLA_API_TOKEN` environment variable or a `.env` file.
 
-If the token is missing, the tool will prompt the user to run `dibbla login` or set `DIBBLA_API_TOKEN`. Get your token at `https://app.dibbla.com/settings/api-tokens`.
+If the token is missing, the tool will prompt the user to run `dibbla login` or set `DIBBLA_API_TOKEN`. Get your token at `https://app.dibbla.com/api-keys`.
 
 ## Commands
 

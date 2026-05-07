@@ -26,7 +26,7 @@ func requireToken(cfg *config.Config) {
 		fmt.Println("  1. Run: dibbla login")
 		fmt.Println("  2. Set DIBBLA_API_TOKEN in your environment or .env file")
 		fmt.Println()
-		fmt.Println("Get your API token at: https://app.dibbla.com/settings/api-tokens")
+		fmt.Println("Get your API token at: https://app.dibbla.com/api-keys")
 		os.Exit(1)
 	}
 }

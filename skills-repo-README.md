@@ -39,7 +39,7 @@ The **dibbla-cli** skill gives your AI agent full knowledge of the `dibbla` CLI:
 
 - [Dibbla Platform](https://dibbla.com)
 - [Dibbla CLI Installation](https://install.dibbla.com)
-- [Get an API Token](https://app.dibbla.com/settings/api-tokens)
+- [Get an API Token](https://app.dibbla.com/api-keys)
 
 ---
 

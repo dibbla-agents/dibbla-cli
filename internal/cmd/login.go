@@ -28,6 +28,13 @@ var (
 	loginNoKeychain bool
 )
 
+// apiKeysURL is the page in the dibbla web app where users mint API
+// tokens. Displayed in error/help messages whenever we direct the user
+// to use --api-key. The route is "/api-keys" (defined in
+// auth-ui/src/App.tsx) — earlier copies of this CLI pointed at
+// /settings/api-tokens, which has never existed.
+const apiKeysURL = "https://app.dibbla.com/api-keys"
+
 var loginCmd = &cobra.Command{
 	Use:   "login [api_url]",
 	Short: "Log in and store API credentials securely",
@@ -39,9 +46,12 @@ By default uses https://api.dibbla.com. To target a different endpoint:
 
 Three ways to provide the token:
   (interactive)        Run in a real terminal; pick "Log in with browser" or "Paste an API token".
+                       Over SSH the picker auto-routes to "Paste an API token" — see below.
   --browser            Skip the interactive menu and go straight to browser-based OAuth.
                        Works in non-TTY contexts (Claude Code ! prefix, scripted shells,
-                       agentic tooling) as long as the machine has a browser.
+                       agentic tooling) when this machine has a local browser. Refuses over
+                       SSH: the OAuth callback uses a localhost server on this host, which
+                       the laptop's browser cannot reach. Use --api-key instead.
   --api-key <token>    Provide a pre-generated token; works in any context.
 
 Persistence:
@@ -82,6 +92,19 @@ func runLogin(cmd *cobra.Command, args []string) {
 
 	token := strings.TrimSpace(loginAPIKey)
 	if token == "" && loginBrowser {
+		// Over SSH the localhost-callback browser flow can't complete —
+		// the callback URL points at this host's loopback, not the
+		// user's laptop. Refuse with a useful pointer instead of
+		// hanging for 5 minutes on a callback that will never arrive.
+		if auth.IsSSHSession() {
+			fmt.Printf("%s --browser cannot complete login over SSH.\n"+
+				"  The OAuth callback uses a localhost server on this host,\n"+
+				"  which your laptop's browser cannot reach. Use either:\n\n"+
+				"    dibbla login --api-key <token>      (create one at %s)\n"+
+				"    DIBBLA_API_TOKEN=<token> dibbla ... (any subsequent dibbla command)\n",
+				platform.Icon("❌", "[X]"), apiKeysURL)
+			os.Exit(1)
+		}
 		// Skip the interactive survey menu — go directly to browser OAuth.
 		// Safe in non-TTY contexts because the browser flow uses a localhost
 		// callback server for token delivery, not stdin.
@@ -186,10 +209,32 @@ func writeEnvAndGitignore(token, baseURL string) error {
 func acquireToken(baseURL string) (string, error) {
 	interactive := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
 	if !interactive {
-		return "", fmt.Errorf("non-interactive terminal detected. Use one of:\n" +
-			"  --browser         opens your browser (works in Claude Code, agentic shells, CI with a browser)\n" +
-			"  --api-key TOK     pass a token (create one at https://app.dibbla.com/settings/api-tokens)\n" +
-			"  env DIBBLA_API_TOKEN=...   for headless CI")
+		// Tailor the recovery options to context. Over SSH, --browser
+		// is not a viable suggestion (the callback can't reach the
+		// user's laptop) — leave it out so we don't lead the user
+		// into a 5-minute timeout.
+		if auth.IsSSHSession() {
+			return "", fmt.Errorf("non-interactive SSH session detected. Use one of:\n"+
+				"  --api-key TOK     pass a token (create one at %s)\n"+
+				"  env DIBBLA_API_TOKEN=...   for headless CI", apiKeysURL)
+		}
+		return "", fmt.Errorf("non-interactive terminal detected. Use one of:\n"+
+			"  --browser         opens your browser (works in Claude Code, agentic shells, CI with a browser)\n"+
+			"  --api-key TOK     pass a token (create one at %s)\n"+
+			"  env DIBBLA_API_TOKEN=...   for headless CI", apiKeysURL)
+	}
+
+	// Over SSH, browser login can't complete (localhost callback can't
+	// reach the user's laptop). Skip the picker and route to the
+	// paste-token flow with a one-line explanation so the user knows
+	// why their usual choice isn't being offered.
+	if auth.IsSSHSession() {
+		fmt.Printf("%s SSH session detected — browser login isn't viable here.\n"+
+			"  The OAuth callback uses a localhost server on this host,\n"+
+			"  which your laptop's browser can't reach. Paste an API\n"+
+			"  token instead (create one at %s).\n\n",
+			platform.Icon("ℹ", "[i]"), apiKeysURL)
+		return promptAPIToken()
 	}
 
 	const (
@@ -239,14 +284,27 @@ func browserLogin(apiBaseURL string) (string, error) {
 
 	loginURL := auth.BuildLoginURL(appURL, port, state)
 
-	fmt.Printf("%s Opening browser for login...\n", platform.Icon("🌐", "[>]"))
-
-	if err := auth.OpenBrowser(loginURL); err != nil {
-		// Browser didn't open — try clipboard, then print URL.
-		if clipErr := auth.CopyToClipboard(loginURL); clipErr == nil {
-			fmt.Printf("  %s Login URL copied to clipboard!\n", platform.Icon("📋", "[*]"))
+	if auth.HasGraphicalSession() {
+		fmt.Printf("%s Opening browser for login...\n", platform.Icon("🌐", "[>]"))
+		if err := auth.OpenBrowser(loginURL); err != nil {
+			// Browser didn't open — try clipboard, then print URL.
+			if clipErr := auth.CopyToClipboard(loginURL); clipErr == nil {
+				fmt.Printf("  %s Login URL copied to clipboard!\n", platform.Icon("📋", "[*]"))
+			}
+			fmt.Printf("  If the browser didn't open, visit:\n  %s\n", loginURL)
 		}
-		fmt.Printf("  If the browser didn't open, visit:\n  %s\n", loginURL)
+	} else {
+		// No $DISPLAY / $WAYLAND_DISPLAY: xdg-open would silently fail
+		// (cmd.Start returns nil but the child dies after fork). Print
+		// the URL as the primary instruction. Note this still won't
+		// work over SSH — the localhost callback at port %d is on
+		// this host, not the laptop — but the SSH gate upstream
+		// already refuses that case, so reaching here implies a
+		// non-SSH headless context where the user knows what they're
+		// doing (e.g. a desktop session that lost its display).
+		fmt.Printf("%s No graphical session detected. Open this URL in a browser\n"+
+			"  on a machine that can reach 127.0.0.1:%d :\n\n  %s\n",
+			platform.Icon("🌐", "[>]"), port, loginURL)
 	}
 
 	fmt.Println()
@@ -321,7 +379,7 @@ func promptAPIToken() (string, error) {
 	var token string
 	prompt := &survey.Password{
 		Message: "API token:",
-		Help:    "Get your token at https://app.dibbla.com/settings/api-tokens",
+		Help:    "Get your token at " + apiKeysURL,
 	}
 	err := survey.AskOne(prompt, &token)
 	return token, err

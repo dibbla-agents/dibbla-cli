@@ -79,7 +79,7 @@ In CI, set environment variables instead of using `login`:
 - `DIBBLA_API_TOKEN` (required for API commands)
 - `DIBBLA_API_URL` (optional; default is `https://api.dibbla.com`)
 
-Get your API token at [app.dibbla.com/settings/api-tokens](https://app.dibbla.com/settings/api-tokens).
+Get your API token at [app.dibbla.com/api-keys](https://app.dibbla.com/api-keys).
 
 ### Update notifications
 

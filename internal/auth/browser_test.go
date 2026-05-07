@@ -6,10 +6,71 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestIsSSHSession(t *testing.T) {
+	tests := []struct {
+		name        string
+		connection  string
+		tty         string
+		want        bool
+	}{
+		{"both unset", "", "", false},
+		{"SSH_CONNECTION set", "10.0.0.1 1234 10.0.0.2 22", "", true},
+		{"SSH_TTY set", "", "/dev/pts/0", true},
+		{"both set", "10.0.0.1 1234 10.0.0.2 22", "/dev/pts/0", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SSH_CONNECTION", tt.connection)
+			t.Setenv("SSH_TTY", tt.tty)
+			if got := IsSSHSession(); got != tt.want {
+				t.Errorf("IsSSHSession() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasGraphicalSession(t *testing.T) {
+	// On macOS/Windows the helper short-circuits to true regardless of
+	// env. The Linux branch is what changed behavior, so test it
+	// explicitly when GOOS allows.
+	if runtime.GOOS != "linux" {
+		t.Setenv("DISPLAY", "")
+		t.Setenv("WAYLAND_DISPLAY", "")
+		if !HasGraphicalSession() {
+			t.Errorf("on %s, HasGraphicalSession should be true regardless of DISPLAY", runtime.GOOS)
+		}
+		return
+	}
+
+	tests := []struct {
+		name    string
+		display string
+		wayland string
+		want    bool
+	}{
+		{"both unset (true headless)", "", "", false},
+		{"X11 only", ":0", "", true},
+		{"Wayland only", "", "wayland-0", true},
+		{"both set", ":0", "wayland-0", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISPLAY", tt.display)
+			t.Setenv("WAYLAND_DISPLAY", tt.wayland)
+			if got := HasGraphicalSession(); got != tt.want {
+				t.Errorf("HasGraphicalSession() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestGenerateState(t *testing.T) {
 	state1, err := GenerateState()
