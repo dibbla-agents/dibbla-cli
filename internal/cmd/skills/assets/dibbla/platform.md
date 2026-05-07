@@ -224,8 +224,10 @@ Operators on tunnel strategies need to ensure `INGRESS_HOST_TARGET` is set to a 
 ### Cluster requirements
 
 - **Traefik as ingress controller.** The TCP route renderer emits `IngressRouteTCP` CRDs (Traefik-specific). Clusters with nginx-ingress or other controllers will see the CRDs go un-applied (the dynamic-client apply is skipped silently). Traefik is the production cluster's choice; alternative-controller support is a follow-up.
-- **Wildcard TLS cert in the secret named by `TraefikTLSCertSecret`** (default `wildcard-tls`) for `tls: edge` routes. Provision via cert-manager or kubeseal; the renderer references it by name.
+- **Default Traefik `TLSStore`** (`traefik.io/v1alpha1` kind `TLSStore`, name `default`, in any namespace Traefik watches) with a `defaultCertificate.secretName` pointing at a wildcard cert that covers `<base-domain>` and one-label subdomains. With this in place, the renderer emits `IngressRouteTCP` resources whose `tls:` block has **no `secretName`** — Traefik falls back to the default cert automatically. This is the recommended configuration because Traefik IngressRouteTCP `tls.secretName` requires the secret in the **same namespace** as the resource, and there's no cross-namespace reference; without a default TLSStore the platform would have to copy a wildcard cert into every tenant namespace on every deploy. If your cluster has no default TLSStore and you instead provision a per-tenant-namespace cert with a known name, set `TRAEFIK_TLS_CERT_SECRET=<name>` and the renderer will reference it explicitly.
 - **`TraefikTCPEntrypoint`** (default `websecure`) is the Traefik entrypoint that terminates TCP+TLS. Reusing the standard 443 entrypoint is the v1 default — SNI disambiguates HTTPS vs database traffic on the same port.
+
+If a TCP route is published but Traefik logs `Error configuring TLS error="secret <ns>/<name> does not exist"` repeatedly, the deploy succeeded at the K8s layer but the cert lookup is failing — almost always because the cluster has no default TLSStore AND `TRAEFIK_TLS_CERT_SECRET` was set to a name that doesn't exist in the tenant namespace. The fix is one of: provision a default TLSStore (preferred), unset `TRAEFIK_TLS_CERT_SECRET` so Traefik uses the default, or seed the named secret in every tenant namespace.
 
 ### Delete semantics
 

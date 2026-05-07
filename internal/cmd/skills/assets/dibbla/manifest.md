@@ -442,7 +442,9 @@ services:
 
 ### TCP route mechanics — and why Postgres/MySQL don't work yet
 
-`type: tcp` routes are realized as Traefik `IngressRouteTCP` CRDs that route by **SNI** on a single shared port (`:443`). The platform inspects the TLS Client Hello, reads the SNI hostname, and forwards to the right backend Service. With `tls: edge` the platform terminates TLS using its wildcard cert; with `tls: passthrough` the server presents its own cert and the platform just passes bytes through.
+`type: tcp` routes are realized as Traefik `IngressRouteTCP` CRDs that route by **SNI** on a single shared port (`:443`). The platform inspects the TLS Client Hello, reads the SNI hostname, and forwards to the right backend Service. With `tls: edge` the platform terminates TLS using the cluster's default `TLSStore` certificate (a wildcard provisioned in the ingress namespace by the operator); with `tls: passthrough` the server presents its own cert and the platform just passes bytes through.
+
+A note on cluster setup: Traefik IngressRouteTCP requires the TLS cert secret to live in the **same namespace** as the route, and there's no cross-namespace reference — so the platform leans on the default TLSStore (cluster-wide) rather than copying a wildcard secret into every tenant namespace. If a TCP route deploys cleanly but the connection refuses TLS, check that the cluster has a default TLSStore configured (`kubectl get tlsstore -A` should show one named `default` with a `defaultCertificate.secretName`). Operators on clusters without a default TLSStore can set `TRAEFIK_TLS_CERT_SECRET` to a known per-tenant cert name; without either, Traefik will log `Error configuring TLS ... secret does not exist` every 10s and the route won't serve.
 
 This works for **TLS-on-connect protocols** — protocols where the very first bytes on the wire are a TLS Client Hello:
 
