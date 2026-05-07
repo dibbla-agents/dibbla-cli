@@ -261,6 +261,21 @@ Never ship a dev bypass to production. Gate it behind a build flag or env-var ch
 
 ---
 
+## 10.5. Workflow function server prerequisites
+
+If you operate workflows that use **file-emitting functions** (`generate_image`, `transcribe_audio`, anything that produces an uploaded artefact via `/api/files/init`), the go-toolserver pod must have `API_TOKEN` set in its environment. The function calls workflow-server's file-init endpoint with that token; without it, the upload step 401s and the agent's reply surfaces as a generic `authentication error` — which is misleading because it's the **storage layer** failing, not the model API. The OpenAI / Whisper / image-model call already succeeded by that point.
+
+| Symptom | What's happening |
+|---|---|
+| Workflow runs, model API call succeeds, agent reply ends with "authentication error" | go-toolserver lacks `API_TOKEN`; upload to `/api/files/init` returned 401 |
+| Same workflow works in one environment, fails in another | The two go-toolserver deployments have different `API_TOKEN` values, or one is missing it |
+
+Set `API_TOKEN` on the go-toolserver deployment as a prerequisite for any workflow that uses file-producing tools. This is independent of any user-app secrets and is **not** something workflow YAML can compensate for.
+
+Cross-reference from [workflows.md](workflows.md) §15 footguns.
+
+---
+
 ## 11. What the platform does *not* do for you
 
 The platform is intentionally minimal at the container boundary. It does **not**:

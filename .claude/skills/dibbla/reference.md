@@ -675,11 +675,17 @@ Alias: `wf`. All workflow commands support these persistent flags:
 
 ### workflows update
 
+Full replacement of HEAD — not a merge. The CLI sends an `If-Match` header containing the current ETag (fetched automatically from the existing workflow), so concurrent edits return `412` instead of silently clobbering whoever wrote last.
+
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla workflows update <name> --file <path>` |
 | **Arguments** | `name` (required) — workflow to replace |
 | **Flags** | `--file`, `-f` (required) — workflow definition file (YAML or JSON) |
+|  | `--force` — override the optimistic-concurrency check; overwrite even if HEAD has moved since the CLI last read it. Skip the `If-Match` precondition. |
+| **Errors** | `412 Precondition Failed` with a JSON body of shape `{"error":"…","current_etag":"…","received_etag":"…"}` when another writer modified HEAD between the CLI's pre-update `wf get` and the `PUT`. Re-fetch with `wf get`, re-apply your changes, and retry — or pass `--force` to overwrite. |
+
+**Agent guidance:** prefer the pull-merge-retry path over `--force`. The 412 is the system telling you a teammate (or the browser editor) shipped a change you didn't see; overriding it with `--force` may delete their work. Use `--force` only for known-overwrite cases (e.g. a CI job re-applying a stable golden definition).
 
 ### workflows delete
 
@@ -941,7 +947,9 @@ Alias: `fn`.
 |------|---------|
 | **Usage** | `dibbla functions get <server> <name>` |
 | **Arguments** | `server` (required), `name` (required) |
-| **Output** | YAML (default) or JSON with `-o json` |
+| **Output** | YAML (default) or JSON with `-o json`. The `inputs` and `outputs` blocks include each field's actual Go-reflected type: `boolean`, `integer`, `float`, or `string`. |
+
+**Agent guidance:** since the field-types fix, `fn get` is the **trusted source of truth** for input/output types. Older cached output (or pre-fix workflow YAML files saved to disk) may report everything as `string`; treat post-fix `fn get` as authoritative, and reach for the function source at `go-toolserver/functions/<name>/function.go` if `fn get` and a workflow's hardcoded type still disagree. Mismatched types fail at runtime with `cannot unmarshal X into Go struct field Inputs.Y of type Z`.
 
 ---
 

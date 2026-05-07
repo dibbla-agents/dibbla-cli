@@ -202,6 +202,10 @@ edges:
 
 `reasoning_agent_function` has a **1-hour result cache** keyed by inputs. Re-running `wf execute` with the same JSON body returns the cached result, including a cached *empty* result from a transient failure — easy to mistake for a persistent bug. During development, either vary the input each iteration (append a timestamp), or pick a `*_no_cache` function variant if the registry exposes one. Production callers normally want the cache.
 
+### One node, one role — never both tool AND data input
+
+A node can be **either** a data input feeding the agent's system prompt **or** a tool the agent calls — never both. If you list `node_x` in some agent's `tools:` array AND wire `node_x.output -> agent.system_message` (or anything that transitively flows back into the agent), the auto-generated tool-connection edge plus your data edge close a cycle. Pre-flight catches this and `wf execute` returns `422 CYCLE_DETECTED` instead of launching the run. Pick one role per node — the canonical shape for "inject this fact into the system prompt" is `data_source -> handlebars_template -> agent.system_message`, with the data source NOT in `tools:`. See the worked example in [examples.md](examples.md) → "Today's date in the system prompt".
+
 ---
 
 ## 7. Inputs come from three places
@@ -217,6 +221,8 @@ For any input to be satisfied (and the node to fire), it needs a value from one 
 - `collects_values`: function accepts dynamic, unregistered inputs (e.g. `handlebars_template` collects whatever variable names the script references). The validator skips `UNSATISFIED_INPUT` checks for these functions.
 
 You can introspect a function's tags with `dibbla fn get <server> <name>`.
+
+**Match YAML types to the function's declared types.** Tool inputs are decoded into Go structs via reflection; sending `triggered: "true"` (string) into a `bool` input fails at runtime with `cannot unmarshal string into Go struct field Inputs.x of type bool`. Send native YAML types: `true` not `"true"`, `42` not `"42"`. **`dibbla fn get <server> <name>` is the ground truth** — it now reports the actual Go-reflected types (`boolean` / `integer` / `float` / `string`). Older cached function definitions or pre-fix YAML may have stringly-typed slots; when in doubt, regenerate the input shape from `fn get`, or read the function source at `go-toolserver/functions/<name>/function.go`.
 
 ---
 
@@ -371,6 +377,29 @@ dibbla wf runs output 020b1341-…                # fetch the final payload
 
 For runs that error before the api_response node fires (or workflows with no api_response at all), `wf runs output` returns 404 — the operational `wf logs` view is the meaningful artefact in those cases.
 
+### Use `--follow` for the first execution after any workflow change
+
+Silent function failures used to surface only after the 30-min server timeout. The stuck-run watchdog (default 30s, env `STUCK_RUN_WARN_SECONDS`) now bounds that wait: a stalled run emits a WARN-level log line `run is not making progress` with `pending_nodes` count and per-input `diagnosis` (e.g. *"input X has no upstream link and no default value"*, or *"input X wired but upstream did not produce a value"*). The first firing carries `rule: RUN_STUCK`; subsequent heartbeats use `RUN_STILL_STUCK`.
+
+Treat `--follow` as the recommended default for first-run smoke tests, not as a debugging escape hatch:
+
+```bash
+# First exec after authoring or modifying a workflow — see watchdog WARN within 30s
+dibbla wf execute my_workflow --data '{"…":"…"}' --follow
+```
+
+Without `--follow`, `wf execute` (sync) just sits on the open HTTP request for the whole timeout window — the watchdog's WARN exists in the run logs but you're not looking at them, and the cause of the silence stays invisible.
+
+### Diagnosing a hanging `wf execute`
+
+Walk this in order — each step is cheap and rules out one class of cause:
+
+1. **Was a run created at all?** `dibbla wf runs list -w <name> -n 3`. If no row exists, the request never reached the workflow runtime — URL routing problem (auth, gateway, stale URL id), not workflow logic. Stop and check the URL.
+2. **Did pre-flight reject it?** A `422` response with `rule: CYCLE_DETECTED` means a cycle (often the tool+data-edge pattern in §6) — fix the topology. Pre-flight also returns `UNSATISFIABLE_INPUT`, `UNKNOWN_NODE`, `UNKNOWN_PORT`, `INVALID_HANDLE`, `EMPTY_WORKFLOW` for other static issues.
+3. **Did the watchdog fire?** `dibbla wf logs <runId>`. Look for a WARN `run is not making progress`. The attached `diagnosis` field tells you which input on which node is unsatisfied — fix the missing edge or default and retry.
+4. **`function execution failed`?** Function-side error. The most common cause is an input-type mismatch (string into bool, missing required field). The CLI message is the same regardless of panic, returned error, or input deserialization failure — the actual Go error is only in the go-toolserver pod's stdout (`kubectl logs <go-toolserver-pod>` in a Dibbla deployment, or the local console if running locally). Re-check the function's `dibbla fn get` schema and your YAML types.
+5. **None of the above?** Last resort: `wf delete --yes && wf create -f workflow.yaml` to refresh the URL id and clear any orphaned response-channel state. Update production callers' baked-in URL afterward (see §15 footgun).
+
 ### Calling a workflow from production code (HTTP)
 
 There are **two execute paths**, and they accept different auth. This catches every team once.
@@ -430,6 +459,8 @@ dibbla revisions restore <workflow> <id>   # makes <id> become the new HEAD (ove
 ```
 
 `restore` is **not** a checkout — it's an update. Once HEAD has been overwritten, it's overwritten. To "go back" to where you were before the restore, you'd need a snapshot you took before doing it. **Always snapshot before patching, always snapshot before restoring** — the cost is one HTTP call.
+
+**Concurrent edits are detected, not silently lost.** The slim `PUT /api/wf/slim/workflows/:name` requires an `If-Match` header containing the current ETag; the CLI's `wf update` sends it automatically. If you and a teammate (or you and the browser editor) both edit the same workflow and both push, the second writer gets `412 Precondition Failed` with a JSON body containing `current_etag` and `received_etag`. Pull the latest with `wf get`, merge your changes, and retry — or pass `--force` to override. Use `--force` only for known-overwrite cases (re-applying a stable definition from CI); avoid it as a "make the error go away" reflex, since it overwrites whatever the other writer just shipped.
 
 `dibbla wf delete <name>` removes the workflow **and all of its revisions** — there is no per-revision delete in the CLI. Use `--yes` for non-interactive.
 
@@ -514,7 +545,8 @@ Things that compile clean but bite at runtime, or that look right but aren't:
 - **Edge spaces are load-bearing.** `"a.x->b.y"` is `INVALID_EDGE_FORMAT`. Always `"a.x -> b.y"`.
 - **`accepts_tools` is invisible from the YAML.** A node with `tools: […]` but a function that lacks the `accepts_tools` registry tag will accept the syntax silently and then ignore the tools at runtime. Verify with `dibbla fn get`.
 - **Tool-connection edges are auto-generated.** Don't hand-author entries like `agent.tool-connection:foo -> tool.tool-connection:bar` in `edges:`; the slim YAML has no syntax for this and the converter fills it in from `tools: […]`.
-- **`<urlid>` can go silently stale after repeated `wf update`s.** After several swap-the-agent / add-and-remove-tool iterations, the gateway path `https://api.dibbla.net/api/wf/execute/<name>/<urlid>` can start hanging indefinitely with no error and no log entry, while `dibbla wf execute` against the same workflow keeps working (the CLI's slim path resolves the api node dynamically). The fix is `dibbla wf delete <name> --yes && dibbla wf create -f file.yaml` — the new workflow gets a fresh `<urlid>`. **Before shipping a workflow that's gone through many patch iterations, recreate it cleanly** so production callers get a stable id.
+- **`<urlid>` can go silently stale on `wf update`.** The converter preserves a node's UUID across an update only when its **semantic id** (function name, or label if set) matches one in the existing workflow. When a match isn't found, the node gets a fresh UUID and any baked-in `<urlid>` in production callers points at nothing. Most common triggers: renaming an api node, changing its label, swapping its function, or restructuring its `inputs:` enough that the slim id can't map back. **No client-side warning is emitted today** — verify by running `dibbla wf api-docs <name>` after the update and comparing the printed url id to the previous one. If it changed, update the production caller (or rebuild + redeploy if the url id is baked at build time). Symptom of a missed change: gateway-path calls hang for the full caller-side timeout (typically the undici 5-min default) while `dibbla wf execute` against the same workflow keeps working — the CLI's slim path resolves the api node dynamically and isn't affected. When iterating heavily, `wf delete --yes && wf create -f file.yaml` gives a clean state for the rest of the session.
 - **Node IDs collapse to the function name on `wf create`.** If you write `id: garden_search` for a node with `function: call_http_api`, the server normalizes the node id to `call_http_api` on save. Two nodes that share the same function name will collide and one will be lost. **Don't pick custom ids — refer to a tool by its function name** in your system prompts and your `tools:` lists. Confirmed via the round-trip note in the workflow server's e2e tests: "After create -> GET round-trip, function node IDs are derived from function names."
 - **Result cache is 1 hour, including failed runs.** `reasoning_agent_function` caches by input — re-running `wf execute` with the same body returns the cached prior result. If a prior run silently failed and returned an empty response (see §6), the empty answer is cached for an hour and looks like a persistent bug. Vary the input or use a `*_no_cache` variant during development.
 - **Silent-empty agents.** If an agent's `error` output isn't wired to anything, a runtime failure shows up as a successful response with an empty `response` field. Always route `agent.error -> api_response.error` (or into a downstream node that surfaces it).
+- **File-emitting functions need `API_TOKEN` on go-toolserver.** `generate_image`, `transcribe_audio`, and anything that uploads an artefact via `/api/files/init` authenticate with the toolserver's `API_TOKEN` env var. Missing it → the model API call succeeds but the upload 401s, and the agent's reply reads as a generic "authentication error" (the storage layer, not the model API). Platform-operator concern, not workflow-author — see [platform.md](platform.md) § 10.5.

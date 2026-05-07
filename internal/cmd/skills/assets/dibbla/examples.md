@@ -1183,6 +1183,66 @@ dibbla wf execute weather_assistant --data '{"question":"What is the weather in 
 dibbla revisions create weather_assistant
 ```
 
+### Today's date in the system prompt (no cycle)
+
+A frequent need: inject "today's date" (or any other live value) into an agent's system prompt. The shape that does **not** create a cycle is `data_source -> handlebars_template -> agent.system_message`, with the data source kept out of the agent's `tools:` list.
+
+```yaml
+name: dated_assistant
+nodes:
+  - id: api_input
+    type: api
+    inputs: [message]
+    outputs: [message]
+
+  - id: today
+    type: function
+    function: todays_date
+    server: function-server
+    inputs: { triggered: true }    # native YAML bool — not "true"
+    outputs: [date]
+
+  - id: prompt
+    type: function
+    function: handlebars_template
+    server: function-server
+    inputs:
+      script: "Today is {{date}}.\n\nYou are a helpful assistant. Answer the user's message clearly and briefly."
+      date: ~                       # filled at runtime by today.date
+    outputs: [output]
+
+  - id: agent
+    type: function
+    function: reasoning_agent_function
+    server: function-server
+    inputs:
+      model: "claude-sonnet-4-5-20250514"
+      system_message: ~
+      prompt_message: ~
+    # NOTE: `today` is NOT listed in tools: — it's a pure data input.
+    # Listing it here AND wiring today.date -> prompt.date would create
+    # the tool+data-edge cycle described in workflows.md §6.
+
+  - id: api_response
+    type: api_response
+    linked_to: api_input
+    inputs: [response, error]
+
+edges:
+  - api_input.message -> agent.prompt_message
+  - today.date        -> prompt.date
+  - prompt.output     -> agent.system_message
+  - agent.response    -> api_response.response
+  - agent.error       -> api_response.error
+```
+
+Verify with a follow-mode smoke test, which surfaces watchdog WARNs immediately if anything fails to fire:
+
+```bash
+dibbla wf create -f /tmp/dated_assistant.yaml
+dibbla wf execute dated_assistant --data '{"message":"What date is it?"}' --follow
+```
+
 ### Iterate on an existing workflow with patches
 
 Smaller changes are faster as patch operations against HEAD than as full updates. Each command applies one operation; pair the sequence with `revisions create` snapshots so you can roll back.
