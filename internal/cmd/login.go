@@ -138,18 +138,40 @@ func runLogin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	usedFileFallback := false
 	if !loginNoKeychain {
-		if err := credential.SetToken(token); err != nil {
-			fmt.Printf("%s Error: Token validated but failed to store credentials: %v\n", platform.Icon("❌", "[X]"), err)
-			os.Exit(1)
-		}
-		if baseURL != config.DefaultAPIURL {
-			if err := credential.SetAPIURL(baseURL); err != nil {
-				fmt.Printf("%s Error: Token stored but failed to store API URL: %v\n", platform.Icon("❌", "[X]"), err)
+		err := credential.SetToken(token)
+		switch {
+		case err == nil:
+			// Keychain succeeded — manage the URL through the keyring as before.
+			if baseURL != config.DefaultAPIURL {
+				if err := credential.SetAPIURL(baseURL); err != nil {
+					fmt.Printf("%s Error: Token stored but failed to store API URL: %v\n", platform.Icon("❌", "[X]"), err)
+					os.Exit(1)
+				}
+			} else {
+				_ = credential.DeleteAPIURL() // clear any previously stored custom URL
+			}
+		case credential.IsKeyringUnavailable(err):
+			// Linux SSH / cloud VM / Docker host without libsecret etc.
+			// Fall back to a user-level credentials file. Mirrors
+			// keychain semantics (machine-wide, not cwd-bound).
+			fileURL := ""
+			if baseURL != config.DefaultAPIURL {
+				fileURL = baseURL
+			}
+			if ferr := credential.SetTokenFile(token, fileURL); ferr != nil {
+				fmt.Printf("%s Error: OS keyring unavailable on this host AND file fallback failed: %v\n",
+					platform.Icon("❌", "[X]"), ferr)
 				os.Exit(1)
 			}
-		} else {
-			_ = credential.DeleteAPIURL() // clear any previously stored custom URL
+			usedFileFallback = true
+			fmt.Printf("%s OS keyring unavailable on this host (no org.freedesktop.secrets).\n"+
+				"  Stored credentials in %s instead.\n",
+				platform.Icon("⚠", "[!]"), credential.TokenFilePath())
+		default:
+			fmt.Printf("%s Error: Token validated but failed to store credentials: %v\n", platform.Icon("❌", "[X]"), err)
+			os.Exit(1)
 		}
 	}
 
@@ -165,6 +187,12 @@ func runLogin(cmd *cobra.Command, args []string) {
 		fmt.Printf("%s Validated %s (keychain skipped, credentials in .env)\n", platform.Icon("✅", "[OK]"), baseURL)
 	case loginNoKeychain:
 		fmt.Printf("%s Validated %s (keychain skipped — re-run with --write-env to persist, or re-run without --no-keychain)\n", platform.Icon("✅", "[OK]"), baseURL)
+	case usedFileFallback && loginWriteEnv:
+		fmt.Printf("%s Logged in to %s (credentials in %s and .env)\n",
+			platform.Icon("✅", "[OK]"), baseURL, credential.TokenFilePath())
+	case usedFileFallback:
+		fmt.Printf("%s Logged in to %s (credentials in %s)\n",
+			platform.Icon("✅", "[OK]"), baseURL, credential.TokenFilePath())
 	case loginWriteEnv:
 		fmt.Printf("%s Logged in to %s (credentials also written to .env)\n", platform.Icon("✅", "[OK]"), baseURL)
 	default:

@@ -59,7 +59,7 @@ func TestBuildPlan_ScriptInstall_FullPlan(t *testing.T) {
 	// Skill steps must come before config steps; binary step must be last.
 	mustContain(t, got, "skill files at /proj/a (id=dibbla)")
 	mustContain(t, got, "skill files at /proj/b (id=dibbla)")
-	mustContain(t, got, "stored credentials (OS keychain)")
+	mustContain(t, got, "stored credentials (OS keychain + user-level file)")
 	mustContain(t, got, "binary at /usr/local/bin/dibbla")
 
 	if got[len(got)-1] != "binary at /usr/local/bin/dibbla" {

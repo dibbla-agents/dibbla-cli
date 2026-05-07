@@ -53,8 +53,20 @@ func Load() *Config {
 		return cfg
 	}
 
-	// Try credential store from "dibbla login" (single keyring read to avoid multiple OS prompts)
-	if storedToken, storedURL, err := credential.GetCredentials(); err == nil && storedToken != "" {
+	// Read order: keyring first (single read to avoid multiple OS
+	// prompts), then user-level credentials file as a fallback. The
+	// file is written by `dibbla login` on hosts where the OS keyring
+	// is unavailable (typical for Linux SSH/cloud-VM/Docker without
+	// libsecret/gnome-keyring). It mirrors keychain semantics —
+	// machine-wide, persists across `cd` — rather than the cwd-bound
+	// `--write-env` behavior.
+	storedToken, storedURL, err := credential.GetCredentials()
+	if err != nil || storedToken == "" {
+		if fileToken, fileURL, ferr := credential.GetTokenFile(); ferr == nil && fileToken != "" {
+			storedToken, storedURL = fileToken, fileURL
+		}
+	}
+	if storedToken != "" {
 		cfg.APIToken = storedToken
 		if storedURL != "" {
 			cfg.APIURL = storedURL

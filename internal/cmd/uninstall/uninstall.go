@@ -141,12 +141,17 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 	// 2. CLI-owned config / state.
 	if !flagKeepConfig {
 		steps = append(steps, step{
-			label: "stored credentials (OS keychain)",
+			label: "stored credentials (OS keychain + user-level file)",
 			exec: func() error {
-				if err := credential.DeleteToken(); err != nil {
+				// Keyring-unavailable hosts: DeleteToken errors on
+				// the keyring lookup. Don't fail uninstall over it —
+				// nothing to delete there is the same outcome as
+				// successfully deleted.
+				if err := credential.DeleteToken(); err != nil && !credential.IsKeyringUnavailable(err) {
 					return err
 				}
-				return credential.DeleteAPIURL()
+				_ = credential.DeleteAPIURL()
+				return credential.DeleteTokenFile()
 			},
 		})
 

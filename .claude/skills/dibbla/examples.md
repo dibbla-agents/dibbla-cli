@@ -44,17 +44,25 @@ export DIBBLA_API_TOKEN=ak_...
 export DIBBLA_API_URL=https://api.dibbla.net
 dibbla deploy .          # reads env vars directly; no login needed
 
-# Cloud VM / SSH / Docker (no keyring service installed)
-# Validates the token, writes credentials to ./.env, patches .gitignore,
-# does NOT touch the OS keyring (libsecret/gnome-keyring/pass may not exist).
-# Requires CLI >= v1.2.4.
+# Cloud VM / SSH / Docker (no keyring service installed) — CLI >= v1.2.21
+# `dibbla login` auto-detects a missing keyring and falls back to a user-level
+# credentials file at ~/.config/dibbla/credentials.env (mode 0600). Behaves
+# like the keyring: machine-wide, persists across `cd`. No flags needed.
+dibbla login --api-key=ak_... --api-url=https://api.dibbla.net
+
+# Add --write-env if you also want credentials materialized in ./.env (e.g.
+# for `docker compose` to pick them up):
+dibbla login --api-key=ak_... --write-env
+
+# CLI < v1.2.21 (no auto-fallback): use --no-keychain --write-env so the CLI
+# skips the failing keyring write and lands creds in ./.env instead.
 dibbla login --api-key=ak_... --api-url=https://api.dibbla.net --write-env --no-keychain
 
-# Afterwards, every dibbla command in that directory reads credentials from .env:
+# Afterwards, every dibbla command from any directory reads credentials:
 dibbla deploy .
 dibbla apps list
 
-# Log out (clears keyring)
+# Log out (clears keyring AND user-level credentials file)
 dibbla logout
 ```
 

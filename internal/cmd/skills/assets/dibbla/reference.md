@@ -16,7 +16,8 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 |  | `--api-key <token>` — pass a pre-generated token; works in any context |
 |  | `--api-url <url>` — explicit API endpoint URL (alternative to the positional arg; **mutually exclusive** with it — specifying both is an error). Useful in long command lines like yaml steps where positional args are easy to miss. |
 |  | `--write-env` — after successful validation, write `DIBBLA_API_TOKEN` + `DIBBLA_API_URL` to `./.env` in the current working directory and ensure `.env` is listed in `./.gitignore`. Writes are atomic (tmp-file → rename) and merge in place — existing keys and comments are preserved; only the two DIBBLA keys are replaced. Unix file perms are 0600. Requires CLI ≥ v1.2.4. |
-|  | `--no-keychain` — skip the OS keyring persist step. Token is validated against the API but not saved to macOS Keychain / Windows Credential Manager / libsecret. Intended for cloud VMs / SSH / Docker where keyring services aren't installed. Combine with `--write-env` to persist credentials to `./.env` instead of the keychain. Requires CLI ≥ v1.2.4. |
+|  | `--no-keychain` — skip *all* machine-wide persistence: neither the OS keyring nor the user-level credentials file (see below) is written. Token is validated only. Combine with `--write-env` to persist to `./.env` instead. From CLI ≥ v1.2.21, plain `dibbla login` already auto-falls back to the user-level file when the keyring is unavailable, so this flag is now mainly used to *opt out* of disk persistence entirely. Requires CLI ≥ v1.2.4. |
+|  | **Auto-fallback** (no flag) — from CLI ≥ v1.2.21, when the OS keyring is unavailable (e.g. Linux SSH host without libsecret), `dibbla login` writes credentials to a user-level file at `~/.config/dibbla/credentials.env` (mode 0600). The file is read by every subsequent `dibbla *` invocation regardless of cwd, mirroring keychain semantics. `dibbla logout` and `dibbla uninstall` clean it up. |
 | **Interactive** | Real TTY only: picker for "Log in with browser" or "Paste an API token" |
 | **Note** | In CI or sandbox sessions, set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) in the shell environment or `./.env` — the CLI reads both, and `login` is not required. Use `DIBBLA_API_URL` as the canonical name; `DIBBLA_AUTH_SERVICE_URL` is an internal compat alias. |
 
@@ -26,7 +27,8 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 |---|---|
 | Laptop (keychain only, default) | `dibbla login` (interactive) or `dibbla login --browser` |
 | Laptop with project `.env` as well | `dibbla login --browser --write-env` or `dibbla login --api-key=<t> --write-env` |
-| Cloud VM / SSH / Docker (no keyring) | `dibbla login --api-key=<t> --api-url=<url> --write-env --no-keychain` |
+| Cloud VM / SSH / Docker (no keyring), CLI ≥ v1.2.21 | `dibbla login --api-key=<t> --api-url=<url>` (auto-falls back to user-level file) |
+| Cloud VM / SSH / Docker (no keyring), CLI < v1.2.21 | `dibbla login --api-key=<t> --api-url=<url> --write-env --no-keychain` |
 | Bootstrap yaml step (agent-invoked) | `dibbla login --api-key=$DIBBLA_API_TOKEN --api-url=$DIBBLA_AUTH_SERVICE_URL --write-env --no-keychain` |
 
 ### logout
