@@ -290,13 +290,48 @@ func TestCanWrite(t *testing.T) {
 		t.Error("expected CanWrite=true for writable file")
 	}
 
-	// Read-only file in a writable dir: CanWrite should report false because
-	// we can't open it for writing — that's the actual constraint that matters
-	// for the swap. (Selfupdate writes a temp next to it then renames.)
+	// Read-only file in a writable dir: CanWrite should report TRUE.
+	// Selfupdate writes a sibling tempfile and renames it over the
+	// target — only the parent directory's write bit matters.
 	roPath := filepath.Join(dir, "ro")
 	os.WriteFile(roPath, []byte("a"), 0444)
-	if CanWrite(roPath) {
-		t.Error("expected CanWrite=false for readonly file")
+	if !CanWrite(roPath) {
+		t.Error("expected CanWrite=true for readonly file in writable dir")
+	}
+
+	// Non-existent path: report false — we have nothing to swap.
+	if CanWrite(filepath.Join(dir, "missing")) {
+		t.Error("expected CanWrite=false for non-existent path")
+	}
+
+	// Read-only parent directory: report false. Skip when running as
+	// root (e.g. CI containers) since root bypasses the dir mode check.
+	if os.Geteuid() != 0 {
+		roDir := filepath.Join(dir, "rodir")
+		if err := os.Mkdir(roDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		inside := filepath.Join(roDir, "f")
+		os.WriteFile(inside, []byte("a"), 0644)
+		if err := os.Chmod(roDir, 0555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(roDir, 0755) })
+		if CanWrite(inside) {
+			t.Error("expected CanWrite=false when parent dir is read-only")
+		}
+	}
+
+	// Regression: the running test binary itself must report writable.
+	// Before the ETXTBSY fix, CanWrite probed the target with O_WRONLY,
+	// which on Linux fails for any running ELF — meaning `dibbla
+	// update` always refused to replace itself.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	if !CanWrite(exe) {
+		t.Errorf("expected CanWrite=true for running executable %s", exe)
 	}
 }
 

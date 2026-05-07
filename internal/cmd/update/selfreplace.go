@@ -264,21 +264,22 @@ func openFromZip(archivePath, binaryName string) (io.Reader, func(), error) {
 }
 
 // CanWrite reports whether the current process can replace the file at
-// path (it must be able to write the parent directory and either the file
-// itself or create it).
+// path. The replacement is rename-based (selfupdate writes a sibling
+// tempfile and renames it over the target), so the only requirement is
+// that the parent directory is writable — the target's own mode does
+// not matter, and crucially we must NOT probe the target with
+// O_WRONLY: on Linux, opening a currently-running ELF for writing
+// returns ETXTBSY ("text file busy"), which would cause `dibbla
+// update` to falsely refuse to upgrade itself.
 func CanWrite(path string) bool {
-	dir := filepath.Dir(path)
-	probe, err := os.CreateTemp(dir, ".dibbla-update-probe-*")
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	probe, err := os.CreateTemp(filepath.Dir(path), ".dibbla-update-probe-*")
 	if err != nil {
 		return false
 	}
 	probe.Close()
 	os.Remove(probe.Name())
-
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		return false
-	}
-	f.Close()
 	return true
 }
