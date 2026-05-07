@@ -348,7 +348,28 @@ dibbla wf url <name>               # just the URL
 Request body shape: a JSON object **keyed by the input names declared on the `api` node**.
 Response shape: a JSON object **keyed by the input names declared on the `api_response` node** (those are filled by the edges flowing into it).
 
-Both ends pin to the workflow's HEAD revision unless you pass `--revision <id>`. The server returns a `runID` you can use against the WebSocket stream (`/api/wf/ws/run?run=<id>`) for live execution events; the CLI doesn't expose a follow-mode for this today.
+Both ends pin to the workflow's HEAD revision unless you pass `--revision <id>`. The server returns a `runID` that addresses the run for the rest of its lifecycle.
+
+**Async execution and live tailing.** `wf execute` is **synchronous by default** — it blocks until the workflow's `api_response` node fires (or the server's 30-minute hard timeout, whichever comes first). Two non-blocking variants:
+
+- `wf execute <name> --async` returns immediately with `{"response_metadata":{"run","node","workflow"}}`. Use this when dispatching many runs or when the run is expected to take longer than the agent's terminal patience.
+- `wf execute <name> --follow` (`-f`) is `--async` plus an automatic log-tail. Live operational logs stream to stdout as the run progresses; on the server-emitted `run_completed` sentinel the CLI prints the api_response payload and exits 0. Best for interactive debugging.
+
+Once you have a `runID`, three commands address it:
+
+- `wf logs <runId>` — operational logs (workflow-server orchestration + go-toolserver function/agent calls), tagged with `run` / `workflow` / `node` / `level` / `src`. `--follow` for live; default is historic backfill from the persisted store. Persistence policy: WARN/ERROR + a single `run_completed` sentinel are persisted; INFO/DEBUG are live-only. A quiet finished run will tail to essentially just `run completed`.
+- `wf runs output <runId>` — the api_response payload, identical shape to what a sync execute would return.
+- `wf runs list [-w <name>] [-n <N>]` — find recent run ids without leaving the terminal. Server caps the page size at 500.
+
+```bash
+# Typical async loop
+dibbla wf execute weather --data '{"question":"…"}' --async
+# → response_metadata.run = "020b1341-…"
+dibbla wf logs 020b1341-… --follow              # watch it run
+dibbla wf runs output 020b1341-…                # fetch the final payload
+```
+
+For runs that error before the api_response node fires (or workflows with no api_response at all), `wf runs output` returns 404 — the operational `wf logs` view is the meaningful artefact in those cases.
 
 ### Calling a workflow from production code (HTTP)
 

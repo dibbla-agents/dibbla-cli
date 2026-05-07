@@ -689,15 +689,31 @@ Alias: `wf`. All workflow commands support these persistent flags:
 
 ### workflows execute
 
+Execute a workflow over HTTP. Synchronous by default — the call blocks until the workflow's `api_response` node fires (server-side timeout: 30 min). For long-running or fire-and-forget runs, use `--async` to detach, or `--follow` to detach and tail logs in one command.
+
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla workflows execute <name>` |
 | **Arguments** | `name` (required) — workflow to execute |
 | **Flags** | `--data` — inline JSON data to send |
-| | `--file`, `-f` — JSON data file |
+| | `-F`, `--file` — JSON data file (note: short flag is `-F`, not `-f`, to free `-f` for `--follow`) |
 | | `--node` — target a specific API node ID (only required when the workflow has multiple `api` nodes) |
+| | `--async` — fire-and-forget: return `response_metadata` immediately and let the run continue in background |
+| | `-f`, `--follow` — implies `--async`. Tail live logs to stdout until the run completes, then print the api_response payload. Exits 0 on the server-emitted `run_completed` sentinel |
 | **Body shape** | JSON object **keyed by the `inputs:` names declared on the target `api` node** (e.g. `{"question":"…"}` if the api node has `inputs: [question]`). |
-| **Response shape** | JSON object **keyed by the `inputs:` names declared on the linked `api_response` node** (those keys are filled by the edges flowing into it). |
+| **Response shape (sync, default)** | JSON object keyed by the `inputs:` names declared on the linked `api_response` node, plus `response_metadata: {run, node, workflow, timestamp}`. |
+| **Response shape (`--async`)** | `{"response_metadata": {"run":"…", "node":"…", "workflow":"…"}}` only — the run is still in flight. Pair with `wf logs <runId> --follow` and/or `wf runs output <runId>` to retrieve progress and final output. |
+| **Response shape (`--follow`)** | NDJSON log lines streamed to stdout, then a final JSON object identical to the sync response once the run finishes. |
+
+**Examples:**
+```
+dibbla wf execute weather --data '{"question":"Berlin?"}'
+dibbla wf execute weather --data '{"question":"…"}' --async       # returns immediately
+dibbla wf execute weather --data '{"question":"…"}' --follow      # tail + final output
+dibbla wf execute weather --file payload.json --follow
+```
+
+**Agent guidance:** prefer `--follow` for interactive debugging — you get live operational logs and the final api_response payload in one command. Use `--async` when dispatching many runs to inspect later via `wf runs list` + `wf runs output`. The default sync mode is fine for short, deterministic workflows but blocks the agent's terminal until the api_response fires.
 
 ### workflows url
 
@@ -716,6 +732,73 @@ Alias: `wf`. All workflow commands support these persistent flags:
 | **Arguments** | `name` (required) |
 | **Flags** | `--revision` — docs for a specific revision |
 | **Output** | Human-readable endpoint docs (default); JSON/YAML with `-o` |
+
+### workflows logs
+
+Tail structured operational logs for a workflow run. Logs are emitted by both `workflow-server` (orchestration) and `go-toolserver` (function/agent execution) and tagged with `run`, `workflow`, `node`, `level`, and `src`. Wire format matches `dibbla logs` (NDJSON over chunked HTTP) so the same renderer is reused.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla workflows logs <runId>` |
+| **Arguments** | `runId` (required) — run id from a previous `wf execute` response or `wf runs list` |
+| **Flags** | `--since <duration>` — backfill window for persisted entries (default `15m`) |
+| | `-f`, `--follow` — keep the connection open; live entries stream until the run completes (server emits a `run_completed` sentinel) or you Ctrl-C |
+| | `-n`, `--tail <N>` — show only the last N persisted entries (instead of the `--since` window) |
+| | `--level <debug\|info\|warn\|error>` — minimum level to print (default `info`) |
+| | `--json` — emit raw NDJSON instead of the human format |
+| | `--no-color` — disable color output |
+| **Behavior** | Finished runs short-circuit to historic-only and exit immediately — no waiting on a stream that has nothing to deliver. Live runs follow until `run_completed`. |
+| **Persistence model** | WARN/ERROR + the `run_completed` sentinel are persisted to the database. INFO/DEBUG are live-only (no DB row). Tailing a quiet finished run will show essentially just `run completed`. |
+| **Errors** | 404 if the run is not in the caller's organisation. |
+
+**Examples:**
+```
+dibbla wf logs 020b1341-…                     # historic backfill (mostly WARN/ERROR)
+dibbla wf logs 020b1341-… --follow             # live tail until the run completes
+dibbla wf logs 020b1341-… --level debug -f     # see everything, including INFO/DEBUG
+dibbla wf logs 020b1341-… --json | jq '.line'  # NDJSON for scripting
+```
+
+**Agent guidance:** for an in-flight run, `--follow` is the equivalent of `dibbla logs -f` for deployed apps — it's the primary "what is the workflow doing right now" view. For a finished run, the most useful artefact is usually `wf runs output <runId>` (the api_response payload), not the logs — INFO/DEBUG aren't persisted, so a clean run's historic tail is essentially empty.
+
+---
+
+## runs
+
+Inspect workflow runs independent of any specific workflow command — useful when you have a run id but don't want to look up the workflow first, or when listing recent runs across all workflows.
+
+### runs list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla wf runs list` |
+| **Flags** | `-w`, `--workflow <name>` — filter by workflow name (matches both `name` and the `name/HEAD` canonical form) |
+| | `-n`, `--limit <N>` — max rows (default 50, server caps at 500) |
+| **Output** | Table (`ID`, `WORKFLOW`, `STARTED`) by default; JSON or YAML with `-o`. |
+
+**Examples:**
+```
+dibbla wf runs list                       # 50 most recent runs across all workflows
+dibbla wf runs list -w chat_agent         # only chat_agent runs
+dibbla wf runs list -n 200 -o json        # raw JSON, scriptable
+```
+
+### runs output
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla wf runs output <runId>` |
+| **Arguments** | `runId` (required) — id of a finished run |
+| **Output** | JSON object: the api_response payload merged with `response_metadata`. Same shape as a synchronous `wf execute` response. |
+| **Errors** | 404 if the run isn't in the caller's organisation, hasn't reached an api_response yet, or the workflow has no api_response node. |
+
+**Examples:**
+```
+dibbla wf runs output 020b1341-…
+dibbla wf runs output 020b1341-… -o yaml
+```
+
+**Agent guidance:** the canonical async loop is `wf execute --async` → capture the run id from `response_metadata.run` → `wf logs <runId> -f` for live progress → `wf runs output <runId>` for the final payload. When the user asks "what did this run actually return", this is the command — `wf logs` is operational, not product output.
 
 ---
 
