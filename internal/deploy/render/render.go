@@ -54,16 +54,26 @@ type ResultDeployment struct {
 // ServiceView is the per-service entry the renderers display. Mirrors the
 // server-side models.DeploymentServiceView.
 type ServiceView struct {
-	Name          string      `json:"name"`
-	Image         string      `json:"image,omitempty"`
-	Port          *int        `json:"port,omitempty"`
-	Replicas      int         `json:"replicas"`
-	ReadyReplicas int         `json:"ready_replicas"`
-	IsPublic      bool        `json:"is_public"`
-	IsBuilt       bool        `json:"is_built"`
-	Status        string      `json:"status,omitempty"`
-	Stateful      bool        `json:"stateful,omitempty"`
-	Routes        []RouteView `json:"routes,omitempty"`
+	Name          string       `json:"name"`
+	Image         string       `json:"image,omitempty"`
+	Port          *int         `json:"port,omitempty"`
+	Replicas      int          `json:"replicas"`
+	ReadyReplicas int          `json:"ready_replicas"`
+	IsPublic      bool         `json:"is_public"`
+	IsBuilt       bool         `json:"is_built"`
+	Status        string       `json:"status,omitempty"`
+	Stateful      bool         `json:"stateful,omitempty"`
+	Routes        []RouteView  `json:"routes,omitempty"`
+	Volumes       []VolumeView `json:"volumes,omitempty"`
+}
+
+// VolumeView mirrors models.ServiceVolumeView. Surviving across GETs/LISTs
+// requires the deploy-api to read the per-workload service-spec annotation;
+// legacy deployments without the annotation will have this nil.
+type VolumeView struct {
+	Path   string `json:"path"`
+	Size   string `json:"size"`
+	Access string `json:"access,omitempty"`
 }
 
 // RouteView is one externally-routable endpoint surfaced from the server.
