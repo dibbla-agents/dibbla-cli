@@ -78,15 +78,18 @@ func TestTTYPrintsRouteConnectionInfo(t *testing.T) {
 				Status:        "running",
 				Stateful:      true,
 				Routes: []RouteView{
-					{Type: "tcp", Port: 27017, TLS: "edge", Hostname: "rt-db.dibbla.app"},
+					{Type: "tcp", Port: 27017, TLS: "edge", Hostname: "rt-db.dibbla.app", ExternalPort: 443},
 				},
 			}},
 		},
 	}})
 	tty.OnDone()
 	out := buf.String()
-	if !strings.Contains(out, "tcp+tls://rt-db.dibbla.app:27017") {
-		t.Errorf("expected connection URL in TTY output; got:\n%s", out)
+	if !strings.Contains(out, "tcp+tls://rt-db.dibbla.app:443") {
+		t.Errorf("expected connection URL with public :443 in TTY output; got:\n%s", out)
+	}
+	if strings.Contains(out, ":27017") {
+		t.Errorf("must NOT print the backend port; got:\n%s", out)
 	}
 	if !strings.Contains(out, "[stateful]") {
 		t.Errorf("expected [stateful] marker in TTY output; got:\n%s", out)

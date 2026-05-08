@@ -80,10 +80,13 @@ type VolumeView struct {
 // Hostname is the resolved FQDN; the renderer prints copy-pasteable
 // connection info from this directly.
 type RouteView struct {
-	Type     string `json:"type"`
-	Port     int    `json:"port"`
-	TLS      string `json:"tls,omitempty"`
-	Hostname string `json:"hostname"`
+	Type string `json:"type"`
+	// Port is the backend container port from the manifest (e.g. 27017 for
+	// Mongo). Not the port a client should dial — that's ExternalPort.
+	Port         int    `json:"port"`
+	TLS          string `json:"tls,omitempty"`
+	Hostname     string `json:"hostname"`
+	ExternalPort int    `json:"external_port,omitempty"`
 }
 
 // ConnectionURL returns a copy-pasteable connection string for one route.
@@ -94,11 +97,15 @@ func (r RouteView) ConnectionURL() string {
 	if r.Type != "tcp" {
 		return ""
 	}
-	// type=tcp + tls: edge|passthrough → external connection over TLS on
-	// the route port. We print a generic tcp+tls scheme so users see the
-	// host and port; the actual protocol scheme depends on what they're
-	// running (mongodb, rediss, amqps, ...).
-	return fmt.Sprintf("tcp+tls://%s:%d", r.Hostname, r.Port)
+	// type=tcp + tls: edge|passthrough → external connection through
+	// tcpproxy's SNI listener. ExternalPort is the public port (typically
+	// 443); fall back to the manifest port when the server didn't supply
+	// one (older deploy-api).
+	port := r.ExternalPort
+	if port == 0 {
+		port = r.Port
+	}
+	return fmt.Sprintf("tcp+tls://%s:%d", r.Hostname, port)
 }
 
 // DeployError is the failure payload. Mirrors the server's
