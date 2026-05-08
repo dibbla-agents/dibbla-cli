@@ -1,12 +1,15 @@
 package deploy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/db"
@@ -306,23 +309,76 @@ func runDbConnect(cmd *cobra.Command, args []string) {
 	fmt.Printf("  export DATABASE_URL=$(dibbla db connect %s -q)\n", name)
 }
 
-// dbProxyEndpoint derives the database proxy host, port, and sslmode from the
-// API URL, with env-var overrides. `getenv` takes a lookup function (normally
-// os.Getenv) so the helper is unit-testable.
+// dbProxyInfo is the shape of GET /db/proxy-info.
+type dbProxyInfo struct {
+	Host    string `json:"host"`
+	Port    string `json:"port"`
+	SSLMode string `json:"sslmode"`
+}
+
+// dbProxyInfoFetcher returns the API-served proxy info. ok=false when the
+// API isn't reachable or doesn't expose the endpoint, in which case the
+// caller falls back to derivation.
+type dbProxyInfoFetcher func(apiURL string) (info dbProxyInfo, ok bool)
+
+// fetchDBProxyInfoOverHTTP is the production fetcher: calls
+// <apiURL>/db/proxy-info with a short timeout. Returns ok=false on any
+// network error, non-200 status, or unparseable body so callers fall
+// back gracefully when run against an older deploy-api.
+func fetchDBProxyInfoOverHTTP(apiURL string) (dbProxyInfo, bool) {
+	base := strings.TrimSpace(apiURL)
+	if base == "" {
+		return dbProxyInfo{}, false
+	}
+	if !strings.Contains(base, "://") {
+		base = "https://" + base
+	}
+	base = strings.TrimRight(base, "/")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(base + "/db/proxy-info")
+	if err != nil {
+		return dbProxyInfo{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return dbProxyInfo{}, false
+	}
+	var info dbProxyInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return dbProxyInfo{}, false
+	}
+	if info.Host == "" || info.Port == "" {
+		return dbProxyInfo{}, false
+	}
+	return info, true
+}
+
+// dbProxyEndpoint resolves the database proxy host, port, and sslmode for
+// `dibbla db connect`. It calls deploy-api for `/db/proxy-info` first; if
+// the call fails (network error, 404 on older servers, malformed body) it
+// derives sensible defaults from the API URL. DIBBLA_DB_HOST /
+// DIBBLA_DB_PORT / DIBBLA_DB_SSLMODE override any resolved value.
 //
-// Derivation rules:
+// Derivation fallback (when the API can't be reached):
 //   - host: parse apiURL; if the hostname begins with "api.", swap that label
 //     for "db." (api.dibbla.com → db.dibbla.com, api.dibbla.net → db.dibbla.net).
 //     Otherwise fall back to "db.dibbla.com".
-//   - port: 30432.
+//   - port: 30432 (the legacy NodePort).
 //   - sslmode: "disable" for known-internal hosts (api.dibbla.net, localhost,
 //     127.0.0.1, ::1, hostnames ending in ".local"); "require" elsewhere.
-//
-// Any of the three can be overridden via DIBBLA_DB_HOST / DIBBLA_DB_PORT /
-// DIBBLA_DB_SSLMODE.
 func dbProxyEndpoint(apiURL string, getenv func(string) string) (host, port, sslmode string) {
-	host, sslmode = deriveDBHostAndSSLMode(apiURL)
-	port = "30432"
+	return dbProxyEndpointWith(apiURL, getenv, fetchDBProxyInfoOverHTTP)
+}
+
+// dbProxyEndpointWith is the testable form of dbProxyEndpoint: callers
+// inject the fetcher.
+func dbProxyEndpointWith(apiURL string, getenv func(string) string, fetch dbProxyInfoFetcher) (host, port, sslmode string) {
+	if info, ok := fetch(apiURL); ok {
+		host, port, sslmode = info.Host, info.Port, info.SSLMode
+	} else {
+		host, sslmode = deriveDBHostAndSSLMode(apiURL)
+		port = "30432"
+	}
 
 	if v := getenv("DIBBLA_DB_HOST"); v != "" {
 		host = v

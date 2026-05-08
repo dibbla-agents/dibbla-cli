@@ -1,6 +1,18 @@
 package deploy
 
-import "testing"
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+// stubFetchProxyInfo returns ok=false; the caller falls back to derivation.
+// Used by tests that want to exercise the derivation + env-override path
+// without the 5s HTTP timeout from the real fetcher.
+var stubFetchProxyInfoUnavailable dbProxyInfoFetcher = func(string) (dbProxyInfo, bool) {
+	return dbProxyInfo{}, false
+}
 
 func TestDeriveDBHostAndSSLMode(t *testing.T) {
 	tests := []struct {
@@ -124,7 +136,7 @@ func TestDBProxyEndpoint_Overrides(t *testing.T) {
 				}
 				return tt.env[k]
 			}
-			host, port, sslmode := dbProxyEndpoint(tt.apiURL, getenv)
+			host, port, sslmode := dbProxyEndpointWith(tt.apiURL, getenv, stubFetchProxyInfoUnavailable)
 			if host != tt.wantHost {
 				t.Errorf("host: got %q, want %q", host, tt.wantHost)
 			}
@@ -136,6 +148,87 @@ func TestDBProxyEndpoint_Overrides(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDBProxyEndpoint_APIPreferred — API-served values beat the derivation
+// fallback, while env vars still override both.
+func TestDBProxyEndpoint_APIPreferred(t *testing.T) {
+	apiInfo := func(_ string) (dbProxyInfo, bool) {
+		return dbProxyInfo{Host: "dbproxy.cluster.local", Port: "5432", SSLMode: "disable"}, true
+	}
+	host, port, sslmode := dbProxyEndpointWith("https://api.dibbla.com", func(string) string { return "" }, apiInfo)
+	if host != "dbproxy.cluster.local" || port != "5432" || sslmode != "disable" {
+		t.Errorf("api values should win over derivation: got %s:%s sslmode=%s", host, port, sslmode)
+	}
+
+	// Env override wins over API.
+	host, port, _ = dbProxyEndpointWith(
+		"https://api.dibbla.com",
+		func(k string) string {
+			if k == "DIBBLA_DB_PORT" {
+				return "9999"
+			}
+			return ""
+		},
+		apiInfo,
+	)
+	if port != "9999" {
+		t.Errorf("env override should win over API: got port=%s", port)
+	}
+	if host != "dbproxy.cluster.local" {
+		t.Errorf("non-overridden field should still come from API: got host=%s", host)
+	}
+}
+
+// TestFetchDBProxyInfoOverHTTP — the production fetcher correctly parses a
+// real /db/proxy-info response and returns ok=false on common failure modes.
+func TestFetchDBProxyInfoOverHTTP(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/db/proxy-info" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(dbProxyInfo{Host: "h", Port: "1234", SSLMode: "disable"})
+		}))
+		defer srv.Close()
+		info, ok := fetchDBProxyInfoOverHTTP(srv.URL)
+		if !ok || info.Host != "h" || info.Port != "1234" || info.SSLMode != "disable" {
+			t.Errorf("happy path: ok=%v info=%+v", ok, info)
+		}
+	})
+	t.Run("404 falls back", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.NotFound(w, nil)
+		}))
+		defer srv.Close()
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+			t.Errorf("404 should produce ok=false")
+		}
+	})
+	t.Run("malformed body falls back", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte("not json"))
+		}))
+		defer srv.Close()
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+			t.Errorf("malformed body should produce ok=false")
+		}
+	})
+	t.Run("missing required fields falls back", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(dbProxyInfo{Host: "", Port: "5432"})
+		}))
+		defer srv.Close()
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+			t.Errorf("empty host should produce ok=false")
+		}
+	})
+	t.Run("empty apiURL returns ok=false", func(t *testing.T) {
+		if _, ok := fetchDBProxyInfoOverHTTP(""); ok {
+			t.Errorf("empty url should produce ok=false")
+		}
+	})
 }
 
 func TestParseAPIHost(t *testing.T) {
