@@ -10,7 +10,7 @@ import (
 // stubFetchProxyInfo returns ok=false; the caller falls back to derivation.
 // Used by tests that want to exercise the derivation + env-override path
 // without the 5s HTTP timeout from the real fetcher.
-var stubFetchProxyInfoUnavailable dbProxyInfoFetcher = func(string) (dbProxyInfo, bool) {
+var stubFetchProxyInfoUnavailable dbProxyInfoFetcher = func(string, string) (dbProxyInfo, bool) {
 	return dbProxyInfo{}, false
 }
 
@@ -136,7 +136,7 @@ func TestDBProxyEndpoint_Overrides(t *testing.T) {
 				}
 				return tt.env[k]
 			}
-			host, port, sslmode := dbProxyEndpointWith(tt.apiURL, getenv, stubFetchProxyInfoUnavailable)
+			host, port, sslmode := dbProxyEndpointWith(tt.apiURL, "tkn", getenv, stubFetchProxyInfoUnavailable)
 			if host != tt.wantHost {
 				t.Errorf("host: got %q, want %q", host, tt.wantHost)
 			}
@@ -153,10 +153,10 @@ func TestDBProxyEndpoint_Overrides(t *testing.T) {
 // TestDBProxyEndpoint_APIPreferred — API-served values beat the derivation
 // fallback, while env vars still override both.
 func TestDBProxyEndpoint_APIPreferred(t *testing.T) {
-	apiInfo := func(_ string) (dbProxyInfo, bool) {
+	apiInfo := func(_, _ string) (dbProxyInfo, bool) {
 		return dbProxyInfo{Host: "dbproxy.cluster.local", Port: "5432", SSLMode: "disable"}, true
 	}
-	host, port, sslmode := dbProxyEndpointWith("https://api.dibbla.com", func(string) string { return "" }, apiInfo)
+	host, port, sslmode := dbProxyEndpointWith("https://api.dibbla.com", "tkn", func(string) string { return "" }, apiInfo)
 	if host != "dbproxy.cluster.local" || port != "5432" || sslmode != "disable" {
 		t.Errorf("api values should win over derivation: got %s:%s sslmode=%s", host, port, sslmode)
 	}
@@ -164,6 +164,7 @@ func TestDBProxyEndpoint_APIPreferred(t *testing.T) {
 	// Env override wins over API.
 	host, port, _ = dbProxyEndpointWith(
 		"https://api.dibbla.com",
+		"tkn",
 		func(k string) string {
 			if k == "DIBBLA_DB_PORT" {
 				return "9999"
@@ -185,14 +186,14 @@ func TestDBProxyEndpoint_APIPreferred(t *testing.T) {
 func TestFetchDBProxyInfoOverHTTP(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/db/proxy-info" {
+			if r.URL.Path != "/api/deploy/db/proxy-info" {
 				http.NotFound(w, r)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(dbProxyInfo{Host: "h", Port: "1234", SSLMode: "disable"})
 		}))
 		defer srv.Close()
-		info, ok := fetchDBProxyInfoOverHTTP(srv.URL)
+		info, ok := fetchDBProxyInfoOverHTTP(srv.URL, "tkn")
 		if !ok || info.Host != "h" || info.Port != "1234" || info.SSLMode != "disable" {
 			t.Errorf("happy path: ok=%v info=%+v", ok, info)
 		}
@@ -202,7 +203,7 @@ func TestFetchDBProxyInfoOverHTTP(t *testing.T) {
 			http.NotFound(w, nil)
 		}))
 		defer srv.Close()
-		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL, "tkn"); ok {
 			t.Errorf("404 should produce ok=false")
 		}
 	})
@@ -211,7 +212,7 @@ func TestFetchDBProxyInfoOverHTTP(t *testing.T) {
 			w.Write([]byte("not json"))
 		}))
 		defer srv.Close()
-		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL, "tkn"); ok {
 			t.Errorf("malformed body should produce ok=false")
 		}
 	})
@@ -220,13 +221,25 @@ func TestFetchDBProxyInfoOverHTTP(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(dbProxyInfo{Host: "", Port: "5432"})
 		}))
 		defer srv.Close()
-		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL); ok {
+		if _, ok := fetchDBProxyInfoOverHTTP(srv.URL, "tkn"); ok {
 			t.Errorf("empty host should produce ok=false")
 		}
 	})
 	t.Run("empty apiURL returns ok=false", func(t *testing.T) {
-		if _, ok := fetchDBProxyInfoOverHTTP(""); ok {
+		if _, ok := fetchDBProxyInfoOverHTTP("", "tkn"); ok {
 			t.Errorf("empty url should produce ok=false")
+		}
+	})
+	t.Run("auth header is sent", func(t *testing.T) {
+		var seen string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(dbProxyInfo{Host: "h", Port: "p", SSLMode: "disable"})
+		}))
+		defer srv.Close()
+		fetchDBProxyInfoOverHTTP(srv.URL, "secret-token")
+		if seen != "Bearer secret-token" {
+			t.Errorf("auth header: got %q, want Bearer secret-token", seen)
 		}
 	})
 }

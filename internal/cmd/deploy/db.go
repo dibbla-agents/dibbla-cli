@@ -290,7 +290,7 @@ func runDbConnect(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	requireToken(cfg)
 
-	host, port, sslmode := dbProxyEndpoint(cfg.APIURL, os.Getenv)
+	host, port, sslmode := dbProxyEndpoint(cfg.APIURL, cfg.APIToken, os.Getenv)
 	connStr := fmt.Sprintf("postgres://dibbla:%s@%s:%s/%s?sslmode=%s", cfg.APIToken, host, port, name, sslmode)
 
 	if dbConnectQuiet {
@@ -319,13 +319,14 @@ type dbProxyInfo struct {
 // dbProxyInfoFetcher returns the API-served proxy info. ok=false when the
 // API isn't reachable or doesn't expose the endpoint, in which case the
 // caller falls back to derivation.
-type dbProxyInfoFetcher func(apiURL string) (info dbProxyInfo, ok bool)
+type dbProxyInfoFetcher func(apiURL, token string) (info dbProxyInfo, ok bool)
 
 // fetchDBProxyInfoOverHTTP is the production fetcher: calls
-// <apiURL>/db/proxy-info with a short timeout. Returns ok=false on any
-// network error, non-200 status, or unparseable body so callers fall
-// back gracefully when run against an older deploy-api.
-func fetchDBProxyInfoOverHTTP(apiURL string) (dbProxyInfo, bool) {
+// <apiURL>/api/deploy/db/proxy-info with a short timeout. Returns ok=false
+// on any network error, non-200 status, or unparseable body so callers
+// fall back gracefully when run against an older deploy-api or when the
+// api-gateway hasn't whitelisted the path.
+func fetchDBProxyInfoOverHTTP(apiURL, token string) (dbProxyInfo, bool) {
 	base := strings.TrimSpace(apiURL)
 	if base == "" {
 		return dbProxyInfo{}, false
@@ -334,8 +335,15 @@ func fetchDBProxyInfoOverHTTP(apiURL string) (dbProxyInfo, bool) {
 		base = "https://" + base
 	}
 	base = strings.TrimRight(base, "/")
+	req, err := http.NewRequest(http.MethodGet, base+"/api/deploy/db/proxy-info", nil)
+	if err != nil {
+		return dbProxyInfo{}, false
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(base + "/db/proxy-info")
+	resp, err := client.Do(req)
 	if err != nil {
 		return dbProxyInfo{}, false
 	}
@@ -354,9 +362,10 @@ func fetchDBProxyInfoOverHTTP(apiURL string) (dbProxyInfo, bool) {
 }
 
 // dbProxyEndpoint resolves the database proxy host, port, and sslmode for
-// `dibbla db connect`. It calls deploy-api for `/db/proxy-info` first; if
-// the call fails (network error, 404 on older servers, malformed body) it
-// derives sensible defaults from the API URL. DIBBLA_DB_HOST /
+// `dibbla db connect`. It calls deploy-api for `/api/deploy/db/proxy-info`
+// first (auth'd with the user's API token); if the call fails (network
+// error, 404 on older servers, 401 on a missing/expired token, malformed
+// body) it derives sensible defaults from the API URL. DIBBLA_DB_HOST /
 // DIBBLA_DB_PORT / DIBBLA_DB_SSLMODE override any resolved value.
 //
 // Derivation fallback (when the API can't be reached):
@@ -366,14 +375,14 @@ func fetchDBProxyInfoOverHTTP(apiURL string) (dbProxyInfo, bool) {
 //   - port: 30432 (the legacy NodePort).
 //   - sslmode: "disable" for known-internal hosts (api.dibbla.net, localhost,
 //     127.0.0.1, ::1, hostnames ending in ".local"); "require" elsewhere.
-func dbProxyEndpoint(apiURL string, getenv func(string) string) (host, port, sslmode string) {
-	return dbProxyEndpointWith(apiURL, getenv, fetchDBProxyInfoOverHTTP)
+func dbProxyEndpoint(apiURL, token string, getenv func(string) string) (host, port, sslmode string) {
+	return dbProxyEndpointWith(apiURL, token, getenv, fetchDBProxyInfoOverHTTP)
 }
 
 // dbProxyEndpointWith is the testable form of dbProxyEndpoint: callers
 // inject the fetcher.
-func dbProxyEndpointWith(apiURL string, getenv func(string) string, fetch dbProxyInfoFetcher) (host, port, sslmode string) {
-	if info, ok := fetch(apiURL); ok {
+func dbProxyEndpointWith(apiURL, token string, getenv func(string) string, fetch dbProxyInfoFetcher) (host, port, sslmode string) {
+	if info, ok := fetch(apiURL, token); ok {
 		host, port, sslmode = info.Host, info.Port, info.SSLMode
 	} else {
 		host, sslmode = deriveDBHostAndSSLMode(apiURL)
