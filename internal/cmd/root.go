@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/aigateway"
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/initcmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
@@ -69,6 +70,7 @@ func init() {
 	manifestcmd.Register(rootCmd)
 	preview.Register(rootCmd)
 	admincmd.Register(rootCmd)
+	aigateway.Register(rootCmd)
 }
 
 // Execute runs the root command.

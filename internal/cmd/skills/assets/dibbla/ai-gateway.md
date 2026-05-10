@@ -1,6 +1,8 @@
-# AI Gateway
+# AI Gateway (for code running inside a Dibbla-deployed app)
 
-The Dibbla AI gateway lets a deployed app (or a developer's laptop) talk to OpenAI- and Anthropic-compatible LLM APIs **using the user's Dibbla API token** instead of a provider key. Every call is captured, attributed to the user (and, optionally, to the calling app), and visible in the gateway's console for the org.
+> **Setting up an IDE / laptop tool (Claude Code, Cursor, opencode, …)?** This page is for code running **inside a Dibbla-deployed pod** where `DIBBLA_AI_GATEWAY_URL` and `DIBBLA_ALIAS` are auto-injected. For a developer-laptop or interactive context, use the [`dibbla-ai-gateway`](../dibbla-ai-gateway/SKILL.md) skill instead — it covers `dibbla ai url|env|test`, per-IDE config, and direct curl. Install it with `dibbla skills install dibbla-ai-gateway`.
+
+The Dibbla AI gateway lets a deployed app talk to OpenAI- and Anthropic-compatible LLM APIs **using the user's Dibbla API token** instead of a provider key. Every call is captured, attributed to the user (and, optionally, to the calling app), and visible in the gateway's console for the org.
 
 Why apps should use it:
 
@@ -26,7 +28,7 @@ Pass the user's **Dibbla API token** the same way you'd pass an OpenAI/Anthropic
 | OpenAI Node/Python/Go | `Authorization: Bearer <key>` | the Dibbla API token |
 | Anthropic Node/Python/Go | `x-api-key: <key>` | the Dibbla API token |
 
-Get a token interactively at `https://app.dibbla.net/api-keys`, or in CI via `dibbla login --api-key=<token>`. Don't burn a provider key into the app — the gateway makes that obsolete.
+Don't burn a provider key into the app — the gateway makes that obsolete.
 
 ## The `X-Dibbla-App` header (per-app attribution)
 
@@ -39,7 +41,7 @@ X-Dibbla-App-Service: <DIBBLA_SERVICE_NAME value>   # optional
 
 The gateway cross-checks the alias against the user's organization in deploy-api. If (alias, org) matches a real deployment, the call is recorded with `source=app` and `app_alias=<alias>` in the ledger. If it doesn't (wrong org, typo, never deployed), the request **still succeeds** — it's just recorded as `source=external` with no app attribution. The gateway never fails an LLM call because of an attribution miss.
 
-A laptop / Claude Code / Cursor user makes calls with no `X-Dibbla-App` and shows up as `source=external` in the ledger — that's the right thing.
+Calls without `X-Dibbla-App` (e.g. from a developer's IDE) are recorded as `source=external` — still attributed to the user, just not to a specific deployed app.
 
 ## Environment variables auto-injected by the platform
 

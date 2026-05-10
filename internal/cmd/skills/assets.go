@@ -8,3 +8,8 @@ import "embed"
 var dibblaSkillFS embed.FS
 
 const dibblaSkillRoot = "assets/dibbla"
+
+//go:embed assets/dibbla-ai-gateway
+var dibblaAIGatewaySkillFS embed.FS
+
+const dibblaAIGatewaySkillRoot = "assets/dibbla-ai-gateway"

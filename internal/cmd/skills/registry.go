@@ -24,6 +24,12 @@ var registry = []skillEntry{
 		embedFS:     dibblaSkillFS,
 		root:        dibblaSkillRoot,
 	},
+	{
+		id:          "dibbla-ai-gateway",
+		description: "Point local AI coding assistants (Claude Code, opencode, Cursor, Cline, Windsurf, Zed) and ad-hoc curl scripts at the Dibbla AI gateway so every LLM call is captured under the user's Dibbla org. Covers `dibbla ai url|env|test`, per-tool config, and the optional `X-Dibbla-App` attribution header.",
+		embedFS:     dibblaAIGatewaySkillFS,
+		root:        dibblaAIGatewaySkillRoot,
+	},
 }
 
 func all() []skillEntry {
