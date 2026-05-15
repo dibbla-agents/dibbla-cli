@@ -15,7 +15,14 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
+
+// callbackGracePeriod is how long the local OAuth callback server stays
+// alive after writing the success page. Without a grace period, browser
+// auto-favicon fetches and reflexive reloads land on a dead listener and
+// render ERR_CONNECTION_REFUSED on top of the success message.
+const callbackGracePeriod = 10 * time.Second
 
 // IsSSHSession reports whether the current process is running inside an
 // SSH shell. The localhost-callback OAuth flow cannot complete here:
@@ -108,8 +115,19 @@ func StartCallbackServer(ctx context.Context, expectedState string) (int, <-chan
 			close(resultCh)
 		})
 
-		// Shut down after responding.
-		go srv.Shutdown(context.Background()) //nolint:errcheck
+		// Stay alive briefly so the browser can fetch a favicon or the
+		// user can reload the success page without seeing
+		// ERR_CONNECTION_REFUSED.
+		time.AfterFunc(callbackGracePeriod, func() {
+			srv.Shutdown(context.Background()) //nolint:errcheck
+		})
+	})
+
+	// Quiet 204 for Chrome's automatic favicon fetch on the success
+	// page — otherwise the devtools console logs a confusing error and
+	// the connection-refused render races the grace period.
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	// 404 for all other paths.

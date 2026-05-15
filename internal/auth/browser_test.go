@@ -254,6 +254,65 @@ func TestStartCallbackServer_RejectsNoToken(t *testing.T) {
 	}
 }
 
+// TestStartCallbackServer_StaysAliveAfterSuccess covers the bug where the
+// browser would render ERR_CONNECTION_REFUSED on top of the success page
+// because srv.Shutdown was invoked immediately after writing the success
+// HTML. Any follow-up request (browser auto-favicon fetch, user pressing
+// reload) hit a dead listener.
+//
+// After the fix, the listener must remain reachable for a short grace
+// period after the success callback, and a request to /favicon.ico must
+// respond with 204 rather than refusing the connection.
+func TestStartCallbackServer_StaysAliveAfterSuccess(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	state := "stays-alive-state"
+	port, resultCh, shutdown := StartCallbackServer(ctx, state)
+	defer shutdown()
+
+	// Deliver the success callback.
+	cbURL := fmt.Sprintf("http://127.0.0.1:%d/callback?token=jwt&state=%s", port, state)
+	resp, err := http.Get(cbURL)
+	if err != nil {
+		t.Fatalf("success callback failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("success callback status = %d, want 200", resp.StatusCode)
+	}
+
+	// Drain the result so the test reflects user-perceived state.
+	select {
+	case <-resultCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout draining result channel after success callback")
+	}
+
+	// Simulate the browser's automatic favicon fetch — happens roughly
+	// when Chrome renders the success page. Must NOT refuse the
+	// connection.
+	favURL := fmt.Sprintf("http://127.0.0.1:%d/favicon.ico", port)
+	favResp, err := http.Get(favURL)
+	if err != nil {
+		t.Fatalf("favicon request after success failed (server died too fast): %v", err)
+	}
+	favResp.Body.Close()
+	if favResp.StatusCode != http.StatusNoContent {
+		t.Errorf("favicon status = %d, want 204", favResp.StatusCode)
+	}
+
+	// Simulate a user pressing reload on the success page. Server should
+	// still respond — the state nonce has been consumed so a 403 here is
+	// fine; what matters is that the TCP connection is not refused.
+	reloadURL := fmt.Sprintf("http://127.0.0.1:%d/callback?token=jwt&state=%s", port, state)
+	reloadResp, err := http.Get(reloadURL)
+	if err != nil {
+		t.Fatalf("reload request after success failed (server died too fast): %v", err)
+	}
+	reloadResp.Body.Close()
+}
+
 func TestExchangeJWTForAPIToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
