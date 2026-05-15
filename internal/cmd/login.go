@@ -365,6 +365,15 @@ func browserLogin(apiBaseURL string) (string, error) {
 		return "", fmt.Errorf("failed to create API token: %w", err)
 	}
 
+	// Linger briefly so the browser can finish loading the success page
+	// (favicon, reflexive reload) before defer shutdown() above tears
+	// down the listener. The grace timer inside StartCallbackServer
+	// alone is bypassed: defer shutdown() runs as soon as this function
+	// returns — right after token exchange, ~1s — well before the
+	// timer fires. Long term: switch to OAuth Device Authorization Flow
+	// to eliminate the localhost callback entirely.
+	time.Sleep(auth.CallbackGracePeriod)
+
 	return apiToken, nil
 }
 
