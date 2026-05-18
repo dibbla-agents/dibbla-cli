@@ -111,7 +111,7 @@ public static extern System.IntPtr SendMessageTimeout(
         Write-Ok "  dibbla $version installed successfully!"
         Write-Host ""
         Write-Info "  Get started:"
-        Write-Host "    dibbla create go-worker my-project"
+        Write-Host "    dibbla init"
         Write-Host ""
         Write-Warn "  Note: You may need to restart your terminal for PATH changes to take effect."
         Write-Host ""

@@ -146,7 +146,7 @@ func orchestrate(cmd *cobra.Command, exe string, r Runner) error {
 		}
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n%s Setup complete. Try: dibbla apps list\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "\n%s Setup complete. Open your AI code agent in this folder and ask it to build and deploy your app.\n",
 		platform.Icon("✓", "[OK]"))
 	return nil
 }

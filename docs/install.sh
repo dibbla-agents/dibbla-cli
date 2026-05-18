@@ -178,7 +178,7 @@ verify() {
     if [ -z "$PATH_UPDATED_FILE" ]; then
         # Already on PATH in the parent shell — nothing was edited.
         info "  Get started:"
-        printf "    dibbla create go-worker my-project\n"
+        printf "    dibbla init\n"
         printf "\n"
         info "  Tip: teach AI coding agents about the CLI by running in your project:"
         printf "    dibbla skills install dibbla\n"

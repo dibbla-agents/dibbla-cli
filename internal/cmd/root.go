@@ -41,7 +41,7 @@ var rootCmd = &cobra.Command{
 	Long: `Dibbla CLI helps you create and manage Dibbla worker projects.
 
 Get started:
-  dibbla create go-worker my-project`,
+  dibbla init`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if skillPrompt {
 			fmt.Print(skillPromptContent)
