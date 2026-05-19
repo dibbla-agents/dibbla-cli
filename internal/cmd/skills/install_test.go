@@ -209,7 +209,7 @@ func TestWriteSkillFiles_CreatesAllFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, name := range []string{"SKILL.md", "examples.md", "guardrails.md", "reference.md"} {
+	for _, name := range []string{"SKILL.md", "examples.md", "guardrails.md", "reference.md", "user-docs.md"} {
 		if _, err := os.Stat(filepath.Join(destDir, name)); err != nil {
 			t.Errorf("%s not written: %v", name, err)
 		}
