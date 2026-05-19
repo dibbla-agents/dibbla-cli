@@ -1,8 +1,8 @@
 # Dibbla CLI — Pre-deploy guardrails
 
-Before calling `dibbla deploy`, you **MUST** complete all six checks below and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
+Before calling `dibbla deploy`, you **MUST** complete all seven checks below and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
 
-Checks 1–4 are mandatory for every deploy. Check 5 only fires when running task files from URLs (`dibbla run <url>` / `dibbla template install`). Check 6 only fires when a `dibbla.yaml` is present at the deploy root.
+Checks 1–4 and Check 7 are mandatory for every deploy. Check 5 only fires when running task files from URLs (`dibbla run <url>` / `dibbla template install`). Check 6 only fires when a `dibbla.yaml` is present at the deploy root.
 
 ---
 
@@ -112,11 +112,45 @@ When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deplo
 
 ---
 
+## Check 7: User handbook (end-user documentation)
+
+Mandatory for every deploy. The platform renders a user-facing handbook inside `auth.dibbla.net` under "My Apps → {alias}" — this is the only documentation surface end users see. See [user-docs.md](user-docs.md) for the full audience guidance, file conventions, tone rules, and paste-ready templates.
+
+| What to check | Severity | Examples |
+|----------------|----------|----------|
+| At least one of `docs/index.md` or `APP.md` exists at the project root | BLOCKER | Neither file present at the deploy root. The platform will accept the deploy, but the user-facing handbook will be empty — refuse to deploy until the user agrees to ship documentation. |
+| When `docs/` exists, `docs/index.md` is present | BLOCKER | A `docs/` folder with no `index.md` — the deploy will fail with a clear error. Generate the landing page from the template in [user-docs.md](user-docs.md). |
+| The landing page (`docs/index.md` or `APP.md`) has a `subtitle:` frontmatter, and it is end-user-facing | BLOCKER | Missing frontmatter, or `subtitle:` absent, or the value still contains placeholders (`TBD`, `TODO`, `<one short…>`, `{{app_name}}`), or it leaks technical detail (framework names, "deployed via X", "Node.js", env-var names). The card on the My Apps grid relies on this single line — without it, end users see "Deployed application" as the blurb. Write a real subtitle following the rules in [user-docs.md](user-docs.md). |
+| Subtitle is ≤ 140 bytes (target ≤ 70 chars), one sentence, plain text | BLOCKER | The bundler rejects subtitles over 140 bytes. The auth-ui My Apps card is ~180px wide and CSS-clamps to two lines, so anything past ~70 English chars gets visually clipped. Trim until it fits one tight sentence — start with a verb ("Track…", "Send…", "Manage…"), drop filler like "This is an app for…". No emoji, no markdown, no multi-line. |
+| Handbook content is for the **end user**, not for developers | BLOCKER | `docs/` or `APP.md` describes the dev stack ("Built with Vite + React + TailwindCSS"), env vars (`DATABASE_URL`), Docker/Dockerfile, deploy commands, source paths, or framework names. Strip and rewrite for the end user (see [user-docs.md](user-docs.md) anti-examples table). |
+| Per-page size ≤ 200 KiB; total bundle ≤ 800 KiB | BLOCKER | The deploy fails with `Invalid user docs:` or `User docs bundle too large:` — split into smaller pages or move large assets out of `docs/`. |
+| `_nav.yaml` references valid page slugs (if present) | BLOCKER | `_nav.yaml` mentions a slug for which no `.md` exists — the deploy fails with `references missing page`. |
+| Handbook covers Welcome, Getting Started, and FAQ at minimum | WARNING | A handbook with only one page and no "How do I…" guidance leaves users stuck — propose adding the three core sections from [user-docs.md](user-docs.md) before deploy. |
+| No placeholder text (`TBD`, `TODO`, `lorem ipsum`, `{{app_name}}` placeholders) remains | WARNING | The templates use `{{app_name}}` / `{{org_name}}` — these MUST be replaced with real values before deploy. |
+| Cross-page relative links resolve to real pages | WARNING | `[Foo](./foo.md)` where `docs/foo.md` doesn't exist — broken links don't block the deploy but show a "page not found" card to the user. |
+
+**Workflow when handbook is missing:**
+
+1. Tell the user the handbook is missing.
+2. Offer to generate a starter handbook from the templates in [user-docs.md](user-docs.md) — `docs/index.md` + `docs/getting-started.md` + `docs/faq.md` at minimum.
+3. Fill in the templates with content specific to the app (do not invent features that don't exist; ask the user what the app does and what the user-facing flows are).
+4. **Write a real `subtitle:` frontmatter on `docs/index.md`** — one short user-facing sentence, ≤ 70 chars (hard cap 140 bytes), starts with a verb, sentence case, ends with a period. This is what shows on the card.
+5. Show the user the generated files and wait for explicit confirmation.
+6. Only then deploy.
+
+**Workflow when content is technical, not user-facing:**
+
+1. Show the user the offending lines (with file path + line number).
+2. Propose a rewrite that strips dev-stack info and reframes the content for an end user.
+3. Apply the rewrite and re-run Check 7.
+
+---
+
 ## Interactive workflow
 
 ### Step 1: Run all applicable checks
 
-Review the application source code against every applicable check above (1–4 always; 5 if running task files from URLs; 6 if a `dibbla.yaml` is at the deploy root). Note each finding with its file path and line number.
+Review the application source code against every applicable check above (1–4 and 7 always; 5 if running task files from URLs; 6 if a `dibbla.yaml` is at the deploy root). Note each finding with its file path and line number.
 
 ### Step 2: Present the report
 
@@ -133,8 +167,10 @@ Show the user a guardrails report in this format:
 - [x] REST/API calls: 1 warning
   - WARNING: No timeout on fetch in `src/services/payment.js:23` — add a timeout
 - [x] External writes: OK
+- [ ] User handbook: 1 BLOCKER
+  - BLOCKER: No `docs/index.md` or `APP.md` at project root — generate from templates in user-docs.md.
 
-**Result: BLOCKED** — 1 blocker must be fixed before deploying.
+**Result: BLOCKED** — 2 blockers must be fixed before deploying.
 ```
 
 ### Step 3: Wait for user confirmation
