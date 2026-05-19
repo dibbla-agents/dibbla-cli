@@ -35,6 +35,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Status     | `status` (CLI version + resolved API URL with source + token presence with source + live token validation), `status --no-validate` (skip the network call), `status --json` (machine-readable). Exits `0` when logged in or token is configured + validation skipped, `3` when not logged in or token rejected |
 | Feedback   | `feedback <message>`, `feedback list`, `feedback delete <id>` |
 | Deploy     | `deploy [path] -m "<msg>" [--alias name] [--update] [--require-login] [--access-policy] [--google-scopes] [--target-env <env>] [--profile <p>]` — deploy from directory; `-m` becomes the VCS commit subject. `--target-env` / `--profile` / `--no-public` only apply when a `dibbla.yaml` is at the deploy root |
+| Clone      | `clone <app> [--ref <sha>] [--into <dir>]` — clone the Dibbla-managed git repo for a deployed app (read-only; push is rejected) |
 | Manifest   | `manifest validate [path]` — local schema check for `dibbla.yaml` (no network) |
 | Preview    | `preview [path] [--target-env <env>] [--profile <p>] [--no-public]` — server-authoritative dry run; full env-aware resolution + quota check, no build, no apply |
 | Apps       | `apps list`, `apps update <alias>`, `apps delete <alias>`, `apps restart <alias> --service <name>` (per-service rolling restart) |
