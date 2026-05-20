@@ -36,6 +36,12 @@ var (
 	deployTargetEnv string
 	deployProfiles  []string
 	deployNoPublic  bool
+
+	// --skip-review bypasses the pre-deploy gate that requires REVIEW.md
+	// and a user handbook at the deploy root. Reserved for humans who
+	// know what they're doing; coding agents should run the guardrails
+	// workflow and emit REVIEW.md instead.
+	deploySkipReview bool
 )
 
 var deployCmd = &cobra.Command{
@@ -96,6 +102,7 @@ func init() {
 	deployCmd.Flags().StringVar(&deployTargetEnv, "target-env", "", "Manifest env name to resolve (e.g. prod, staging, dev). Defaults to 'prod' server-side.")
 	deployCmd.Flags().StringArrayVar(&deployProfiles, "profile", nil, "Activate a manifest profile (repeatable)")
 	deployCmd.Flags().BoolVar(&deployNoPublic, "no-public", false, "Allow deploy with no public:true service (worker-only)")
+	deployCmd.Flags().BoolVar(&deploySkipReview, "skip-review", false, "Skip the REVIEW.md + handbook pre-deploy gate (use sparingly)")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 	deployCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 }
@@ -117,6 +124,13 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "✗ directory not found: %s\n", absPath)
 		os.Exit(1)
+	}
+
+	if !deploySkipReview {
+		if missing := checkReviewArtifacts(absPath); len(missing) > 0 {
+			writeReviewGateError(os.Stderr, missing)
+			os.Exit(1)
+		}
 	}
 
 	r := selectRenderer()

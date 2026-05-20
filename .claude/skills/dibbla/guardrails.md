@@ -4,6 +4,8 @@ Before calling `dibbla deploy`, you **MUST** complete all seven checks below and
 
 Checks 1–4 and Check 7 are mandatory for every deploy. Check 5 only fires when running task files from URLs (`dibbla run <url>` / `dibbla template install`). Check 6 only fires when a `dibbla.yaml` is present at the deploy root.
 
+> **Enforced by the CLI.** `dibbla deploy` refuses to upload when `REVIEW.md` is missing at the deploy root, or when no user handbook (`docs/index.md` or `APP.md`) is present. The only way past the gate is `--skip-review`, which is reserved for humans making one-line fixes — agents must run this checklist and write `REVIEW.md` (see Step 3.5) rather than passing the flag.
+
 ---
 
 ## Severity levels
@@ -199,7 +201,7 @@ One-Sentence-Summary: "<brief summary of findings>"
 - `Warnings` — no blockers found, but warnings are present (user chose to proceed)
 - `Critical` — blockers were found and fixed before deploying
 
-Always write this file, even when all checks pass. The platform shows a red indicator when REVIEW.md is missing.
+Always write this file, even when all checks pass. The platform shows a red indicator when REVIEW.md is missing, **and `dibbla deploy` will refuse to upload without it.**
 
 ### Step 4: Deploy only after confirmation
 
