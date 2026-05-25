@@ -65,19 +65,20 @@ Examples:
 }
 
 var (
-	deleteYes          bool
-	updateEnv          []string
-	updateReplicas     int
-	updateCPU          string
-	updateMemory       string
-	updatePort         int
-	updateFavicon      string
-	updateRequireLogin string
-	updateAccessPolicy string
-	updateGoogleScopes []string
-	restartService     string
-	restartQuiet       bool
-	restartJSON        bool
+	deleteYes             bool
+	updateEnv             []string
+	updateReplicas        int
+	updateCPU             string
+	updateMemory          string
+	updatePort            int
+	updateFavicon         string
+	updateRequireLogin    string
+	updateAccessPolicy    string
+	updateGoogleScopes    []string
+	updateMicrosoftScopes []string
+	restartService        string
+	restartQuiet          bool
+	restartJSON           bool
 )
 
 func init() {
@@ -103,6 +104,7 @@ func init() {
 	appsUpdateCmd.Flags().StringVar(&updateRequireLogin, "require-login", "", "Require login: true or false")
 	appsUpdateCmd.Flags().StringVar(&updateAccessPolicy, "access-policy", "", "Access policy: all_members, invite_only, or \"\" to clear")
 	appsUpdateCmd.Flags().StringArrayVar(&updateGoogleScopes, "google-scopes", nil, "Google OAuth scope URL (repeatable, use \"\" to clear)")
+	appsUpdateCmd.Flags().StringArrayVar(&updateMicrosoftScopes, "microsoft-scopes", nil, "Microsoft Graph scope, e.g. Files.ReadWrite (repeatable, use \"\" to clear)")
 }
 
 func runAppsList(cmd *cobra.Command, args []string) {
@@ -205,9 +207,14 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		googleScopes = updateGoogleScopes
 	}
 
-	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil
+	var microsoftScopes []string
+	if cmd.Flags().Changed("microsoft-scopes") {
+		microsoftScopes = updateMicrosoftScopes
+	}
+
+	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
 	if !hasUpdate {
-		fmt.Printf("%s Error: specify at least one of --env (-e), --replicas, --cpu, --memory, --port, --favicon, --require-login, --access-policy, or --google-scopes\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: specify at least one of --env (-e), --replicas, --cpu, --memory, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  dibbla apps update myapp -e NODE_ENV=production")
@@ -217,6 +224,7 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		fmt.Println("  dibbla apps update myapp --require-login true")
 		fmt.Println("  dibbla apps update myapp --access-policy invite_only")
 		fmt.Println("  dibbla apps update myapp --google-scopes https://www.googleapis.com/auth/drive.readonly")
+		fmt.Println("  dibbla apps update myapp --microsoft-scopes Files.ReadWrite")
 		os.Exit(1)
 	}
 
@@ -230,6 +238,7 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		RequireLogin:         requireLogin,
 		AppAccessPolicy:      accessPolicy,
 		GoogleScopes:         googleScopes,
+		MicrosoftScopes:      microsoftScopes,
 	}
 
 	fmt.Printf("%s Updating deployment '%s'...\n", platform.Icon("✏️", "[UPDATE]"), alias)

@@ -17,21 +17,22 @@ type DeploymentsListResponse struct {
 
 // Deployment represents a single application deployment.
 type Deployment struct {
-	ID          string           `json:"id"`
-	Alias       string           `json:"alias"`
-	URL         string           `json:"url"`
-	Status      DeploymentStatus `json:"status"`
-	ContainerID string           `json:"container_id"`
-	ImageID     string           `json:"image_id"`
-	ProjectPath string           `json:"project_path"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
-	DeployedAt  *time.Time       `json:"deployed_at"`
+	ID              string           `json:"id"`
+	Alias           string           `json:"alias"`
+	URL             string           `json:"url"`
+	Status          DeploymentStatus `json:"status"`
+	ContainerID     string           `json:"container_id"`
+	ImageID         string           `json:"image_id"`
+	ProjectPath     string           `json:"project_path"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+	DeployedAt      *time.Time       `json:"deployed_at"`
 	Error           string           `json:"error"`
 	HealthCheck     *HealthCheckInfo `json:"health_check"`
 	RequireLogin    bool             `json:"require_login"`
 	AppAccessPolicy string           `json:"app_access_policy,omitempty"`
 	GoogleScopes    []string         `json:"google_scopes,omitempty"`
+	MicrosoftScopes []string         `json:"microsoft_scopes,omitempty"`
 }
 
 // DeploymentStatus represents the status of a deployment.
@@ -101,6 +102,7 @@ type UpdateDeploymentRequest struct {
 	RequireLogin         *bool             `json:"require_login,omitempty"`
 	AppAccessPolicy      *string           `json:"app_access_policy,omitempty"`
 	GoogleScopes         []string          `json:"google_scopes,omitempty"`
+	MicrosoftScopes      []string          `json:"microsoft_scopes,omitempty"`
 }
 
 // ListApps makes an API call to list all deployed applications.

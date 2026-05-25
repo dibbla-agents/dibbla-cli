@@ -14,21 +14,22 @@ import (
 )
 
 var (
-	deployForce        bool
-	deployUpdate       bool
-	deployAlias        string
-	deployEnv          []string
-	deployCPU          string
-	deployMemory       string
-	deployPort         string
-	deployFavicon      string
-	deployRequireLogin bool
-	deployAccessPolicy string
-	deployGoogleScopes []string
-	deployMessage      string
-	deployQuiet        bool
-	deployJSON         bool
-	deployVerboseBuild bool
+	deployForce           bool
+	deployUpdate          bool
+	deployAlias           string
+	deployEnv             []string
+	deployCPU             string
+	deployMemory          string
+	deployPort            string
+	deployFavicon         string
+	deployRequireLogin    bool
+	deployAccessPolicy    string
+	deployGoogleScopes    []string
+	deployMicrosoftScopes []string
+	deployMessage         string
+	deployQuiet           bool
+	deployJSON            bool
+	deployVerboseBuild    bool
 	// Multi-service flags. --target-env (not --env, which is reserved for
 	// KEY=value vars) selects the manifest env block; --profile activates a
 	// profile in addition to the env name; --no-public allows worker-only
@@ -95,6 +96,7 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployRequireLogin, "require-login", false, "Require authentication to access the app")
 	deployCmd.Flags().StringVar(&deployAccessPolicy, "access-policy", "", "Access policy: all_members or invite_only")
 	deployCmd.Flags().StringArrayVar(&deployGoogleScopes, "google-scopes", nil, "Google OAuth scope URL (repeatable)")
+	deployCmd.Flags().StringArrayVar(&deployMicrosoftScopes, "microsoft-scopes", nil, "Microsoft Graph scope, e.g. Files.ReadWrite (repeatable)")
 	deployCmd.Flags().StringVarP(&deployMessage, "message", "m", "", "Deploy message, used as the VCS commit subject (e.g. \"fix: handle null user\")")
 	deployCmd.Flags().BoolVar(&deployQuiet, "quiet", false, "Suppress build progress; print one line on success/failure")
 	deployCmd.Flags().BoolVar(&deployJSON, "json", false, "Emit a single structured JSON object on completion")
@@ -136,25 +138,26 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	r := selectRenderer()
 
 	opts := deploypkg.Options{
-		APIURL:       cfg.APIURL,
-		APIToken:     cfg.APIToken,
-		Path:         path,
-		Force:        deployForce,
-		Update:       deployUpdate,
-		Alias:        deployAlias,
-		Env:          deployEnv,
-		CPU:          deployCPU,
-		Memory:       deployMemory,
-		Port:         deployPort,
-		FaviconURL:   deployFavicon,
-		RequireLogin: deployRequireLogin,
-		AccessPolicy: deployAccessPolicy,
-		GoogleScopes: deployGoogleScopes,
-		Message:      deployMessage,
-		VerboseBuild: deployVerboseBuild,
-		TargetEnv:    deployTargetEnv,
-		Profiles:     deployProfiles,
-		NoPublic:     deployNoPublic,
+		APIURL:          cfg.APIURL,
+		APIToken:        cfg.APIToken,
+		Path:            path,
+		Force:           deployForce,
+		Update:          deployUpdate,
+		Alias:           deployAlias,
+		Env:             deployEnv,
+		CPU:             deployCPU,
+		Memory:          deployMemory,
+		Port:            deployPort,
+		FaviconURL:      deployFavicon,
+		RequireLogin:    deployRequireLogin,
+		AccessPolicy:    deployAccessPolicy,
+		GoogleScopes:    deployGoogleScopes,
+		MicrosoftScopes: deployMicrosoftScopes,
+		Message:         deployMessage,
+		VerboseBuild:    deployVerboseBuild,
+		TargetEnv:       deployTargetEnv,
+		Profiles:        deployProfiles,
+		NoPublic:        deployNoPublic,
 	}
 
 	_, err = deploypkg.Run(opts, r)
