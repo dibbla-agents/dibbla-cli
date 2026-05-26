@@ -5,6 +5,54 @@ import (
 	"testing"
 )
 
+func TestRewriteGitHubBlobURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		rewrote bool
+	}{
+		{
+			name:    "blob url is rewritten",
+			in:      "https://github.com/dibbla-agents/dibbla-public-templates/blob/master/getting-started.dibbla-task.yaml",
+			want:    "https://raw.githubusercontent.com/dibbla-agents/dibbla-public-templates/master/getting-started.dibbla-task.yaml",
+			rewrote: true,
+		},
+		{
+			name:    "nested path blob url is rewritten",
+			in:      "https://github.com/org/repo/blob/main/dir/sub/task.yaml",
+			want:    "https://raw.githubusercontent.com/org/repo/main/dir/sub/task.yaml",
+			rewrote: true,
+		},
+		{
+			name:    "raw url is unchanged",
+			in:      "https://raw.githubusercontent.com/org/repo/main/task.yaml",
+			want:    "https://raw.githubusercontent.com/org/repo/main/task.yaml",
+			rewrote: false,
+		},
+		{
+			name:    "non-github url is unchanged",
+			in:      "https://example.com/repo/blob/main/task.yaml",
+			want:    "https://example.com/repo/blob/main/task.yaml",
+			rewrote: false,
+		},
+		{
+			name:    "github url without blob is unchanged",
+			in:      "https://github.com/org/repo/tree/main/dir",
+			want:    "https://github.com/org/repo/tree/main/dir",
+			rewrote: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, rewrote := rewriteGitHubBlobURL(tc.in)
+			if got != tc.want || rewrote != tc.rewrote {
+				t.Errorf("rewriteGitHubBlobURL(%q) = (%q, %v), want (%q, %v)", tc.in, got, rewrote, tc.want, tc.rewrote)
+			}
+		})
+	}
+}
+
 func TestResolveTaskPath_NoArg_DefaultsToCwdYAML(t *testing.T) {
 	path, isURL, cleanup, err := resolveTaskPath("")
 	if err != nil {

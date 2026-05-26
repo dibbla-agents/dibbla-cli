@@ -152,6 +152,10 @@ func resolveTaskPath(arg string) (path string, isURL bool, cleanup func(), err e
 		}
 		return abs, false, nil, nil
 	case strings.HasPrefix(arg, "https://"):
+		if raw, rewritten := rewriteGitHubBlobURL(arg); rewritten {
+			cliout.Stderr("notice: rewrote GitHub blob URL to raw form: %s", raw)
+			arg = raw
+		}
 		path, cleanup, err = FetchYAML(arg)
 		return path, true, cleanup, err
 	case strings.HasPrefix(arg, "http://"):
@@ -165,6 +169,30 @@ func resolveTaskPath(arg string) (path string, isURL bool, cleanup func(), err e
 		}
 		return abs, false, nil, nil
 	}
+}
+
+// rewriteGitHubBlobURL converts a GitHub web-UI blob URL
+// (https://github.com/<org>/<repo>/blob/<ref>/<path>) into the raw form
+// (https://raw.githubusercontent.com/<org>/<repo>/<ref>/<path>) that serves
+// the file content rather than an HTML page. It returns the original URL and
+// false when arg is not a GitHub blob URL (already-raw and non-GitHub URLs
+// pass through untouched).
+func rewriteGitHubBlobURL(arg string) (string, bool) {
+	const prefix = "https://github.com/"
+	if !strings.HasPrefix(arg, prefix) {
+		return arg, false
+	}
+	rest := strings.TrimPrefix(arg, prefix)
+	// rest = <org>/<repo>/blob/<ref>/<path...>
+	parts := strings.SplitN(rest, "/", 4)
+	if len(parts) < 4 || parts[2] != "blob" {
+		return arg, false
+	}
+	org, repo, refAndPath := parts[0], parts[1], parts[3]
+	if org == "" || repo == "" || refAndPath == "" {
+		return arg, false
+	}
+	return "https://raw.githubusercontent.com/" + org + "/" + repo + "/" + refAndPath, true
 }
 
 func resolveWorkDir(override string, isURL bool) (string, error) {
