@@ -74,8 +74,9 @@ All options are functional; pass any subset to `sdk.New`. Each option also has a
 | Option | Env var | Default | Notes |
 |---|---|---|---|
 | `WithServerName(name)` | `SERVER_NAME` | `codex-go-worker` | Unique per worker. Functions are keyed by `(server_name, function_name)`. |
-| `WithServerApiToken(t)` | `SERVER_API_TOKEN` | _(empty)_ | Required against production. |
-| `WithGrpcServerAddress(a)` | `GRPC_SERVER_ADDRESS` | `grpc.dibbla.com:443` | Override for local dev or staging. |
+| `WithServerApiToken(t)` | `SERVER_API_TOKEN` | _(empty)_ | A **personal API token (`ak_…`)** from the Dibbla console — **not** the internal `WORKFLOW_SERVER_API_TOKEN`. Required against production. See §8. |
+| `WithOrgID(id)` | `SERVER_ORG_ID` | _(token's default org)_ | Pin registration to a specific org when the token owner belongs to several. The owner must be a member. |
+| `WithGrpcServerAddress(a)` | `GRPC_SERVER_ADDRESS` | `grpc.dibbla.com:443` | `grpc.<domain>:443` on self-hosted clusters; `localhost:50051` for local dev. |
 | `WithGrpcTLS(bool)` | `GRPC_USE_TLS` (`true`/`false`/`1`) | _auto-detect_ | Auto-on for `*.dibbla.com`, auto-off for `localhost`/`127.0.0.1`/`[::1]`. |
 | `WithCodexEnvPath(path)` | `CODEX_ENV_PATH` | _(none)_ | Loads an additional `.env` after the default `.env`. |
 | `WithPingInterval(sec)` | — | `30` | gRPC ping cadence (`0` disables). |
@@ -231,28 +232,42 @@ ctx.Logger.WithWriter(myBuf) // redirect console output (gRPC stream is unaffect
 
 `Error("...")` is a log line, not a job failure. To fail the job, **return** an error from `Execute`.
 
-## 8. Authentication & TLS
+## 8. Authentication, endpoint & TLS
 
-The defaults work for production: `grpc.dibbla.com:443` with TLS, system CA bundle, `SERVER_API_TOKEN` for auth.
+The gRPC endpoint is **auth-proxied**: on connect, your `SERVER_API_TOKEN` is validated against the central auth service, and the functions you register are **scoped to that token's organization**.
 
-For local development against a workflow server on your laptop:
+**The token must be a personal API token (`ak_…`) created in the Dibbla console.** Do **not** use the platform-internal `WORKFLOW_SERVER_API_TOKEN` — that's a shared service token for in-cluster system workers; it won't scope your functions to your org and is not for user-built workers.
 
 ```go
 server, _ := sdk.New(
-    sdk.WithServerName("dev-worker"),
-    sdk.WithGrpcServerAddress("localhost:50051"), // auto-detected as no-TLS
+    sdk.WithServerName("my-worker"),
+    sdk.WithServerApiToken(os.Getenv("SERVER_API_TOKEN")), // ak_… from the console
 )
 ```
 
-Override TLS explicitly when neither default fits:
+**Endpoint** (`GRPC_SERVER_ADDRESS`):
+
+- Dibbla cloud: `grpc.dibbla.com:443` (default, TLS).
+- Self-hosted / customer cluster: `grpc.<your-domain>:443` (e.g. `grpc.haja-dev.fatshark.se:443`).
+- Local workflow server on your laptop: `localhost:50051` (auto-detected as no-TLS).
 
 ```go
-sdk.WithGrpcTLS(true)              // force TLS on a non-standard host
-// or
-GRPC_USE_TLS=false ./my-worker     // env var wins over auto-detect
+sdk.WithGrpcServerAddress("localhost:50051") // dev; TLS auto-off for localhost
+sdk.WithGrpcTLS(true)                          // force TLS on a non-standard host
+// GRPC_USE_TLS=false ./my-worker               // env wins over auto-detect
 ```
 
+**Organization scoping.** Your functions are visible **only to users in the same org as the token** — in `dibbla functions list` and the dashboard. If a function "doesn't show up", a token/org mismatch is the first thing to check. If the token owner belongs to several orgs, pin one with `WithOrgID("org_…")` / `SERVER_ORG_ID` (the owner must be a member); otherwise the token's default org is used.
+
 `CODEX_DEBUG=true` enables verbose gRPC logging.
+
+### 8.1 Connection troubleshooting
+
+These cost real debugging time — check them before suspecting your handler code:
+
+- **Worker hangs at `Connecting with TLS to …` with no error and no `✅ … successfully connected`.** This is almost always grpc-go's **client-side DNS resolver**, not the platform. Its `dns` resolver issues an extra `TXT _grpc_config.<host>` service-config lookup that silently stalls (~20s/attempt) on split-DNS / VPN / Tailscale networks where that record isn't answered. Current `sdk-go` disables that lookup — make sure you're on a recent version (`go get github.com/dibbla-agents/sdk-go@latest`). To confirm it's *your* DNS and not the server, point at a numeric IP (`GRPC_SERVER_ADDRESS=<ip>:443`): if that connects, it's your resolver. (`grpcurl` uses a different resolver, so "grpcurl works" does **not** rule this out.)
+- **`Registered N functions` is logged, but the function isn't in `dibbla functions list` / the dashboard.** That log means the worker *sent* its list, not that the engine accepted it. Usual causes: (1) **org mismatch** — you're viewing a different org than the token's (see scoping above); (2) the stream connects, then **drops every ~30s with a `502` and reconnects** — that's an ingress/proxy not doing full-duplex gRPC streaming, a **platform-side infra** issue (not your worker). 
+- **Registration is ephemeral.** Functions exist only while the worker's gRPC stream is open; they vanish the instant it disconnects and reappear on reconnect. A flapping connection means a function that blinks in and out of the registry.
 
 ## 9. OAuth on behalf of the workflow user
 
@@ -294,6 +309,9 @@ To request additional Google scopes (Drive, Calendar, Sheets, Gmail) at deploy t
 ## 10. Gotchas
 
 - **`Start()` blocks forever.** Register every function and job before calling it.
+- **Authenticate with an `ak_` API token, not `WORKFLOW_SERVER_API_TOKEN`.** The latter is a platform-internal service token; user workers use a personal `ak_…` token and register scoped to its org. (§8)
+- **A registered function is org-scoped — check you're viewing the token's org.** The #1 reason a function "doesn't appear" in `dibbla functions list` / the dashboard. (§8)
+- **A silent connect-hang is your local DNS, not the platform.** grpc-go's service-config `TXT` lookup stalls on split-DNS/VPN/Tailscale; use a current SDK (it disables the lookup) or a numeric IP to confirm. (§8.1)
 - **`JobHost` is gone.** Use `server.RegisterJob(handler)` directly. `server.NewJobHost(...)` no longer exists.
 - **Don't ship `codex-go-worker` as your real `SERVER_NAME`.** It's the default; two workers using it race for the same registry slot.
 - **Function key = `(server_name, function_name, version)`.** Renaming any of those is a breaking change for every workflow that references the function — bump `version` and keep the old name registered for a transition window if you need to migrate.
