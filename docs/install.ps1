@@ -121,11 +121,38 @@ public static extern System.IntPtr SendMessageTimeout(
     }
 }
 
-# If a working dibbla is already on PATH and knows about the `update`
-# subcommand (v1.2.10+), delegate to it. That path verifies the SHA-256
-# of the downloaded archive and does the running-exe rename dance —
-# both things this bootstrap script can't do on its own. Pre-v1.2.10
-# binaries fail the `update --help` probe, so we fall through.
+# First tag that shipped `dibbla update` (internal/cmd/update/update.go).
+# Only delegate to the existing binary's self-update when it's at least
+# this version; anything older predates the command.
+$MinUpdateVersion = [version]"1.2.10"
+
+# Parse the X.Y.Z triple from `dibbla --version` (prints "dibbla version
+# X.Y.Z" to stdout only — no stderr, so it can't trip the $ErrorAction-
+# Preference='Stop' native-command trap the way an unknown subcommand does).
+# Returns $null for a dev/unparseable build, which the caller treats as
+# "reinstall from scratch".
+function Get-ExistingVersion($exe) {
+    try {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+        $out = & $exe --version 2>$null
+        $ErrorActionPreference = $prev
+    } catch { return $null }
+    if ($out -match '(\d+)\.(\d+)\.(\d+)') {
+        return [version]("{0}.{1}.{2}" -f $matches[1], $matches[2], $matches[3])
+    }
+    return $null
+}
+
+# If a working dibbla is already on PATH and is new enough to know the
+# `update` subcommand (v1.2.10+), delegate to it. That path verifies the
+# SHA-256 of the downloaded archive and does the running-exe rename dance —
+# both things this bootstrap script can't do on its own. We gate on the
+# parsed `--version` number rather than probing `update --help`: the probe
+# made an old binary write to stderr, which under $ErrorActionPreference =
+# "Stop" became a terminating error that aborted the installer instead of
+# falling through. A version gate is also strictly conservative — a dev or
+# unparseable build simply reinstalls.
 #
 # Set $env:DIBBLA_INSTALLER_FORCE=1 to skip delegation (useful when an
 # existing `dibbla update` is broken or when targeting a new install dir).
@@ -135,15 +162,15 @@ function Invoke-MaybeDelegateToUpdate {
     $existing = Get-Command dibbla -ErrorAction SilentlyContinue
     if (-not $existing) { return }
 
-    & $existing.Source update --help *> $null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host ""
-        Write-Info "  Found existing dibbla at $($existing.Source) — delegating to 'dibbla update'."
-        Write-Info "  (set `$env:DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
-        Write-Host ""
-        & $existing.Source update --yes
-        exit $LASTEXITCODE
-    }
+    $ver = Get-ExistingVersion $existing.Source
+    if ($null -eq $ver -or $ver -lt $MinUpdateVersion) { return }
+
+    Write-Host ""
+    Write-Info "  Found existing dibbla $ver at $($existing.Source) — delegating to 'dibbla update'."
+    Write-Info "  (set `$env:DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
+    Write-Host ""
+    & $existing.Source update --yes
+    exit $LASTEXITCODE
 }
 
 Invoke-MaybeDelegateToUpdate

@@ -202,12 +202,19 @@ verify() {
     printf "\n"
 }
 
-# If a working dibbla is already on PATH and knows about the `update`
-# subcommand (v1.2.10+), delegate to it. That path goes through
+# First tag that shipped `dibbla update` (internal/cmd/update/update.go).
+# Only delegate to the existing binary's self-update when it's at least
+# this version; anything older predates the command.
+MIN_UPDATE_VERSION="1.2.10"
+
+# If a working dibbla is already on PATH and is new enough to know the
+# `update` subcommand (v1.2.10+), delegate to it. That path goes through
 # install-method detection (refuses to clobber a brew/apt install) and
 # verifies the SHA-256 of the downloaded archive — both things this
-# bootstrap script can't do on its own. Pre-v1.2.10 binaries don't
-# recognize `update`, so the probe fails and we fall through to bootstrap.
+# bootstrap script can't do on its own. We gate on the parsed `--version`
+# number (kept in lockstep with install.ps1, which needs the version gate
+# to avoid an stderr-on-Stop trap); a dev or unparseable build falls
+# through to a fresh install, which is always safe.
 #
 # Set DIBBLA_INSTALLER_FORCE=1 to skip delegation when:
 #   - the existing dibbla update is broken and you need to reinstall fresh
@@ -222,9 +229,12 @@ maybe_delegate_to_update() {
         return 0
     fi
 
-    if "$existing" update --help >/dev/null 2>&1; then
+    # `dibbla --version` prints "dibbla version X.Y.Z" to stdout; pull the
+    # first X.Y.Z triple. Empty for a dev/unparseable build.
+    ver=$("$existing" --version 2>/dev/null | sed -n 's/.*[^0-9]\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -n1)
+    if [ -n "$ver" ] && [ "$(printf '%s\n%s\n' "$MIN_UPDATE_VERSION" "$ver" | sort -V | head -n1)" = "$MIN_UPDATE_VERSION" ]; then
         printf "\n"
-        info "  Found existing dibbla at $existing — delegating to 'dibbla update'."
+        info "  Found existing dibbla $ver at $existing — delegating to 'dibbla update'."
         info "  (set DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
         printf "\n"
         exec "$existing" update --yes
