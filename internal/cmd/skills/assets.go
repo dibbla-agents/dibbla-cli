@@ -9,6 +9,8 @@ var dibblaSkillFS embed.FS
 
 const dibblaSkillRoot = "assets/dibbla"
 
+//go:generate sh -c "rm -rf assets/dibbla-ai-gateway && mkdir -p assets/dibbla-ai-gateway && cp ../../../.claude/skills/dibbla-ai-gateway/*.md assets/dibbla-ai-gateway/"
+
 //go:embed assets/dibbla-ai-gateway
 var dibblaAIGatewaySkillFS embed.FS
 
