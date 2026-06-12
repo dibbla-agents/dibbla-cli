@@ -160,13 +160,41 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		NoPublic:        deployNoPublic,
 	}
 
-	_, err = deploypkg.Run(opts, r)
-	if err != nil && r == nil {
-		// Legacy/no-renderer path — surface the raw error directly.
-		fmt.Fprintf(os.Stderr, "✗ deploy failed: %v\n", err)
-		os.Exit(1)
+	os.Exit(runWithRenderer(opts, r))
+}
+
+// runWithRenderer executes the deploy and guarantees the renderer sees a
+// terminal event. deploy.Run can fail before the server stream produces
+// one — local manifest validation, archive creation, the 50 MB limit,
+// network errors before NDJSON negotiation — and without this the error
+// would never render and the process would exit 0.
+func runWithRenderer(opts deploypkg.Options, r render.Renderer) int {
+	tr := &terminalTracking{Renderer: r}
+	_, err := deploypkg.Run(opts, tr)
+	if err != nil && !tr.sawTerminal {
+		tr.OnEvent(render.DeployEvent{
+			Type: "error",
+			Error: &render.DeployError{
+				APIError: &render.APIError{Code: "CLI_ERROR", Message: err.Error()},
+			},
+		})
 	}
-	os.Exit(r.OnDone())
+	return r.OnDone()
+}
+
+// terminalTracking wraps a Renderer and records whether a terminal event
+// (result or error) ever reached it, so runWithRenderer can tell a
+// stream-rendered failure apart from one that died before the stream.
+type terminalTracking struct {
+	render.Renderer
+	sawTerminal bool
+}
+
+func (t *terminalTracking) OnEvent(ev render.DeployEvent) {
+	if ev.Type == "result" || ev.Type == "error" {
+		t.sawTerminal = true
+	}
+	t.Renderer.OnEvent(ev)
 }
 
 // selectRenderer picks an output renderer based on flags and stdout type.

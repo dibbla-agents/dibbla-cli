@@ -908,6 +908,8 @@ Error codes (subset — full set in `reference.md`):
 
 Local validation cannot detect everything: env-aware errors (e.g. `replicas: { prod: -1 }`) and quota violations are server-side. A manifest that passes `dibbla manifest validate` may still fail `dibbla preview`.
 
+**Known issue — silent deploy on CLI ≤ v1.2.43:** on those versions, when `dibbla deploy` fails *locally* before the upload (manifest validation, ambiguous `dibbla.yaml`+`dibbla.yml`, unset `${VAR}` substitution, archive > 50 MB), the command prints **nothing and exits 0**. Treat a deploy that produces no output as a failure, not a success: run `dibbla manifest validate` to surface the real error (commonly a missing `version: 1`), fix, re-validate, then deploy. Fixed in later versions (`dibbla update`), which print `✗ CLI_ERROR: <reason>` and exit 1 instead.
+
 ---
 
 ## 19. Quotas

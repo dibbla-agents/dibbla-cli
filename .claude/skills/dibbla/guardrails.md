@@ -110,7 +110,7 @@ Run when a `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root. Skip o
 | Per-service auth missing on a sensitive public service | WARNING | If a public service name suggests an admin/internal UI (`pgadmin`, `adminer`, `mailhog`, `bull`, `redis-commander`, `grafana`, `prometheus`, or names containing `admin` / `internal` / `debug` / `tools`), require explicit user confirmation that **either** the service has `auth.require_login: true` set, **or** it's gated by `profiles: [dev]`. Shipping an admin UI publicly without auth is a top OWASP-class mistake. |
 | Hostname collision with existing alias | BLOCKER | Multi-public deploys produce hyphenated hostnames `<alias>-<service>`. If any existing alias in the org matches one of those strings, the deploy fails with `ALIAS_HOSTNAME_COLLISION`. Surface to the user before deploy by checking `dibbla apps list` for collisions, especially on aliases that already contain hyphens. |
 
-When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deploy and confirm the result with the user. For env-aware / quota / cross-service-reference checks, also run `dibbla preview --target-env <env>` — the local validator can't see env-aware values or org quotas.
+When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deploy and confirm the result with the user. For env-aware / quota / cross-service-reference checks, also run `dibbla preview --target-env <env>` — the local validator can't see env-aware values or org quotas. Validating first also sidesteps a known issue on CLI ≤ v1.2.43 where a deploy that fails local validation prints nothing and exits 0 (see manifest.md §18) — never interpret a silent `dibbla deploy` as success.
 
 ---
 
