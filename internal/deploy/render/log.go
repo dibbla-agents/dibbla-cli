@@ -173,6 +173,7 @@ type structuredFailureEvent struct {
 	StepCount   int                `json:"step_count,omitempty"`
 	ExitCode    int                `json:"exit_code"`
 	Reason      string             `json:"reason,omitempty"`
+	Message     string             `json:"message,omitempty"`
 	Errors      []ParsedBuildError `json:"errors,omitempty"`
 	RetryCmd    string             `json:"retry_cmd,omitempty"`
 	RequestID   string             `json:"request_id,omitempty"`
@@ -181,12 +182,18 @@ type structuredFailureEvent struct {
 }
 
 func structuredFailure(e *DeployError) structuredFailureEvent {
+	// exit_code must match what OnDone actually returns: 2 only for build
+	// step failures, 1 for everything else (auth, validation, network).
+	exitCode := 1
+	if e.FailedStep != "" {
+		exitCode = 2
+	}
 	out := structuredFailureEvent{
 		Event:     "deploy.failed",
 		Step:      e.FailedStep,
 		StepIndex: e.StepIndex,
 		StepCount: e.StepCount,
-		ExitCode:  2,
+		ExitCode:  exitCode,
 		Errors:    e.ParsedItems,
 		RetryCmd:  e.RetryCmd,
 	}
@@ -195,6 +202,7 @@ func structuredFailure(e *DeployError) structuredFailureEvent {
 		out.RequestID = e.APIError.RequestID
 		out.DeployID = e.APIError.DeploymentID
 		out.Reason = strings.ToLower(e.APIError.Code)
+		out.Message = e.APIError.Message
 	}
 	return out
 }
