@@ -823,6 +823,35 @@ dibbla secrets get API_KEY -d myapp
 dibbla secrets delete API_KEY -d myapp -y
 ```
 
+**Bulk import from a `.env` file (no redeploy):**
+
+```bash
+# Keep the .env OUTSIDE the deploy dir — a .env in the deploy root is a
+# guardrail blocker and is stripped from VCS. Reference it by path:
+dibbla secrets import ../secrets/.env.prod -d myapp
+
+# Override one key on top of the file (file is the base, -e wins):
+dibbla secrets import ../secrets/.env.prod -d myapp -e API_KEY=rotated-value
+
+# Preview the keys that would be set (no values, no network):
+dibbla secrets import ../secrets/.env.prod -d myapp --dry-run
+
+# Per-service scope:
+dibbla secrets import .env -d myapp -s web
+```
+
+Every key is validated against `^[a-zA-Z][a-zA-Z0-9_]{0,127}$` before anything
+is sent; if any key is invalid, nothing is imported. The server upserts, so a
+re-run is safe. Output is key names + a count only — values are never printed.
+
+**Bulk seed env vars at deploy / update time (`--env-file`):**
+
+```bash
+# File is the base layer; -e overrides individual keys (file < -e):
+dibbla deploy . --env-file ../secrets/.env.prod -m "feat: initial deploy"
+dibbla apps update myapp --env-file ../secrets/.env.prod -e LOG_LEVEL=debug
+```
+
 ---
 
 ## Workflows

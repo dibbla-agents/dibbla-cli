@@ -49,8 +49,8 @@ A `Dockerfile` at the deploy root is **required**. The platform does not run bui
 
 User-app environment variables come from three places:
 
-- **Secrets** — `dibbla secrets set <name> <value>` (org-global) or `dibbla secrets set <name> <value> -d <alias>` (scoped to one app). Injected as env vars at runtime. Secret name regex: `^[a-zA-Z][a-zA-Z0-9_]{0,127}$`.
-- **`--env KEY=VAL`** on `dibbla deploy` and `dibbla apps update`. Persist across redeploys — set once, they stick.
+- **Secrets** — `dibbla secrets set <name> <value>` (org-global) or `dibbla secrets set <name> <value> -d <alias>` (scoped to one app). Injected as env vars at runtime. Secret name regex: `^[a-zA-Z][a-zA-Z0-9_]{0,127}$`. To load many at once from a `.env` file without a redeploy, use `dibbla secrets import <file> [-d <alias>]` (validates every key against that regex first; never prints values).
+- **`--env KEY=VAL`** on `dibbla deploy` and `dibbla apps update`. Persist across redeploys — set once, they stick. To seed them in bulk from a file, `--env-file <path>` reads a `.env`-style file as the base layer and `-e` overrides individual keys (file < `-e`).
 - **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable.
 
 Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
