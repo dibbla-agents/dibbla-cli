@@ -216,3 +216,94 @@ jobs:
           if [ -n "$KEYCHAIN_PATH" ]; then
             security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           fi
+
+  sign-windows:
+    # Runs after sign-macos (not in parallel): both jobs edit and --clobber the
+    # single shared checksums.txt, so they must serialize to avoid losing edits.
+    needs: [release, sign-macos]
+    runs-on: windows-latest
+    steps:
+      - name: Download and stage Windows binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          $signDir = Join-Path $env:RUNNER_TEMP 'sign'
+          New-Item -ItemType Directory -Force -Path $signDir | Out-Null
+
+          foreach ($arch in @('amd64', 'arm64')) {
+            $zip = "dibbla_${version}_windows_${arch}.zip"
+            gh release download $tag -p $zip -D $signDir --clobber -R $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Failed to download $zip" }
+            $dest = Join-Path $signDir $arch
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Expand-Archive -Path (Join-Path $signDir $zip) -DestinationPath $dest -Force
+            if (-not (Test-Path (Join-Path $dest 'dibbla.exe'))) { throw "dibbla.exe not found in $zip" }
+          }
+
+          "TAG=$tag"          | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VERSION=$version"  | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SIGN_DIR=$signDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Sign Windows binaries
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ env.SIGN_DIR }}
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify, repackage, and publish signed binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+
+          foreach ($arch in @('amd64', 'arm64')) {
+            $exe = Join-Path $env:SIGN_DIR "$arch\dibbla.exe"
+            & $signtool.FullName verify /pa /v $exe
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $arch" }
+
+            $zip = "dibbla_${env:VERSION}_windows_${arch}.zip"
+            $zipPath = Join-Path $env:SIGN_DIR $zip
+            Remove-Item $zipPath -Force
+            Compress-Archive -Path $exe -DestinationPath $zipPath -Force
+            gh release upload $env:TAG $zipPath --clobber -R $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload $zip" }
+          }
+
+      - name: Update checksums for the re-signed Windows archives
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $checksums = Join-Path $env:SIGN_DIR 'checksums.txt'
+          gh release download $env:TAG -p 'checksums.txt' -D $env:SIGN_DIR --clobber -R $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download checksums.txt" }
+
+          # GoReleaser format: "<sha256>  <filename>" (two spaces). Touch only the
+          # two Windows lines; leave darwin/linux entries (incl. sign-macos's) intact.
+          $content = Get-Content $checksums -Raw
+          foreach ($arch in @('amd64', 'arm64')) {
+            $zip = "dibbla_${env:VERSION}_windows_${arch}.zip"
+            $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $env:SIGN_DIR $zip)).Hash.ToLower()
+            $pattern = "(?m)^[0-9a-f]+  $([regex]::Escape($zip))$"
+            $content = $content -replace $pattern, "$hash  $zip"
+          }
+          [System.IO.File]::WriteAllText($checksums, $content)
+
+          gh release upload $env:TAG $checksums --clobber -R $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload checksums.txt" }
