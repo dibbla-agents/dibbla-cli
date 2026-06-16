@@ -141,6 +141,7 @@ dibbla deploy --alias my-api       # Custom alias (default: directory name)
 dibbla deploy --force
 dibbla deploy --cpu 500m --memory 512Mi --port 3000
 dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
+dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # bulk-load env vars (file < -e)
 ```
 
 #### Deploy a multi-service app (`dibbla.yaml`)
@@ -260,16 +261,27 @@ dibbla secrets list --deployment myapp
 dibbla secrets set API_KEY "my-secret-value"
 echo "secret" | dibbla secrets set API_KEY
 dibbla secrets set API_KEY "value" --deployment myapp
+dibbla secrets import ../secrets/.env.prod --deployment myapp   # bulk-load a .env file (no redeploy)
+dibbla secrets import .env --dry-run                            # preview keys, no values, no network
 dibbla secrets get API_KEY
 dibbla secrets get API_KEY --deployment myapp
 dibbla secrets delete API_KEY
 dibbla secrets delete API_KEY --deployment myapp --yes
 ```
 
+Bulk loading: `secrets import` reads a `.env`-style file (the base layer) and
+repeatable `-e KEY=value` flags override individual keys. Every key is validated
+against `^[a-zA-Z][a-zA-Z0-9_]{0,127}$` up front (nothing is sent if any is
+invalid); values are never printed. Keep the `.env` file **outside** the deploy
+directory — a `.env` in the deploy root is stripped from VCS. The same
+`--env-file` flag is available on `dibbla deploy` and `dibbla apps update` to
+seed env vars at deploy/update time.
+
 | Command | Description |
 |---------|-------------|
 | `secrets list [-d deployment]` | List secrets (global or for one deployment) |
 | `secrets set <name> [value] [-d deployment]` | Create or update a secret (value from arg or stdin) |
+| `secrets import <file> [-e KEY=value] [-d deployment] [--dry-run]` | Bulk-load a `.env` file into secrets (no redeploy) |
 | `secrets get <name> [-d deployment]` | Print a secret's value |
 | `secrets delete <name> [-d deployment]` | Delete a secret (`-y` to skip confirmation) |
 
