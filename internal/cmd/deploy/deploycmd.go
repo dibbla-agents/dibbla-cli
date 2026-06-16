@@ -18,6 +18,7 @@ var (
 	deployUpdate          bool
 	deployAlias           string
 	deployEnv             []string
+	deployEnvFile         string
 	deployCPU             string
 	deployMemory          string
 	deployPort            string
@@ -77,6 +78,8 @@ Examples:
   dibbla deploy --force      # Force redeploy existing alias (causes downtime)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
+  dibbla deploy --env-file ../secrets/.env.prod              # Bulk-load env vars from a file
+  dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # File as base, -e overrides one key
   dibbla deploy --favicon https://example.com/favicon.ico
   dibbla deploy --quiet      # Single-line success/failure (script-friendly)
   dibbla deploy --json       # Structured JSON output for jq / agents`,
@@ -88,7 +91,8 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists (causes downtime)")
 	deployCmd.Flags().BoolVarP(&deployUpdate, "update", "u", false, "Rolling update of existing deployment (zero downtime)")
 	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
-	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
+	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
+	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
@@ -145,6 +149,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Update:          deployUpdate,
 		Alias:           deployAlias,
 		Env:             deployEnv,
+		EnvFile:         deployEnvFile,
 		CPU:             deployCPU,
 		Memory:          deployMemory,
 		Port:            deployPort,

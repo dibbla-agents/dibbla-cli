@@ -62,3 +62,30 @@ func TestSecretsCmd_HasServiceFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretNameRe(t *testing.T) {
+	valid := []string{"A", "API_KEY", "a1", "DATABASE_URL", "x_9"}
+	invalid := []string{"", "1ABC", "a-b", "a.b", "WITH SPACE", "lower-case-dash"}
+	for _, v := range valid {
+		if !secretNameRe.MatchString(v) {
+			t.Errorf("expected %q to be a valid secret name", v)
+		}
+	}
+	for _, v := range invalid {
+		if secretNameRe.MatchString(v) {
+			t.Errorf("expected %q to be an invalid secret name", v)
+		}
+	}
+}
+
+func TestSecretsImportCmd_Registered(t *testing.T) {
+	c, _, err := secretsCmd.Find([]string{"import"})
+	if err != nil {
+		t.Fatalf("find import: %v", err)
+	}
+	for _, f := range []string{"deployment", "service", "env", "dry-run"} {
+		if c.Flags().Lookup(f) == nil {
+			t.Errorf("--%s flag missing on secrets import", f)
+		}
+	}
+}
