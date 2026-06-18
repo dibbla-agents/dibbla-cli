@@ -9,6 +9,7 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
 	"github.com/spf13/cobra"
@@ -67,6 +68,7 @@ Examples:
 var (
 	deleteYes             bool
 	updateEnv             []string
+	updateEnvFile         string
 	updateReplicas        int
 	updateCPU             string
 	updateMemory          string
@@ -95,7 +97,8 @@ func init() {
 		"Print the JSON response body")
 	_ = appsRestartCmd.MarkFlagRequired("service")
 	appsRestartCmd.MarkFlagsMutuallyExclusive("quiet", "json")
-	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable)")
+	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
+	appsUpdateCmd.Flags().StringVar(&updateEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
 	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
 	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
 	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
@@ -172,7 +175,11 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	requireToken(cfg)
 
-	envMap := envPairsToMap(updateEnv)
+	envMap, err := deploypkg.MergeEnvFileAndFlags(updateEnvFile, updateEnv)
+	if err != nil {
+		fmt.Printf("%s %v\n", platform.Icon("❌", "[X]"), err)
+		os.Exit(1)
+	}
 	var replicas *int32
 	if updateReplicas >= 0 {
 		r := int32(updateReplicas)
@@ -214,10 +221,11 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 
 	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
 	if !hasUpdate {
-		fmt.Printf("%s Error: specify at least one of --env (-e), --replicas, --cpu, --memory, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: specify at least one of --env (-e), --env-file, --replicas, --cpu, --memory, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  dibbla apps update myapp -e NODE_ENV=production")
+		fmt.Println("  dibbla apps update myapp --env-file ../secrets/.env.prod")
 		fmt.Println("  dibbla apps update myapp --replicas 3")
 		fmt.Println("  dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000")
 		fmt.Println("  dibbla apps update myapp --favicon https://example.com/favicon.ico")
@@ -298,22 +306,4 @@ func runAppsRestartCore(stdout, stderr io.Writer, apiURL, apiToken, alias, servi
 			platform.Icon("✓", "[OK]"), out.Alias, out.Service)
 	}
 	return 0
-}
-
-func envPairsToMap(pairs []string) map[string]string {
-	if len(pairs) == 0 {
-		return nil
-	}
-	m := make(map[string]string, len(pairs))
-	for _, p := range pairs {
-		idx := strings.Index(p, "=")
-		if idx <= 0 {
-			continue
-		}
-		m[p[:idx]] = p[idx+1:]
-	}
-	if len(m) == 0 {
-		return nil
-	}
-	return m
 }

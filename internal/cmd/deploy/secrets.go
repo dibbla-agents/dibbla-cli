@@ -5,13 +5,21 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/secrets"
 	"github.com/spf13/cobra"
 )
+
+// secretNameRe is the server's secret-name rule (platform.md §5). Keys are
+// validated against it up front so a bulk import fails closed rather than
+// half-applying.
+var secretNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
 
 var secretsCmd = &cobra.Command{
 	Use:   "secrets",
@@ -50,6 +58,33 @@ var secretsDeleteCmd = &cobra.Command{
 	Run:   runSecretsDelete,
 }
 
+var secretsImportCmd = &cobra.Command{
+	Use:   "import <file>",
+	Short: "Bulk-load secrets from a .env-style file",
+	Long: `Import every KEY=value from a .env-style file into the secrets store in one
+shot, without a redeploy. The file is the base layer; repeatable -e KEY=value
+flags override individual keys (same precedence as dibbla run / deploy).
+
+Scope follows the usual flags: omit --deployment for org-global secrets, set
+--deployment <alias> for an app, or add --service to scope to one service.
+
+Every key is validated against the secret-name rule (^[a-zA-Z][a-zA-Z0-9_]{0,127}$)
+up front: if any key is invalid the command exits without sending anything. The
+server upserts each secret, so an import is idempotent and safe to re-run. Values
+are never printed — output is key names and a count only.
+
+Keep the .env file OUTSIDE your deploy directory (or in .dibblaignore): a .env in
+the deploy root is a pre-deploy guardrail BLOCKER and is stripped from VCS.
+
+Examples:
+  dibbla secrets import .env
+  dibbla secrets import ../secrets/.env.prod -d shop
+  dibbla secrets import .env -d shop -s web -e API_KEY=override
+  dibbla secrets import .env -d shop --dry-run`,
+	Args: cobra.ExactArgs(1),
+	Run:  runSecretsImport,
+}
+
 var (
 	secretsDeployment       string
 	secretsSetDeployment    string
@@ -60,6 +95,10 @@ var (
 	secretsGetService       string
 	secretsDeleteService    string
 	secretsDeleteYes        bool
+	secretsImportDeployment string
+	secretsImportService    string
+	secretsImportEnv        []string
+	secretsImportDryRun     bool
 )
 
 func init() {
@@ -67,6 +106,7 @@ func init() {
 	secretsCmd.AddCommand(secretsSetCmd)
 	secretsCmd.AddCommand(secretsGetCmd)
 	secretsCmd.AddCommand(secretsDeleteCmd)
+	secretsCmd.AddCommand(secretsImportCmd)
 
 	secretsListCmd.Flags().StringVarP(&secretsDeployment, "deployment", "d", "", "List secrets for this deployment only (omit for global)")
 	secretsListCmd.Flags().StringVarP(&secretsListService, "service", "s", "", "Scope to a single service in the deployment (requires -d)")
@@ -77,6 +117,10 @@ func init() {
 	secretsDeleteCmd.Flags().StringVarP(&secretsDeleteDeployment, "deployment", "d", "", "Delete deployment-scoped secret")
 	secretsDeleteCmd.Flags().StringVarP(&secretsDeleteService, "service", "s", "", "Scope delete to a single service entry (requires -d)")
 	secretsDeleteCmd.Flags().BoolVarP(&secretsDeleteYes, "yes", "y", false, "Skip confirmation prompt")
+	secretsImportCmd.Flags().StringVarP(&secretsImportDeployment, "deployment", "d", "", "Import into this deployment (omit for global)")
+	secretsImportCmd.Flags().StringVarP(&secretsImportService, "service", "s", "", "Scope to a single service (requires -d)")
+	secretsImportCmd.Flags().StringArrayVarP(&secretsImportEnv, "env", "e", nil, "Override a single KEY=value on top of the file (repeatable)")
+	secretsImportCmd.Flags().BoolVar(&secretsImportDryRun, "dry-run", false, "List the keys that would be set (no values, no network)")
 }
 
 // requireServiceWithDeployment fails when --service is set without --deployment.
@@ -235,4 +279,78 @@ func runSecretsDelete(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("%s %s\n", platform.Icon("✅", "[OK]"), del.Message)
+}
+
+func runSecretsImport(cmd *cobra.Command, args []string) {
+	if !requireServiceWithDeployment(os.Stderr, secretsImportDeployment, secretsImportService) {
+		os.Exit(1)
+	}
+
+	// File is the base layer; -e flags override individual keys. A missing or
+	// malformed file (or a bad -e flag) fails here, before any network call.
+	envMap, err := deploypkg.MergeEnvFileAndFlags(args[0], secretsImportEnv)
+	if err != nil {
+		fmt.Printf("%s %v\n", platform.Icon("❌", "[X]"), err)
+		os.Exit(1)
+	}
+	if len(envMap) == 0 {
+		fmt.Printf("%s No secrets found in %q.\n", platform.Icon("❌", "[X]"), args[0])
+		os.Exit(1)
+	}
+
+	// Stable, sorted key order for deterministic output (and a deterministic
+	// import sequence so a re-run after a mid-loop failure is predictable).
+	keys := make([]string, 0, len(envMap))
+	for k := range envMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Validate every key up front; fail closed if any is invalid so we never
+	// half-apply a file.
+	var invalid []string
+	for _, k := range keys {
+		if !secretNameRe.MatchString(k) {
+			invalid = append(invalid, k)
+		}
+	}
+	if len(invalid) > 0 {
+		fmt.Printf("%s Invalid secret name(s): %s\n", platform.Icon("❌", "[X]"), strings.Join(invalid, ", "))
+		fmt.Printf("  Names must match %s\n", secretNameRe.String())
+		fmt.Println("  Nothing was imported.")
+		os.Exit(1)
+	}
+
+	scope := scopeLabel(secretsImportDeployment, secretsImportService)
+
+	if secretsImportDryRun {
+		fmt.Printf("%s Dry run — would import %d secret(s) into %s:\n", platform.Icon("🌱", "[>]"), len(keys), scope)
+		for _, k := range keys {
+			fmt.Printf("  %s\n", k)
+		}
+		fmt.Println("\nNo secrets were written (--dry-run).")
+		return
+	}
+
+	cfg := config.Load()
+	requireToken(cfg)
+
+	fmt.Printf("%s Importing %d secret(s) into %s...\n", platform.Icon("🌱", "[>]"), len(keys), scope)
+	fmt.Println()
+
+	var done []string
+	for _, k := range keys {
+		_, err := secrets.CreateSecret(cfg.APIURL, cfg.APIToken, k, envMap[k], secretsImportDeployment, secretsImportService)
+		if err != nil {
+			fmt.Printf("%s Failed at %s after %d of %d: %v\n", platform.Icon("❌", "[X]"), k, len(done), len(keys), err)
+			if len(done) > 0 {
+				fmt.Printf("  Imported before the failure: %s\n", strings.Join(done, ", "))
+			}
+			fmt.Println("  Re-running the import is safe (the server upserts).")
+			os.Exit(1)
+		}
+		done = append(done, k)
+	}
+
+	fmt.Printf("%s imported %d secret(s) into %s: %s\n", platform.Icon("✅", "[OK]"), len(done), scope, strings.Join(done, ", "))
 }
