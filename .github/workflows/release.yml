@@ -28,7 +28,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.23"
+          # Read the version from go.mod so the release toolchain can't drift
+          # behind the module's `go` directive (GOTOOLCHAIN=local blocks upgrades).
+          go-version-file: "go.mod"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
