@@ -51,7 +51,7 @@ User-app environment variables come from three places:
 
 - **Secrets** — `dibbla secrets set <name> <value>` (org-global) or `dibbla secrets set <name> <value> -d <alias>` (scoped to one app). Injected as env vars at runtime. Secret name regex: `^[a-zA-Z][a-zA-Z0-9_]{0,127}$`.
 - **`--env KEY=VAL`** on `dibbla deploy` and `dibbla apps update`. Persist across redeploys — set once, they stick.
-- **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable.
+- **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable. The URL connects through the Dibbla database proxy with a managed per-database proxy secret (not the raw Postgres password) — use it as-is (§7).
 
 Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
 
@@ -78,14 +78,15 @@ Pattern (1) — inlining public values — is the right answer for the Lovable /
 
 ---
 
-## 7. Managed Postgres — self-signed TLS
+## 7. Managed Postgres — TLS via the database proxy
 
-The Dibbla-managed Postgres serves a **self-signed certificate**. Connections are still encrypted in transit; trust is enforced by network isolation (the database is only reachable from inside the deployment cluster), not CA-rooted cert identity. Two consequences for app code:
+App database connections go **through the Dibbla database proxy** at `db.<base-domain>`, which presents a **publicly-valid TLS certificate**. The injected `DATABASE_URL_<NAME>` already carries `sslmode=require`. Use it **as-is**:
 
-- **Do not use `sslmode=disable`.** That drops encryption — wrong fix.
-- **Do not require strict CA verification.** A default `sslmode=verify-full` client will refuse the cert. Either strip `sslmode` from the injected URL and configure SSL explicitly with `rejectUnauthorized: false` (Node `pg`, Prisma adapter), or use `sslmode=no-verify` (recent Prisma) or `sslmode=require` with no CA file (psycopg2).
+- **Use the injected URL unchanged.** The cert verifies normally, so standard clients connect with no special SSL config.
+- **Do not disable verification.** No `ssl: { rejectUnauthorized: false }`, no `sslmode=no-verify` — those were workarounds for an old self-signed cert and now only weaken security.
+- **Never `sslmode=disable`.** That drops encryption.
 
-Working snippets for `pg`, Prisma, and psycopg2 live in `reference.md` → "TLS for application database clients" (~line 336). Copy from there rather than inventing a new pattern — naive `ssl: { rejectUnauthorized: false }` is silently shadowed when the URL carries a stricter `sslmode`, which is the most common foot-gun.
+The proxy uses standard Postgres TLS negotiation, so any driver works without PostgreSQL 17 "direct TLS". The injected credential is a managed per-database proxy secret (not your Postgres role password) and only works through the proxy. Working snippets for `pg`, psycopg2, and Prisma live in `reference.md` → "TLS for application database clients".
 
 ---
 
@@ -379,7 +380,7 @@ These are application-side concerns. For the security review before deploy, run 
 - [ ] App binds to `0.0.0.0`, not `127.0.0.1`.
 - [ ] `USER` directive sets a non-root user in the runtime stage.
 - [ ] All secrets come from `dibbla secrets set` or `--env`, never hardcoded or baked into the image.
-- [ ] Postgres client configured to accept the self-signed cert (see §7); `sslmode=disable` is **not** used.
+- [ ] Postgres client uses the injected `DATABASE_URL` as-is (`sslmode=require`, valid cert via the proxy — see §7); does **not** disable cert verification or use `sslmode=disable`.
 - [ ] For Vite/Next.js/CRA frontends, public values are inlined or fetched via a runtime config endpoint — not passed via `--env` (see §6).
 - [ ] If `--require-login`, app reads `X-User-*` headers (see §10) and does not attempt JWT verification.
 - [ ] No `.env`, `*.pem`, `*.key`, SSH keys, or `service-account.json` in the deploy directory.

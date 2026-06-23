@@ -555,33 +555,32 @@ dibbla logs expense-reporter --service worker -f     # narrow to one service aft
 | **Usage** | `dibbla db connect <name> [--quiet | -q]` |
 | **Arguments** | `name` (required) — database name |
 | **Flags** | `--quiet`, `-q` — print only the connection string (scripting) |
-| **Output** | psql-compatible connection string via Dibbla database proxy. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` (`sslmode=require`), `api.dibbla.net` → `db.dibbla.net` (`sslmode=disable`, internal), `localhost`/`127.0.0.1` → `sslmode=disable`. Override with `DIBBLA_DB_HOST`, `DIBBLA_DB_PORT`, `DIBBLA_DB_SSLMODE`. Uses API token as password. |
+| **Output** | psql-compatible connection string via the Dibbla database proxy, authenticated with your **personal API token** as the password (for human/CLI use). Apps don't use this — they read the auto-injected `DATABASE_URL_<NAME>` secret, which goes through the same proxy but with a managed per-database proxy secret. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` (`sslmode=require`), `api.dibbla.net` → `db.dibbla.net` (`sslmode=disable`, internal), `localhost`/`127.0.0.1` → `sslmode=disable`. Override with `DIBBLA_DB_HOST`, `DIBBLA_DB_PORT`, `DIBBLA_DB_SSLMODE`. |
 
 ### TLS for application database clients
 
-Dibbla's managed Postgres serves a **self-signed TLS certificate**. Every application client must either relax peer-cert verification or skip it entirely; the connection is still encrypted in transit. Server trust is enforced by network isolation — the database is only reachable from inside the deployment cluster — not by CA-rooted cert identity.
+The injected connection string (`DATABASE_URL_<NAME>`) reaches Postgres **through the Dibbla database proxy** at a public hostname (`db.<base-domain>`) that presents a **publicly-valid TLS certificate**. The URL already carries `sslmode=require`. **Use the injected value as-is** — the certificate verifies normally, so standard clients connect with no special SSL configuration.
 
-The injected connection string (`DATABASE_URL` or `DATABASE_URL_<NAME>`) already carries an `sslmode` value. If your client reads `sslmode` from the URL *and* accepts explicit SSL options, the URL usually wins — a naive `ssl: { rejectUnauthorized: false }` is silently shadowed. The reliable fix is to **strip `sslmode` from the URL** before passing it to the client, then configure SSL explicitly.
+Do **not**:
+- strip `sslmode` from the URL,
+- set `ssl: { rejectUnauthorized: false }` or `sslmode=no-verify`,
+- set `sslmode=disable`.
+
+Those were workarounds for an older self-signed-cert setup. They are no longer needed and only weaken security — the cert is valid and should be verified.
+
+The proxy speaks standard Postgres TLS negotiation (in-band SSL upgrade), so **every** driver works — you do **not** need PostgreSQL 17 "direct TLS" (`sslnegotiation=direct`).
 
 #### Node.js — `pg`
 
 ```js
 import { Pool } from "pg";
 
-const raw =
-  process.env.DATABASE_URL ?? process.env.DATABASE_URL_MY_DB;
-
-const connectionString = raw
-  ?.replace(/([?&])sslmode=[^&]*(&|$)/gi, (_, p1, p2) => (p2 ? p1 : ""))
-  .replace(/\?$/, "");
-
 export const pool = new Pool({
-  connectionString,
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL_MY_DB,
 });
 ```
 
-`ssl: { rejectUnauthorized: false }` alone is not enough — it is overridden by the URL's `sslmode`. Strip `sslmode` first.
+If your `pg` version doesn't enable TLS from the URL's `sslmode`, add `ssl: true` (full verification — the cert is valid, so no `rejectUnauthorized: false` needed).
 
 #### Python — `psycopg2` / `psycopg`
 
@@ -589,24 +588,20 @@ export const pool = new Pool({
 import os
 import psycopg2
 
-conn = psycopg2.connect(
-    os.environ["DATABASE_URL"],
-    sslmode="require",   # encrypt channel
-    sslrootcert="",      # do not require CA verification
-)
+conn = psycopg2.connect(os.environ["DATABASE_URL_MY_DB"])
 ```
 
-`psycopg` v3 uses the same parameters.
+The `sslmode=require` in the URL is honoured directly; `psycopg` v3 is the same.
 
 #### Prisma
 
-Append `?sslmode=no-verify` to the URL — a Prisma-specific extension (recent Prisma versions) that accepts self-signed certs without CA verification:
+Use the injected value unchanged — no `?sslmode=no-verify`, no driver adapter:
 
 ```env
-DATABASE_URL="postgresql://user:pass@host:5432/db?sslmode=no-verify"
+DATABASE_URL="${DATABASE_URL_MY_DB}"
 ```
 
-For older Prisma versions that don't recognise `no-verify`, use the `@prisma/adapter-pg` driver adapter and pass `ssl: { rejectUnauthorized: false }` on the underlying `pg` Pool — same pattern as the Node.js snippet above. See Prisma's self-signed-cert docs for version-specific guidance.
+> The injected credential is a **Dibbla-managed per-database proxy secret**, not your Postgres role password, and only works **through the proxy** — don't try to use it to connect to a database host directly.
 
 ---
 
