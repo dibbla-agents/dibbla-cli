@@ -5,7 +5,7 @@ The Dibbla AI gateway lets a deployed app (or a developer's laptop) talk to Open
 Why apps should use it:
 
 - **One key.** The app authenticates with the same Dibbla token it already uses for everything else. The provider key (OpenAI / Anthropic) lives only on the platform — never in the app's secrets, never in the customer's image.
-- **Audit trail.** Every prompt, response, token count, latency, and tool call lands in `ai_gateway_db` for the user's org and is browsable at `https://ai.dibbla.com/console`.
+- **Audit trail.** Every prompt, response, token count, latency, and tool call is recorded against the user's org and is browsable at `https://ai.dibbla.com/console`.
 - **Per-app attribution.** When the app declares which Dibbla app it is via the `X-Dibbla-App` header, the call is tagged with the app alias in the ledger.
 
 ## Endpoints
