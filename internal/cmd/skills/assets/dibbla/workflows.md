@@ -411,12 +411,12 @@ There are **two execute paths**, and they accept different auth. This catches ev
 
 For a Dibbla-deployed app calling its own workflow, use the second path with `ak_` Bearer auth. The first path won't accept that token through the public gateway.
 
-**Two URLs, one of which is wrong for production.** `dibbla wf api-docs <name>` shows the workflow-server's *direct* URL — `https://workflow-server.dibbla.net/api/execute/<name>/<urlid>` — which requires platform-internal auth and returns "Missing authentication headers" when called with an `ak_` token. To call from a deployed app, **rewrite the host to the public gateway**:
+**Two URLs, one of which is wrong for production.** `dibbla wf api-docs <name>` shows the workflow-server's *direct* URL — `https://workflow-server.<internal>/api/execute/<name>/<urlid>` — which requires platform-internal auth and returns "Missing authentication headers" when called with an `ak_` token. To call from a deployed app, **rewrite the host to the public gateway**:
 
 | | URL |
 |---|---|
-| Shown by `wf api-docs` (internal — don't paste this into production code) | `https://workflow-server.dibbla.net/api/execute/<name>/<urlid>` |
-| What production code should use | `https://api.dibbla.net/api/wf/execute/<name>/<urlid>` |
+| Shown by `wf api-docs` (internal — don't paste this into production code) | `https://workflow-server.<internal>/api/execute/<name>/<urlid>` |
+| What production code should use | `https://api.dibbla.com/api/wf/execute/<name>/<urlid>` |
 
 Same path tail, different host, plus the gateway's `/api/wf` prefix.
 
@@ -427,7 +427,7 @@ const ctrl = new AbortController();
 const t = setTimeout(() => ctrl.abort(), 60_000);
 console.log("[wf] calling", name);
 try {
-  const r = await fetch(`https://api.dibbla.net/api/wf/execute/${name}/${urlId}`, {
+  const r = await fetch(`https://api.dibbla.com/api/wf/execute/${name}/${urlId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.WORKFLOW_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ question }),

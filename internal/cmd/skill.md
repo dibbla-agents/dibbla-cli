@@ -14,7 +14,7 @@ The `dibbla` CLI is used to scaffold new projects and manage applications, datab
 
 Most commands that interact with the Dibbla platform require an API token.
 
-- **Local use:** Run `dibbla login` to store the token securely in the OS credential store (macOS Keychain, Windows Credential Manager, etc.). Use `dibbla login [api_url]` to target a different API (e.g. `dibbla login api.dibbla.net`). Use `dibbla logout` to remove stored credentials.
+- **Local use:** Run `dibbla login` to store the token securely in the OS credential store (macOS Keychain, Windows Credential Manager, etc.). Use `dibbla login [api_url]` to target a different API (e.g. `dibbla login api.your-domain.com`). Use `dibbla logout` to remove stored credentials.
 - **CI:** Set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`); the CLI uses env vars in CI and does not read the keychain.
 - **Fallback:** The token can also be provided via the `DIBBLA_API_TOKEN` environment variable or a `.env` file.
 
@@ -30,10 +30,10 @@ Store your API token securely in the OS credential store. The token is validated
 
 -   **Usage:** `dibbla login [api_url]`
 -   **Arguments:**
-    -   `api_url` (optional): API base host or URL (e.g. `api.dibbla.net` or `https://api.dibbla.net`). Default: `https://api.dibbla.com`.
+    -   `api_url` (optional): API base host or URL (e.g. `api.your-domain.com` or `https://api.your-domain.com`). Default: `https://api.dibbla.com`.
 -   **Flags:**
     -   `--api-key`: API token. If omitted, the user is prompted to enter it.
--   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login api.dibbla.net`
+-   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login api.your-domain.com`
 
 ### `logout`
 
@@ -157,7 +157,7 @@ One-shot machine setup. Runs `dibbla update`, `dibbla login`, and `dibbla skills
     -   `--skip-skill`: Don't install the dibbla skill.
     -   `--user`: Install the skill into `$HOME` instead of the current project (forwarded to `skills install`).
     -   `--re-login`: Run `login` even if a token is already configured.
-    -   `--api-url <url>`: API endpoint forwarded to `login` (e.g. `https://api.dibbla.net`).
+    -   `--api-url <url>`: API endpoint forwarded to `login` (e.g. `https://api.your-domain.com`).
 -   **Failure policy:** `update` and `skill install` failures warn and continue; `login` failure stops init (everything else needs auth).
 -   **Token handling:** Pass an existing `DIBBLA_API_TOKEN` env var to skip the login prompt. **Do not pass tokens via flag** — they appear in `ps` output.
 -   **Examples:**
@@ -242,7 +242,7 @@ Restores a database from a dump file.
 
 #### `db connect`
 
-Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` with `sslmode=require`; `api.dibbla.net` (internal) → `db.dibbla.net` with `sslmode=disable`; `localhost` / `127.0.0.1` also use `sslmode=disable`. Override with `DIBBLA_DB_HOST` / `DIBBLA_DB_PORT` / `DIBBLA_DB_SSLMODE`. Uses your current API token as the password.
+Prints a psql-compatible connection string for connecting to a database via the Dibbla database proxy. Host and `sslmode` are derived from `DIBBLA_API_URL`: the `api.` host maps to the matching `db.` host on the same base domain, so `api.dibbla.com` → `db.dibbla.com` with `sslmode=require`; `localhost` / `127.0.0.1` use `sslmode=disable`. Override with `DIBBLA_DB_HOST` / `DIBBLA_DB_PORT` / `DIBBLA_DB_SSLMODE`. Uses your current API token as the password.
 
 -   **Usage:** `dibbla db connect <name> [--quiet | -q]`
 -   **Arguments:**

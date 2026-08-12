@@ -116,7 +116,7 @@ When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deplo
 
 ## Check 7: User handbook (end-user documentation)
 
-Mandatory for every deploy. The platform renders a user-facing handbook inside `auth.dibbla.net` under "My Apps → {alias}" — this is the only documentation surface end users see. See [user-docs.md](user-docs.md) for the full audience guidance, file conventions, tone rules, and paste-ready templates.
+Mandatory for every deploy. The platform renders a user-facing handbook inside `app.dibbla.com` under "My Apps → {alias}" — this is the only documentation surface end users see. See [user-docs.md](user-docs.md) for the full audience guidance, file conventions, tone rules, and paste-ready templates.
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|

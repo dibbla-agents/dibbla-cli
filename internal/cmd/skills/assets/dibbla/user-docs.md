@@ -1,6 +1,6 @@
 # Dibbla CLI — User handbook (end-user docs)
 
-Every deployable app **must** ship a user handbook. The platform renders it inside `auth.dibbla.net` under "My Apps → {alias}" — a sidebar of pages on the left, the rendered markdown on the right. This is the only documentation surface end users see. If an app ships without it, the deploy guardrails block.
+Every deployable app **must** ship a user handbook. The platform renders it inside `app.dibbla.com` under "My Apps → {alias}" — a sidebar of pages on the left, the rendered markdown on the right. This is the only documentation surface end users see. If an app ships without it, the deploy guardrails block.
 
 This file tells you **what to write, where to write it, and what NEVER to write**.
 
@@ -8,7 +8,7 @@ This file tells you **what to write, where to write it, and what NEVER to write*
 
 ## Audience
 
-Write for the **end user of the deployed app**. Concretely, that's the human who clicks the app card in `auth.dibbla.net` and starts using the app. They:
+Write for the **end user of the deployed app**. Concretely, that's the human who clicks the app card in `app.dibbla.com` and starts using the app. They:
 
 - Don't know what language the app is written in. They don't care.
 - Don't know what a container is, what a Dockerfile is, what Postgres is.
@@ -164,7 +164,7 @@ Links between pages use ordinary relative markdown links. The viewer rewrites th
 - **To an anchor on another page**: `[delete an invoice](./features/billing.md#deleting)`.
 - **External link**: `[Stripe docs](https://stripe.com/docs)` — opens in a new tab automatically.
 
-The viewer never reloads the page or leaves `auth.dibbla.net`, so make sure your links resolve. The bundler currently does *not* hard-fail on broken internal links (so a typo in a relative link won't block the deploy), but the user will see a friendly "page not found" card if they click one.
+The viewer never reloads the page or leaves `app.dibbla.com`, so make sure your links resolve. The bundler currently does *not* hard-fail on broken internal links (so a typo in a relative link won't block the deploy), but the user will see a friendly "page not found" card if they click one.
 
 ---
 
@@ -283,7 +283,7 @@ When you redeploy an existing app:
 
 ## How docs render in the console
 
-The auth-ui portal (`auth.dibbla.net`) fetches the bundle via `GET /deployments/{alias}/docs` and renders it with `react-markdown` + GitHub-flavoured-markdown + heading anchors. Concretely:
+The auth-ui portal (`app.dibbla.com`) fetches the bundle via `GET /deployments/{alias}/docs` and renders it with `react-markdown` + GitHub-flavoured-markdown + heading anchors. Concretely:
 
 - **Tables, task lists, strikethrough, fenced code blocks** — all work.
 - **Headings get auto-generated IDs** (slugified) so `[#section]` anchor links scroll to them.

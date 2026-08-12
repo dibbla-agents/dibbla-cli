@@ -31,24 +31,24 @@ brew upgrade dibbla
 
 ```bash
 # Interactive (real TTY — picks between browser OAuth and paste-token)
-dibbla login api.dibbla.net
+dibbla login
 
 # From inside Claude Code's `!` prefix, an agent shell, or any non-TTY context
-! dibbla login --browser api.dibbla.net
+! dibbla login --browser
 # Opens your default browser via localhost callback. No stdin needed.
 
 # Headless (no browser available — CI, SSH, containers)
-dibbla login api.dibbla.net --api-key ak_...
+dibbla login --api-key ak_...
 # or:
 export DIBBLA_API_TOKEN=ak_...
-export DIBBLA_API_URL=https://api.dibbla.net
+export DIBBLA_API_URL=https://api.dibbla.com
 dibbla deploy .          # reads env vars directly; no login needed
 
 # Cloud VM / SSH / Docker (no keyring service installed) — CLI >= v1.2.21
 # `dibbla login` auto-detects a missing keyring and falls back to a user-level
 # credentials file at ~/.config/dibbla/credentials.env (mode 0600). Behaves
 # like the keyring: machine-wide, persists across `cd`. No flags needed.
-dibbla login --api-key=ak_... --api-url=https://api.dibbla.net
+dibbla login --api-key=ak_... --api-url=https://api.dibbla.com
 
 # Add --write-env if you also want credentials materialized in ./.env (e.g.
 # for `docker compose` to pick them up):
@@ -56,7 +56,7 @@ dibbla login --api-key=ak_... --write-env
 
 # CLI < v1.2.21 (no auto-fallback): use --no-keychain --write-env so the CLI
 # skips the failing keyring write and lands creds in ./.env instead.
-dibbla login --api-key=ak_... --api-url=https://api.dibbla.net --write-env --no-keychain
+dibbla login --api-key=ak_... --api-url=https://api.dibbla.com --write-env --no-keychain
 
 # Afterwards, every dibbla command from any directory reads credentials:
 dibbla deploy .
@@ -1387,13 +1387,13 @@ Two paths exist; pick the right one. From a Dibbla-deployed app with a `WORKFLOW
 
 ```bash
 # What `wf api-docs` shows (internal — do NOT paste into production code):
-#   https://workflow-server.dibbla.net/api/execute/weather_assistant/ni3xl724
+#   https://workflow-server.<internal>/api/execute/weather_assistant/ni3xl724
 # What production code should call (gateway, accepts `ak_` Bearer):
-#   https://api.dibbla.net/api/wf/execute/weather_assistant/ni3xl724
+#   https://api.dibbla.com/api/wf/execute/weather_assistant/ni3xl724
 
 # Get the urlid from api-docs, then rewrite the host
 URL_ID=$(dibbla wf api-docs weather_assistant -o json | jq -r '.url_id')
-GATEWAY_URL="https://api.dibbla.net/api/wf/execute/weather_assistant/${URL_ID}"
+GATEWAY_URL="https://api.dibbla.com/api/wf/execute/weather_assistant/${URL_ID}"
 echo "$GATEWAY_URL"
 ```
 
@@ -1402,7 +1402,7 @@ A robust JavaScript caller. Always use `AbortController` with a short timeout �
 ```javascript
 // One workflow call, fail-fast and visible in logs.
 async function askWeatherAgent(question) {
-  const url = `https://api.dibbla.net/api/wf/execute/weather_assistant/${process.env.WEATHER_WF_URL_ID}`;
+  const url = `https://api.dibbla.com/api/wf/execute/weather_assistant/${process.env.WEATHER_WF_URL_ID}`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60_000); // 60s — workflow calls behave like external HTTP
 

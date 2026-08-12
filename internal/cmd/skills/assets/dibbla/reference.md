@@ -11,7 +11,7 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla login [api_url]` |
-| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.dibbla.net` or `https://api.dibbla.net`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. Both env names are read from `./.env` (CWD) as well as the shell environment. |
+| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.your-domain.com` or `https://api.your-domain.com`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. Both env names are read from `./.env` (CWD) as well as the shell environment. |
 | **Flags** | `--browser` — skip the interactive menu; go directly to browser OAuth. Works in non-TTY contexts (Claude Code `!` prefix, agent shells) because the flow uses a localhost callback, not stdin. |
 |  | `--api-key <token>` — pass a pre-generated token; works in any context |
 |  | `--api-url <url>` — explicit API endpoint URL (alternative to the positional arg; **mutually exclusive** with it — specifying both is an error). Useful in long command lines like yaml steps where positional args are easy to miss. |
@@ -557,7 +557,7 @@ dibbla logs expense-reporter --service worker -f     # narrow to one service aft
 | **Usage** | `dibbla db connect <name> [--quiet | -q]` |
 | **Arguments** | `name` (required) — database name |
 | **Flags** | `--quiet`, `-q` — print only the connection string (scripting) |
-| **Output** | psql-compatible connection string via the Dibbla database proxy, authenticated with your **personal API token** as the password (for human/CLI use). Apps don't use this — they read the auto-injected `DATABASE_URL_<NAME>` secret, which goes through the same proxy but with a managed per-database proxy secret. Host and `sslmode` are derived from `DIBBLA_API_URL`: `api.dibbla.com` → `db.dibbla.com` (`sslmode=require`), `api.dibbla.net` → `db.dibbla.net` (`sslmode=disable`, internal), `localhost`/`127.0.0.1` → `sslmode=disable`. Override with `DIBBLA_DB_HOST`, `DIBBLA_DB_PORT`, `DIBBLA_DB_SSLMODE`. |
+| **Output** | psql-compatible connection string via the Dibbla database proxy, authenticated with your **personal API token** as the password (for human/CLI use). Apps don't use this — they read the auto-injected `DATABASE_URL_<NAME>` secret, which goes through the same proxy but with a managed per-database proxy secret. Host and `sslmode` are derived from `DIBBLA_API_URL`: the `api.` host maps to the matching `db.` host on the same base domain, so `api.dibbla.com` → `db.dibbla.com` (`sslmode=require`). `localhost`/`127.0.0.1` map to `sslmode=disable`. Override any of it with `DIBBLA_DB_HOST`, `DIBBLA_DB_PORT`, `DIBBLA_DB_SSLMODE`. |
 
 ### TLS for application database clients
 
