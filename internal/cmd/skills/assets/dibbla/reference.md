@@ -145,7 +145,25 @@ Cache lives at `~/.dibbla/templates-cache.json`. Resolution is simple: a fresh c
 
 ## skills
 
-Install AI-coding-agent skills embedded in this CLI into a project (or the user's home dir). Skills are compiled into the binary via `//go:embed` — no network is required, and the installed skill always matches the version of `dibbla` the user has on `PATH`.
+Install AI-coding-agent skills embedded in this CLI into a project (or the user's home dir). Skills are compiled into the binary via `//go:embed`, so **this command requires no network** and the installed skill always matches the version of `dibbla` the user has on `PATH`.
+
+**Getting the skill without the CLI.** The same files are published over HTTP for agents that have no `dibbla` binary:
+
+```bash
+curl -s https://dibbla.com/.well-known/agent-skills/index.json
+# → { "skills": [ { "name": "dibbla", "type": "archive",
+#                   "url": ".../dibbla.tar.gz", "digest": "sha256:…" }, … ] }
+
+# Verify before use — the digest is why it is there:
+curl -sL https://dibbla.com/.well-known/agent-skills/dibbla.tar.gz -o dibbla.tar.gz
+sha256sum dibbla.tar.gz          # must equal the index's `digest`
+tar -xzf dibbla.tar.gz
+
+# Just the entry point, uncompressed:
+curl -s https://dibbla.com/.well-known/agent-skills/dibbla/SKILL.md
+```
+
+The published bytes are mirrored from a **tagged** CLI release, and the index's `_source.ref` names that tag — so a fetch still maps to one specific `dibbla` version rather than a floating latest. The version-locking story is the same; only the transport differs.
 
 Coverage: Claude Code reads `.claude/skills/<id>/SKILL.md` natively (gives a `/<id>` slash command). Cursor, Opencode, Codex, Copilot, Windsurf, Aider, Zed, Warp, and RooCode read `AGENTS.md` at project root (the 2026 open standard). Gemini CLI defaults to `GEMINI.md`, which the install also writes (same content as `AGENTS.md`) so Gemini works without editing `.gemini/settings.json`.
 
@@ -155,7 +173,7 @@ Coverage: Claude Code reads `.claude/skills/<id>/SKILL.md` natively (gives a `/<
 |------|---------|
 | **Usage** | `dibbla skills list` |
 | **Output** | Table: `ID  DESCRIPTION` — one row per skill bundled with this CLI version |
-| **Note** | The list is version-locked to the binary; upgrade the CLI to get newer skills |
+| **Note** | The list is version-locked to the binary; upgrade the CLI to get newer skills. The HTTP mirror at `dibbla.com/.well-known/agent-skills/` is likewise pinned to a tagged release |
 
 ### skills install
 

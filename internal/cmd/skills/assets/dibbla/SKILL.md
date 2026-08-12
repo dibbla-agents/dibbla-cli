@@ -161,7 +161,8 @@ Before authoring anything non-trivial, run `dibbla fn list` to see what function
 
 **Installing this skill into a project (so other agents see it too):**
 - `dibbla skills install dibbla` writes the skill files into `./.claude/skills/dibbla/` plus `AGENTS.md` and `GEMINI.md` pointers at the project root. Every major coding agent then picks up the guidance automatically — Claude Code via its native skill path, Cursor/Opencode/Codex/Copilot/Windsurf/Aider via `AGENTS.md` (the 2026 open standard), Gemini CLI via `GEMINI.md`.
-- The skill content is embedded in the CLI binary (`go:embed`), so no network is required and the skill version is locked to the CLI version the user has installed. Run `dibbla --version` to see which one.
+- The skill content is embedded in the CLI binary (`go:embed`), so **`dibbla skills install` needs no network** and the installed skill is locked to the CLI version the user has. Run `dibbla --version` to see which one.
+- The same files are also published over HTTP at `https://dibbla.com/.well-known/agent-skills/index.json`, for an agent that has no CLI. Each entry carries a `sha256:` digest — verify it. The published bytes are mirrored from a tagged CLI release, so a given URL still corresponds to one specific `dibbla` version rather than a floating latest.
 - Flags: `--user` installs into `$HOME` for machine-wide coverage instead of the current directory; `--no-agents` skips `AGENTS.md` and `GEMINI.md` (Claude Code only); `--force` overwrites skill files that have been edited locally. Unknown files inside `.claude/skills/<id>/` are always preserved.
 - The AGENTS.md / GEMINI.md pointer block is marker-delimited (`<!-- >>> dibbla skill >>> -->` … `<!-- <<< dibbla skill <<< -->`) so existing AGENTS.md content outside the markers is preserved byte-for-byte across reruns.
 - Re-running is idempotent — if nothing changed, nothing is rewritten (no mtime bump). Use `dibbla skills list` to see what skills the current CLI ships.
