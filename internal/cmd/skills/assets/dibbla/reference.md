@@ -651,6 +651,35 @@ Precedence at deploy time (highest wins): per-service > deployment-wide > global
 | **Behaviour** | Bulk-loads every `KEY=value` into the secrets store **without a redeploy**. Every key is validated up front against `^[a-zA-Z][a-zA-Z0-9_]{0,127}$`; if any is invalid, nothing is sent. The server upserts, so import is idempotent and re-runnable. On a mid-loop API error it stops and reports how many succeeded and which key failed. **Values are never printed** — output is key names + a count. |
 | **Notes** | Keep the `.env` file **outside** the deploy directory (or in `.dibblaignore`): a `.env` in the deploy root is a pre-deploy guardrail blocker, stripped from VCS. |
 
+### `.env` file grammar (`--env-file`, `secrets import`)
+
+Files are parsed by `godotenv`, the same parser `dibbla run --env-file` uses.
+The accepted grammar, exactly:
+
+| Form | Result |
+|---|---|
+| `KEY=value` | the basic form |
+| `export KEY=value` | accepted; `export ` is ignored |
+| `# comment` | whole-line comments are skipped |
+| `KEY=value # trailing` | trailing comments are stripped → `value` |
+| blank lines | skipped |
+| `KEY=` | empty string, not "unset" |
+| `KEY=a=b=c` | split on the **first** `=` → `a=b=c` |
+| `KEY="has spaces"` | quotes are stripped |
+| `KEY="line1\nline2"` | double-quoted values may span lines |
+| `KEY="pre ${OTHER} post"` | **`${VAR}` is expanded** inside double quotes |
+| `KEY='no ${EXPANSION}'` | single quotes are **literal** — nothing expands |
+
+Two things that bite:
+
+- **A `$` in a double-quoted value is expansion syntax, not a literal.** A
+  password like `"p$assw0rd"` loses `$assw0rd` (an undefined variable expands to
+  empty). Single-quote values that contain `$`: `KEY='p$assw0rd'`.
+- **A `-` in a *name* is a parse error**, not an invalid-name error: godotenv
+  fails the whole file with `unexpected character "-" in variable name`. Names
+  that parse but break the secret rule (leading digit, `.`, space, leading `_`)
+  are caught by `secrets import`'s own up-front validation instead.
+
 ### secrets get
 
 | Item | Details |

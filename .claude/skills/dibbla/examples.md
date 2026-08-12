@@ -844,6 +844,11 @@ Every key is validated against `^[a-zA-Z][a-zA-Z0-9_]{0,127}$` before anything
 is sent; if any key is invalid, nothing is imported. The server upserts, so a
 re-run is safe. Output is key names + a count only — values are never printed.
 
+> **Quote values containing `$` with single quotes.** The `.env` parser expands
+> `${VAR}` inside double quotes, so `PASSWORD="p$assw0rd"` silently imports as
+> `p`. Write `PASSWORD='p$assw0rd'` instead. Full grammar in `reference.md`
+> under "`.env` file grammar".
+
 **Bulk seed env vars at deploy / update time (`--env-file`):**
 
 ```bash
