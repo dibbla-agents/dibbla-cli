@@ -47,6 +47,27 @@ In-flight skill changes on `main` (between releases) do **not** reach
 the public repo until the next CLI tag is cut. Don't rely on the public
 repo as a development mirror.
 
+### Skill content is public-facing — write it that way
+
+`dibbla-agents/skills` is a **public** GitHub repo, and P-0016 additionally
+serves those same bytes from `https://dibbla.com/.well-known/agent-skills/`.
+Anything you put under `.claude/skills/dibbla/` or in the root `SKILL.md` is
+therefore published to the open internet at the next `v*` tag.
+
+Concretely, when editing skill files:
+
+- **Use `dibbla.com` hosts in examples, never `dibbla.net`.** `*.dibbla.net` is
+  staging. Publishing it maps internal infrastructure, and it is a support
+  problem on its own — readers paste the example and hit staging. Note the
+  portal is `app.dibbla.com` in prod (there is no `auth.dibbla.com`).
+- **Never name a customer, partner, or internal-only host.** Use a placeholder
+  (`api.your-domain.com`, `workflow-server.<internal>`).
+- **Don't document internal transport details** — DIB-188 removed a line stating
+  that an internal DB proxy runs with `sslmode=disable`.
+- **No personal email addresses.**
+
+DIB-188 scrubbed all of the above; keep it clean rather than re-running a scrub.
+
 ## Releases are tag-driven
 
 Pushing a `v*` tag triggers two workflows in parallel:

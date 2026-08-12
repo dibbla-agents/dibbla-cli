@@ -5,17 +5,17 @@ The Dibbla AI gateway lets a deployed app (or a developer's laptop) talk to Open
 Why apps should use it:
 
 - **One key.** The app authenticates with the same Dibbla token it already uses for everything else. The provider key (OpenAI / Anthropic) lives only on the platform — never in the app's secrets, never in the customer's image.
-- **Audit trail.** Every prompt, response, token count, latency, and tool call lands in `ai_gateway_db` for the user's org and is browsable at `https://ai.dibbla.net/console`.
+- **Audit trail.** Every prompt, response, token count, latency, and tool call lands in `ai_gateway_db` for the user's org and is browsable at `https://ai.dibbla.com/console`.
 - **Per-app attribution.** When the app declares which Dibbla app it is via the `X-Dibbla-App` header, the call is tagged with the app alias in the ledger.
 
 ## Endpoints
 
-| Path on `ai.dibbla.net` | Compatible with | Notes |
+| Path on `ai.dibbla.com` | Compatible with | Notes |
 |---|---|---|
-| `/openai/v1/...` | OpenAI SDKs (Node `openai`, Python `openai`, Go `openai-go`, …) | Set the SDK's `base_url` to `https://ai.dibbla.net/openai/v1`. |
+| `/openai/v1/...` | OpenAI SDKs (Node `openai`, Python `openai`, Go `openai-go`, …) | Set the SDK's `base_url` to `https://ai.dibbla.com/openai/v1`. |
 | `/anthropic` | Anthropic SDKs | The Anthropic SDK appends `/v1/messages` itself, so the base URL ends at `/anthropic`. |
 | `/health` | — | unauthenticated liveness check. |
-| `/console/` | Browser | dashboard (cookie auth via the same Dibbla session as `app.dibbla.net`). |
+| `/console/` | Browser | dashboard (cookie auth via the same Dibbla session as `app.dibbla.com`). |
 
 ## Authentication
 
@@ -26,7 +26,7 @@ Pass the user's **Dibbla API token** the same way you'd pass an OpenAI/Anthropic
 | OpenAI Node/Python/Go | `Authorization: Bearer <key>` | the Dibbla API token |
 | Anthropic Node/Python/Go | `x-api-key: <key>` | the Dibbla API token |
 
-Get a token interactively at `https://app.dibbla.net/api-keys`, or in CI via `dibbla login --api-key=<token>`. Don't burn a provider key into the app — the gateway makes that obsolete.
+Get a token interactively at `https://app.dibbla.com/api-keys`, or in CI via `dibbla login --api-key=<token>`. Don't burn a provider key into the app — the gateway makes that obsolete.
 
 ## The `X-Dibbla-App` header (per-app attribution)
 
@@ -48,7 +48,7 @@ Every Dibbla-deployed pod gets these env vars without the user setting anything:
 | Variable | Value | Purpose |
 |---|---|---|
 | `DIBBLA_ALIAS` | the app's alias (e.g. `shop`) | use as the value of `X-Dibbla-App`. |
-| `DIBBLA_AI_GATEWAY_URL` | `https://ai.dibbla.net` (env-driven) | base URL the SDK should point at. |
+| `DIBBLA_AI_GATEWAY_URL` | `https://ai.dibbla.com` (env-driven) | base URL the SDK should point at. |
 | `DIBBLA_SERVICE_NAME` | this pod's service name (e.g. `web`) | optional value of `X-Dibbla-App-Service`. |
 
 `DIBBLA_AI_GATEWAY_URL` is empty in environments where deploy-api isn't configured to inject it; treat empty as "no gateway, fall back to direct provider calls".
@@ -127,7 +127,7 @@ client := openai.NewClient(
 ### curl
 
 ```bash
-curl https://ai.dibbla.net/openai/v1/chat/completions \
+curl https://ai.dibbla.com/openai/v1/chat/completions \
   -H "Authorization: Bearer $DIBBLA_API_TOKEN" \
   -H "X-Dibbla-App: $DIBBLA_ALIAS" \
   -H "Content-Type: application/json" \
@@ -136,11 +136,11 @@ curl https://ai.dibbla.net/openai/v1/chat/completions \
 
 ## Console
 
-Org members can browse all captured traffic at `https://ai.dibbla.net/console` — ledger view (filtered by user, app, or all org), trace drawer with full request/response and tool calls, live-updating as new calls land. The console uses the same Dibbla session cookie that signs into `app.dibbla.net`, so no extra login.
+Org members can browse all captured traffic at `https://ai.dibbla.com/console` — ledger view (filtered by user, app, or all org), trace drawer with full request/response and tool calls, live-updating as new calls land. The console uses the same Dibbla session cookie that signs into `app.dibbla.com`, so no extra login.
 
 ## Rules of thumb
 
 - **Don't smuggle provider keys past the gateway.** If the app is configured with both a Dibbla token and an `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, point the SDK at the gateway anyway. The gateway is the audit boundary.
-- **Always read the gateway URL from `DIBBLA_AI_GATEWAY_URL`.** Don't hard-code `https://ai.dibbla.net`; that string changes between dev/staging/prod.
+- **Always read the gateway URL from `DIBBLA_AI_GATEWAY_URL`.** Don't hard-code `https://ai.dibbla.com`; that string changes between dev/staging/prod.
 - **The `X-Dibbla-App` header is best-effort, not authentication.** Setting it without the user's Dibbla token, or with an alias from a different org, will not unlock anything — it just gets ignored. Don't use it as a security boundary.
 - **Streaming works the same way as direct calls.** SSE is forwarded byte-for-byte with no buffering; the gateway also tees a copy into the parser so the captured record carries full content blocks. Use `stream: true` (OpenAI) or `stream: true` (Anthropic) exactly as you would direct.

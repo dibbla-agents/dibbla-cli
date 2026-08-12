@@ -24,7 +24,7 @@ go get github.com/dibbla-agents/sdk-go@latest
 
 - **Go ≥ 1.23.1** required.
 - Single import: `import "github.com/dibbla-agents/sdk-go"` (the package name is `sdk`, not `sdkgo`).
-- If you're migrating from the old `github.com/FatsharkStudiosAB/codex/workflows/workers/go/sdk` path, swap the import; the public API surface is the same.
+- If you're migrating from a pre-1.0 internal SDK path, swap the import; the public API surface is the same.
 
 ## 3. Mental model
 
@@ -248,7 +248,7 @@ server, _ := sdk.New(
 **Endpoint** (`GRPC_SERVER_ADDRESS`):
 
 - Dibbla cloud: `grpc.dibbla.com:443` (default, TLS).
-- Self-hosted / customer cluster: `grpc.<your-domain>:443` (e.g. `grpc.haja-dev.fatshark.se:443`).
+- Self-hosted cluster: `grpc.<your-domain>:443` (whatever hostname your install exposes the workflow server on).
 - Local workflow server on your laptop: `localhost:50051` (auto-detected as no-TLS).
 
 ```go
