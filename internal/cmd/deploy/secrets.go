@@ -282,20 +282,43 @@ func runSecretsDelete(cmd *cobra.Command, args []string) {
 }
 
 func runSecretsImport(cmd *cobra.Command, args []string) {
-	if !requireServiceWithDeployment(os.Stderr, secretsImportDeployment, secretsImportService) {
-		os.Exit(1)
+	// The config/token lookup is deferred into a closure so --dry-run and every
+	// pre-flight failure stay strictly offline: nothing reads credentials or
+	// touches the network unless a secret is actually about to be written.
+	setSecret := func(name, value string) error {
+		cfg := config.Load()
+		requireToken(cfg)
+		_, err := secrets.CreateSecret(cfg.APIURL, cfg.APIToken, name, value, secretsImportDeployment, secretsImportService)
+		return err
+	}
+	os.Exit(runSecretsImportCore(os.Stdout, os.Stderr, args[0], secretsImportEnv,
+		secretsImportDeployment, secretsImportService, secretsImportDryRun, setSecret))
+}
+
+// runSecretsImportCore is the testable inner implementation of
+// `secrets import`. Returns the exit code. Its only side effects are writes to
+// the given writers and calls to setSecret — which it makes exactly zero of
+// when the input is rejected or --dry-run is set.
+//
+// It never writes a secret value to either writer: output is key names and
+// counts only.
+func runSecretsImportCore(stdout, stderr io.Writer, file string, envFlags []string,
+	deployment, service string, dryRun bool, setSecret func(name, value string) error) int {
+
+	if !requireServiceWithDeployment(stderr, deployment, service) {
+		return 1
 	}
 
 	// File is the base layer; -e flags override individual keys. A missing or
 	// malformed file (or a bad -e flag) fails here, before any network call.
-	envMap, err := deploypkg.MergeEnvFileAndFlags(args[0], secretsImportEnv)
+	envMap, err := deploypkg.MergeEnvFileAndFlags(file, envFlags)
 	if err != nil {
-		fmt.Printf("%s %v\n", platform.Icon("❌", "[X]"), err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "%s %v\n", platform.Icon("❌", "[X]"), err)
+		return 1
 	}
 	if len(envMap) == 0 {
-		fmt.Printf("%s No secrets found in %q.\n", platform.Icon("❌", "[X]"), args[0])
-		os.Exit(1)
+		fmt.Fprintf(stderr, "%s No secrets found in %q.\n", platform.Icon("❌", "[X]"), file)
+		return 1
 	}
 
 	// Stable, sorted key order for deterministic output (and a deterministic
@@ -315,42 +338,39 @@ func runSecretsImport(cmd *cobra.Command, args []string) {
 		}
 	}
 	if len(invalid) > 0 {
-		fmt.Printf("%s Invalid secret name(s): %s\n", platform.Icon("❌", "[X]"), strings.Join(invalid, ", "))
-		fmt.Printf("  Names must match %s\n", secretNameRe.String())
-		fmt.Println("  Nothing was imported.")
-		os.Exit(1)
+		fmt.Fprintf(stderr, "%s Invalid secret name(s): %s\n", platform.Icon("❌", "[X]"), strings.Join(invalid, ", "))
+		fmt.Fprintf(stderr, "  Names must match %s\n", secretNameRe.String())
+		fmt.Fprintln(stderr, "  Nothing was imported.")
+		return 1
 	}
 
-	scope := scopeLabel(secretsImportDeployment, secretsImportService)
+	scope := scopeLabel(deployment, service)
 
-	if secretsImportDryRun {
-		fmt.Printf("%s Dry run — would import %d secret(s) into %s:\n", platform.Icon("🌱", "[>]"), len(keys), scope)
+	if dryRun {
+		fmt.Fprintf(stdout, "%s Dry run — would import %d secret(s) into %s:\n", platform.Icon("🌱", "[>]"), len(keys), scope)
 		for _, k := range keys {
-			fmt.Printf("  %s\n", k)
+			fmt.Fprintf(stdout, "  %s\n", k)
 		}
-		fmt.Println("\nNo secrets were written (--dry-run).")
-		return
+		fmt.Fprintln(stdout, "\nNo secrets were written (--dry-run).")
+		return 0
 	}
 
-	cfg := config.Load()
-	requireToken(cfg)
-
-	fmt.Printf("%s Importing %d secret(s) into %s...\n", platform.Icon("🌱", "[>]"), len(keys), scope)
-	fmt.Println()
+	fmt.Fprintf(stdout, "%s Importing %d secret(s) into %s...\n", platform.Icon("🌱", "[>]"), len(keys), scope)
+	fmt.Fprintln(stdout)
 
 	var done []string
 	for _, k := range keys {
-		_, err := secrets.CreateSecret(cfg.APIURL, cfg.APIToken, k, envMap[k], secretsImportDeployment, secretsImportService)
-		if err != nil {
-			fmt.Printf("%s Failed at %s after %d of %d: %v\n", platform.Icon("❌", "[X]"), k, len(done), len(keys), err)
+		if err := setSecret(k, envMap[k]); err != nil {
+			fmt.Fprintf(stderr, "%s Failed at %s after %d of %d: %v\n", platform.Icon("❌", "[X]"), k, len(done), len(keys), err)
 			if len(done) > 0 {
-				fmt.Printf("  Imported before the failure: %s\n", strings.Join(done, ", "))
+				fmt.Fprintf(stderr, "  Imported before the failure: %s\n", strings.Join(done, ", "))
 			}
-			fmt.Println("  Re-running the import is safe (the server upserts).")
-			os.Exit(1)
+			fmt.Fprintln(stderr, "  Re-running the import is safe (the server upserts).")
+			return 1
 		}
 		done = append(done, k)
 	}
 
-	fmt.Printf("%s imported %d secret(s) into %s: %s\n", platform.Icon("✅", "[OK]"), len(done), scope, strings.Join(done, ", "))
+	fmt.Fprintf(stdout, "%s imported %d secret(s) into %s: %s\n", platform.Icon("✅", "[OK]"), len(done), scope, strings.Join(done, ", "))
+	return 0
 }
