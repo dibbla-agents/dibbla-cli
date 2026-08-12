@@ -13,7 +13,7 @@ The Dibbla AI gateway is a **proxy** that sits in front of OpenAI and Anthropic.
 In return:
 
 - **One key for everything.** No need to give a developer or a tool the actual OpenAI / Anthropic key. The gateway holds the platform-managed provider key and swaps it in on the way out.
-- **Every call is logged.** Every prompt, response, token count, latency, and tool call lands in `ai_gateway_db` for your Dibbla org and is browsable at `https://ai.dibbla.com/console`. You can see exactly what your assistant asked the model and what came back.
+- **Every call is logged.** Every prompt, response, token count, latency, and tool call is recorded against your Dibbla org and is browsable at `https://ai.dibbla.com/console`. You can see exactly what your assistant asked the model and what came back.
 - **Per-user attribution.** The token identifies the user, so the ledger always shows whose call it was.
 
 This skill is for **interactive use from a laptop** — IDEs, terminal assistants, ad-hoc curl. For LLM calls coming from a Dibbla-deployed app (`dibbla deploy`), the `DIBBLA_AI_GATEWAY_URL` env var is already injected into the pod — see the `dibbla` skill's `ai-gateway.md` for that path.
