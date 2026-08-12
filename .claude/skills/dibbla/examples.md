@@ -142,7 +142,7 @@ dibbla template install crm --force
 
 ## Skills (teach AI coding agents about the CLI)
 
-Install the bundled `dibbla` skill so every coding agent in the project reads it automatically. The skill content is embedded in the CLI binary — no network needed, and the skill version is locked to your installed `dibbla` version.
+Install the bundled `dibbla` skill so every coding agent in the project reads it automatically. The skill content is embedded in the CLI binary, so this command needs no network and the skill version is locked to your installed `dibbla` version. (The same files are also fetchable over HTTP from `https://dibbla.com/.well-known/agent-skills/` if you have no CLI — see reference.md.)
 
 ```bash
 # see what skills are bundled (one for now: 'dibbla')

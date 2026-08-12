@@ -462,7 +462,9 @@ Force one synchronous orphan-resource sweep on the deploy-api instance.
 
 ### `skills`
 
-The `skills` command installs the skill files that teach AI coding agents (Claude Code, Cursor, Gemini CLI, Opencode, Codex, Copilot, Windsurf, Aider, etc.) how to use the Dibbla CLI. The skill content is embedded in the binary via `//go:embed`, so no network is required and the skill version is always locked to the CLI version.
+The `skills` command installs the skill files that teach AI coding agents (Claude Code, Cursor, Gemini CLI, Opencode, Codex, Copilot, Windsurf, Aider, etc.) how to use the Dibbla CLI. The skill content is embedded in the binary via `//go:embed`, so **`dibbla skills install` requires no network** and the installed skill version is always locked to the CLI version.
+
+The same files are additionally published over HTTP at `https://dibbla.com/.well-known/agent-skills/index.json`, for agents that have no `dibbla` binary. Each entry carries a `sha256:` digest to verify against, and the bytes are mirrored from a tagged CLI release — so the version-locking story holds there too; only the transport differs.
 
 #### `skills list`
 
