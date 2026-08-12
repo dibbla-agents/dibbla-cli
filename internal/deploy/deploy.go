@@ -105,11 +105,15 @@ type Options struct {
 	Update   bool   // Rolling update with zero downtime (mutually exclusive with Force)
 	Alias    string // Custom alias; when empty, derived from directory name
 	// Optional deploy API params
-	Env        []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
-	CPU        string   // e.g. 500m
-	Memory     string   // e.g. 512Mi
-	Port       string   // e.g. 3000
-	FaviconURL string   // e.g. https://example.com/favicon.ico
+	Env []string // KEY=value pairs (Docker-style), e.g. NODE_ENV=production
+	// EnvFile, if non-empty, is a .env-style file read client-side as the base
+	// layer for env vars; Env entries override individual keys. See
+	// MergeEnvFileAndFlags for the precedence (identical to `dibbla run`).
+	EnvFile    string
+	CPU        string // e.g. 500m
+	Memory     string // e.g. 512Mi
+	Port       string // e.g. 3000
+	FaviconURL string // e.g. https://example.com/favicon.ico
 	// Login guard settings
 	RequireLogin    bool     // Require authentication to access the app
 	AccessPolicy    string   // "all_members" or "invite_only"
@@ -182,6 +186,13 @@ func Run(opts Options, r render.Renderer) (*DeployResponse, error) {
 	// validate locally so common mistakes fail before the archive upload.
 	// The server is authoritative; this is a best-effort fast path.
 	if err := validateLocalManifest(absPath); err != nil {
+		return nil, err
+	}
+
+	// Validate the env-file + -e flags up front so a missing/malformed file
+	// fails before we spend time archiving or hit the network (no partial
+	// deploy). upload re-merges to produce the wire bytes.
+	if _, err := MergeEnvFileAndFlags(opts.EnvFile, opts.Env); err != nil {
 		return nil, err
 	}
 
@@ -524,27 +535,6 @@ func shouldExclude(relPath string, info os.FileInfo) bool {
 	return false
 }
 
-// envPairsToJSON converts Docker-style KEY=value pairs into a JSON object string for the API.
-// Splits on the first "=" so values may contain "=".
-func envPairsToJSON(pairs []string) string {
-	if len(pairs) == 0 {
-		return ""
-	}
-	m := make(map[string]string, len(pairs))
-	for _, p := range pairs {
-		idx := strings.Index(p, "=")
-		if idx <= 0 {
-			continue
-		}
-		m[p[:idx]] = p[idx+1:]
-	}
-	if len(m) == 0 {
-		return ""
-	}
-	b, _ := json.Marshal(m)
-	return string(b)
-}
-
 // upload sends the archive to the API. When r is non-nil it negotiates an
 // NDJSON streaming response by setting Accept: application/x-ndjson;
 // otherwise it reads the response as a single JSON object (legacy path).
@@ -574,8 +564,15 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 	}
 	_ = writeField("app_name", appName)
 	_ = writeField("commit_message", opts.Message)
-	if envJSON := envPairsToJSON(opts.Env); envJSON != "" {
-		_ = writeField("env_vars", envJSON)
+	// Env file is the base layer; -e flags override individual keys. Already
+	// validated in Run, so an error here is not expected, but handle it.
+	envMap, err := MergeEnvFileAndFlags(opts.EnvFile, opts.Env)
+	if err != nil {
+		return nil, err
+	}
+	if len(envMap) > 0 {
+		envJSON, _ := json.Marshal(envMap)
+		_ = writeField("env_vars", string(envJSON))
 	}
 	_ = writeField("cpu", opts.CPU)
 	_ = writeField("memory", opts.Memory)
