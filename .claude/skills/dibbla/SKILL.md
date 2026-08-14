@@ -87,6 +87,29 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 - Use `--quiet` / `-q` on `db list`, `db delete`, `db connect` for machine-readable output in scripts.
 - `db create --deployment <alias>` scopes the database and its auto-created secret to a specific deployment. The scoped secret is named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `DATABASE_URL_MY_DB` for database `my_db`), **not** a plain `DATABASE_URL` — app code must read the suffixed env var.
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
+- **Document the schema in the database itself.** After creating or migrating tables, set `COMMENT ON DATABASE`, `COMMENT ON TABLE` and `COMMENT ON COLUMN`. Postgres stores these alongside the schema, so unlike a README they cannot drift from it; the console renders them, and its database agent answers from documented meaning instead of inferring from identifiers.
+
+  A **database or table** comment carries a display name and a description, as Markdown frontmatter over a Markdown body. The name is free of identifier constraints — it's what a person would call the thing:
+
+  ```sql
+  COMMENT ON TABLE articles IS $doc$---
+  name: Articles
+  ---
+  Product master data, one row per article number. Loaded nightly from the
+  supplier export; rows are never deleted, superseded ones get `active = false`.
+  $doc$;
+  ```
+
+  A **column** comment is one explanatory line, no frontmatter — it renders as a tooltip:
+
+  ```sql
+  COMMENT ON COLUMN articles.confidence IS 'Classification confidence, 0-1. Below 0.6 is reviewed by hand.';
+  ```
+
+  Say what a reader could not guess: units, ranges, what a status value means, which table a loose id points at, whether rows are ever deleted. Restating the column name (`'The article number'`) satisfies nothing. Caps on save: name 80 characters, description 1000, column tooltip 300.
+
+  Plain text without frontmatter stays valid — it's read as the description with no name, so existing comments keep working. Nothing is enforced at deploy time; an undocumented schema deploys fine, it just makes every answer about it an inference.
+
 - **524 on deploy ≠ failure.** `dibbla deploy` holds a single HTTP connection during the backend build; builds over ~100s may return a Cloudflare 524 on the client even when the backend succeeds. Wait 2–5 minutes, then run `dibbla apps list` to check. Do **not** retry with `--force` — use `--update` if you must retry.
 - **Output modes:** `dibbla deploy` streams a live buildkit-style step view when stdout is a TTY and switches to ISO-timestamped log lines (`<ts> [info] build step=N/M …`) when stdout is piped or in CI. Add `--quiet` for a single-line success/failure (script-friendly) or `--json` for a single structured object on stdout. On build failure the non-TTY mode also writes one structured JSON line to **stderr** with shape `{"event":"deploy.failed","step":"go-build","step_index":N,"step_count":M,"errors":[{file,line,col,message}],"retry_cmd":"…","api_error_code":"BUILD_FAILED"}` — coding agents should read this from stderr to locate failing files without scraping the human-readable build output. Add `--verbose-build` to ship the full server build log instead of the elided tail when parsed compile diagnostics aren't enough. Build failures exit `2`; other errors exit `1`.
 - **`.dibblaignore` controls Dibbla's managed VCS history**, not what the Docker build sees. The backend always strips `.env`, `node_modules/`, `dist/`, `*.pem`, `*.key` and similar from VCS and reports each hit in `DeployResponse.vcs_filtered` as a warning. Adding those paths (or any generated/large artifact) to `.dibblaignore` at the deploy root silences the warning and keeps VCS clean. Per-file and per-commit size caps are hard rejections — committing a large build artifact will fail the deploy with `ErrCodeVCSFiltered`; the fix is to add the path to `.dibblaignore`. Full details in `reference.md` → deploy → `.dibblaignore`.
