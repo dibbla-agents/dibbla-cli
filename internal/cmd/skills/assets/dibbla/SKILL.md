@@ -95,15 +95,15 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
   COMMENT ON TABLE articles IS $doc$---
   name: Articles
   ---
-  Dahl product master data, one row per article number. Loaded nightly from the
-  ERP export; rows are never deleted, superseded ones get `active = false`.
+  Product master data, one row per article number. Loaded nightly from the
+  supplier export; rows are never deleted, superseded ones get `active = false`.
   $doc$;
   ```
 
   A **column** comment is one explanatory line, no frontmatter — it renders as a tooltip:
 
   ```sql
-  COMMENT ON COLUMN articles.confidence IS 'ETIM classification confidence, 0-1. Below 0.6 is reviewed by hand.';
+  COMMENT ON COLUMN articles.confidence IS 'Classification confidence, 0-1. Below 0.6 is reviewed by hand.';
   ```
 
   Say what a reader could not guess: units, ranges, what a status value means, which table a loose id points at, whether rows are ever deleted. Restating the column name (`'The article number'`) satisfies nothing. Caps on save: name 80 characters, description 1000, column tooltip 300.
