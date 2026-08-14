@@ -276,7 +276,7 @@ The proxy strips any inbound `X-User-*` / `X-Session-Id` headers from the client
 | `X-User-Email` | User's email address |
 | `X-User-Name` | Display name |
 | `X-User-Org` | Organisation ID the user is acting as |
-| `X-User-Org-Role` | Role within that org (e.g. `owner`, `member`) |
+| `X-User-Org-Role` | Role within that org: `owner`, `admin`, `developer`, `viewer` (or `workload` for a pod identity). There is no `member` role. |
 | `X-User-Org-Slug` | Organisation slug (URL-safe) |
 | `X-User-GlobalAdmin` | `true` if the user is a Dibbla global admin (otherwise absent) |
 | `X-Session-Id` | JWT `jti` for browser sessions; empty for API-token requests |
