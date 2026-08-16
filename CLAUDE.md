@@ -72,13 +72,76 @@ DIB-188 scrubbed all of the above; keep it clean rather than re-running a scrub.
 
 Pushing a `v*` tag triggers two workflows in parallel:
 
-- `release.yml` — goreleaser builds cross-platform binaries, publishes a
-  GitHub Release with `checksums.txt`, updates the Homebrew tap.
+- `release.yml` — builds, signs and publishes the release (see below).
 - `publish-skill.yml` — mirrors the skill to `dibbla-agents/skills` and
   tags it.
 
 Don't push tags casually — they're public events with consumer-facing
 side effects. Confirm with the user before tagging.
+
+### `release.yml` job order is load-bearing
+
+```
+release ──┬── sign-macos ──┬── checksums ── homebrew ──┐
+          └── sign-windows ┘                           ├── notify
+```
+
+Two rules hold this together; breaking either has bitten us before:
+
+1. **Nothing touches the Homebrew tap until after signing.** GoReleaser
+   used to push the tap itself, at the end of the `release` job. When
+   `HOMEBREW_TAP_GITHUB_TOKEN` expired, that failed the `release` job and
+   *skipped both signing jobs* — v1.2.47 through v1.2.51 all shipped
+   unsigned macOS and Windows binaries, with no skill archive attached and
+   the tap frozen at v1.2.46. The tap is now the last thing to run and
+   cannot take anything else down with it.
+
+2. **`checksums.txt` has exactly one writer.** Both signing jobs used to
+   download, regex-patch and re-upload the shared file, which is why
+   sign-windows had to wait on sign-macos. The `checksums` job now
+   regenerates it wholesale from the published assets once signing is
+   done, so the signing jobs run in parallel.
+
+The Homebrew formula is rendered from `.github/homebrew/dibbla.rb.tmpl`,
+**not** by GoReleaser — its `brews` feature is deprecated upstream, and it
+could only ever see the pre-signing checksums. Edit the template here; the
+copy in the tap is generated and carries a DO-NOT-EDIT header.
+
+### Go version is pinned in go.mod, not in the workflows
+
+No workflow hardcodes a Go version — all three use `setup-go` with
+`go-version-file: go.mod`. go.mod carries two directives that mean
+different things:
+
+- `go 1.24.0` — the **compatibility floor**. README advertises `go install
+  .../cmd/dibbla@latest`, so raising this raises the minimum Go a consumer
+  needs to build from source. Change it deliberately.
+- `toolchain go1.26.6` — the toolchain we **build with**. `setup-go` reads
+  this in preference to the `go` directive, so bumping it moves CI, the
+  skill-sync check and the release build together.
+
+To move CI to a newer Go, bump `toolchain` — never add a version to a
+workflow file. `go mod tidy` (a GoReleaser before-hook) preserves both lines.
+
+One trap: **`gofmt` is a standalone binary and ignores `GOTOOLCHAIN`**, so a
+system `gofmt` of a different vintage can disagree with the CI gate. Use
+`go fmt ./...` locally, which routes through the `go` command and therefore
+the pinned toolchain. gofmt's doc-comment normalisation is the part that
+actually differs between releases — it rewrites `''` and double-backticks in
+doc comments into typographic quotes, which once silently corrupted a SQL
+snippet in `internal/secrets/secrets.go`.
+
+### Secrets the release needs
+
+`HOMEBREW_TAP_GITHUB_TOKEN` (PAT with write access to
+`dibbla-agents/homebrew-tap`) is the one with a history of silently
+expiring. The `homebrew` job now preflights it and fails with an explicit
+rotate-the-secret message instead of burying a 401 in GoReleaser output.
+
+`SLACK_BOT_URL` and `SLACK_CLUSTER_DNS` hold the notification endpoint and
+the DNS name pinned via `curl --resolve`. They're secrets rather than
+inline literals because this repo is public — same reasoning as the skill
+content rule above. If either is unset the notify step skips cleanly.
 
 ## Self-update flow
 
