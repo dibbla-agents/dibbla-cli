@@ -540,7 +540,7 @@ dibbla logs expense-reporter --service worker -f     # narrow to one service aft
 | | `--deployment <alias>` — scope the database and the auto-created secret to a specific deployment (omit for global) |
 | **Rule** | Name required via argument or `--name` |
 | **Name rules** | Lowercase letters, digits, and underscores only; must start with a letter; max 63 chars. Pattern: `^[a-z][a-z0-9_]{0,62}$`. Hyphens and uppercase are rejected. |
-| **Secret name** | Without `--deployment` the auto-created secret is `DATABASE_URL`. With `--deployment` it is `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `DATABASE_URL_NEXTJS_TODO_DB` for database `nextjs_todo_db`). App code must read the scoped name, not a plain `DATABASE_URL`. |
+| **Secret name** | The auto-created secret is **always** `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` — the database name uppercased with every non-alphanumeric character turned into `_` (e.g. `DATABASE_URL_NEXTJS_TODO_DB` for database `nextjs_todo_db`). This holds **regardless of scope**: `--deployment` changes only whether the database and its secret are org-wide or scoped to one deployment, never the secret's name shape — it is never a bare `DATABASE_URL`. App code must read `DATABASE_URL_<NAME>`. |
 
 ### db delete
 
