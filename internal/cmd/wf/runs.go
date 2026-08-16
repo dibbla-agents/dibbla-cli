@@ -43,7 +43,7 @@ var runsListCmd = &cobra.Command{
 			return output.PrintYAML(result)
 		}
 
-		headers := []string{"ID", "WORKFLOW", "STARTED"}
+		headers := []string{"ID", "WORKFLOW", "STARTED", "ORIGIN"}
 		var rows [][]string
 		for _, r := range runs {
 			rm, ok := r.(map[string]interface{})
@@ -53,7 +53,7 @@ var runsListCmd = &cobra.Command{
 			id, _ := rm["id"].(string)
 			wf, _ := rm["workflow"].(string)
 			ts := formatRunTimestamp(rm["timestamp"])
-			rows = append(rows, []string{id, wf, ts})
+			rows = append(rows, []string{id, wf, ts, formatRunOrigin(rm)})
 		}
 		output.PrintTable(headers, rows)
 		return nil
@@ -80,6 +80,23 @@ var runsOutputCmd = &cobra.Command{
 		}
 		return output.PrintJSON(result)
 	},
+}
+
+// formatRunOrigin renders the run-origin stamp for the ORIGIN column, blank
+// for runs with no stamp (the common case — hand-triggered and old-SDK runs).
+// The server projects origin_kind/origin_id only when present, so their
+// absence is exactly "no provenance". A stamped run shows "<kind>:<id>", e.g.
+// "app:lumen" or "pipeline_task:pipeline-abc-123", so the tutorial's stage 4
+// can point at "your app did this" rather than a bare run id.
+func formatRunOrigin(rm map[string]interface{}) string {
+	kind, _ := rm["origin_kind"].(string)
+	if kind == "" {
+		return ""
+	}
+	if id, _ := rm["origin_id"].(string); id != "" {
+		return kind + ":" + id
+	}
+	return kind
 }
 
 // formatRunTimestamp accepts a value coming back as either int64 (Unix
