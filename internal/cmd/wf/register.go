@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -16,6 +17,34 @@ var (
 	flagVerbose bool
 	apiClient   *apiclient.Client
 )
+
+// graphCommands are the workflow-editing command groups that live at the top
+// level rather than under `wf`. They operate on the same workflows, so reaching
+// for `dibbla wf tools add` is the natural guess — and cobra answers an unknown
+// subcommand by printing the parent's help and exiting 0, which reads as
+// success. rejectUnknownSubcommand turns that into a redirect.
+var graphCommands = map[string]string{
+	"nodes":     "dibbla nodes",
+	"edges":     "dibbla edges",
+	"inputs":    "dibbla inputs",
+	"tools":     "dibbla tools",
+	"revisions": "dibbla revisions",
+	"functions": "dibbla functions",
+}
+
+// rejectUnknownSubcommand fails instead of silently printing help, and points
+// at the real command when the caller guessed a top-level group.
+func rejectUnknownSubcommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	if target, ok := graphCommands[args[0]]; ok {
+		return fmt.Errorf("%q is not a subcommand of %q — use `%s %s` instead",
+			args[0], cmd.Name(), target, strings.Join(args[1:], " "))
+	}
+	return fmt.Errorf("unknown subcommand %q for %q — run `dibbla %s --help` to see the available ones",
+		args[0], cmd.Name(), cmd.Name())
+}
 
 // Register adds all workflow-related commands to the root command.
 func Register(root *cobra.Command) {
@@ -31,9 +60,14 @@ func Register(root *cobra.Command) {
 
 	for _, cmd := range parents {
 		cmd.PersistentPreRunE = initClient
+		cmd.RunE = rejectUnknownSubcommand
+		cmd.Args = cobra.ArbitraryArgs
 		cmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "", "Output format: yaml/json/table")
 		cmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Minimal output")
 		cmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Show HTTP request/response")
+		// Render API errors, suppress the usage dump that otherwise buries
+		// them, and attach a meaningful exit code.
+		harden(cmd)
 		root.AddCommand(cmd)
 	}
 }
@@ -89,6 +123,7 @@ func confirmAction(msg string, yes bool) bool {
 
 // printResult outputs a workflow result according to the --output and --quiet flags.
 func printResult(result map[string]interface{}, key string) error {
+	printWarnings(result)
 	if flagQuiet {
 		return nil
 	}

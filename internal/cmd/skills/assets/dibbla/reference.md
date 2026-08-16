@@ -755,6 +755,20 @@ Alias: `wf`. All workflow commands support these persistent flags:
 | `--quiet`, `-q` | Minimal output |
 | `--verbose`, `-v` | Show HTTP request/response details |
 
+Every command in the workflow family (`workflows`/`wf`, `nodes`, `edges`, `inputs`, `tools`, `revisions`, `functions`) exits with a code that identifies the failure class, so a script can branch without scraping stderr:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Everything else — network failure, unreadable file, bad flags |
+| `3` | Not authorised (401/403) |
+| `4` | Not found (404) |
+| `5` | Validation or patch failure (422) |
+| `6` | Already exists (409) |
+| `7` | Timeout (408) |
+
+Validation failures are printed grouped by rule, with the offending YAML location and the command that resolves it.
+
 > **What is a workflow?** A typed DAG of function calls authored in slim YAML. A *workflow* is a stable name; a *revision* is an immutable snapshot of its YAML. `HEAD` is the mutable working revision that every command below modifies unless `--revision` is passed. See [workflows.md](workflows.md) for the model, the YAML format, node-type roles, validator errors, and canonical shapes.
 
 ### workflows list
@@ -809,6 +823,7 @@ Full replacement of HEAD — not a merge. The CLI sends an `If-Match` header con
 | **Usage** | `dibbla workflows validate --file <path>` or `-f <path>` |
 | **Flags** | `--file`, `-f` (required) — workflow definition to validate (not saved) |
 | **Behavior** | Pure validation — never persists. Safe to run repeatedly during authoring. Returns the list of validation rule violations (`UNSATISFIED_INPUT`, `UNKNOWN_FUNCTION`, etc. — see [workflows.md](workflows.md) §10). |
+| **Exit codes** | `0` valid; `5` invalid (findings printed grouped by rule); `1` on a transport or file error. Usable directly as a CI gate. |
 
 ### workflows execute
 
