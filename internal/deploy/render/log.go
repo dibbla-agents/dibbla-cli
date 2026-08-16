@@ -166,19 +166,19 @@ func failedSummary(e *DeployError) string {
 // structuredFailure builds the JSON event the design ships on stderr —
 // one line, schema stable, designed for `jq` and coding agents.
 type structuredFailureEvent struct {
-	Event       string             `json:"event"`
-	App         string             `json:"app,omitempty"`
-	Step        string             `json:"step,omitempty"`
-	StepIndex   int                `json:"step_index,omitempty"`
-	StepCount   int                `json:"step_count,omitempty"`
-	ExitCode    int                `json:"exit_code"`
-	Reason      string             `json:"reason,omitempty"`
-	Message     string             `json:"message,omitempty"`
-	Errors      []ParsedBuildError `json:"errors,omitempty"`
-	RetryCmd    string             `json:"retry_cmd,omitempty"`
-	RequestID   string             `json:"request_id,omitempty"`
-	DeployID    string             `json:"deploy_id,omitempty"`
-	APIErrCode  string             `json:"api_error_code,omitempty"`
+	Event      string             `json:"event"`
+	App        string             `json:"app,omitempty"`
+	Step       string             `json:"step,omitempty"`
+	StepIndex  int                `json:"step_index,omitempty"`
+	StepCount  int                `json:"step_count,omitempty"`
+	ExitCode   int                `json:"exit_code"`
+	Reason     string             `json:"reason,omitempty"`
+	Message    string             `json:"message,omitempty"`
+	Errors     []ParsedBuildError `json:"errors,omitempty"`
+	RetryCmd   string             `json:"retry_cmd,omitempty"`
+	RequestID  string             `json:"request_id,omitempty"`
+	DeployID   string             `json:"deploy_id,omitempty"`
+	APIErrCode string             `json:"api_error_code,omitempty"`
 }
 
 func structuredFailure(e *DeployError) structuredFailureEvent {

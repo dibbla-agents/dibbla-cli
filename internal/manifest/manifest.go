@@ -21,14 +21,14 @@ import (
 // Error codes — kept in sync with deploy-api/internal/manifest/errors.go so
 // users see the same identifiers locally and from the server.
 const (
-	ErrCodeManifestAmbiguous     = "MANIFEST_AMBIGUOUS"
-	ErrCodeManifestInvalid       = "MANIFEST_INVALID"
-	ErrCodeManifestUnsupported   = "MANIFEST_UNSUPPORTED"
-	ErrCodeServiceNameInvalid    = "SERVICE_NAME_INVALID"
-	ErrCodeBuildContextMissing   = "BUILD_CONTEXT_MISSING"
-	ErrCodeDockerfileMissing     = "DOCKERFILE_MISSING"
-	ErrCodeStatefulNoVolume      = "STATEFUL_NO_VOLUME"
-	ErrCodeRouteInvalid          = "ROUTE_INVALID"
+	ErrCodeManifestAmbiguous   = "MANIFEST_AMBIGUOUS"
+	ErrCodeManifestInvalid     = "MANIFEST_INVALID"
+	ErrCodeManifestUnsupported = "MANIFEST_UNSUPPORTED"
+	ErrCodeServiceNameInvalid  = "SERVICE_NAME_INVALID"
+	ErrCodeBuildContextMissing = "BUILD_CONTEXT_MISSING"
+	ErrCodeDockerfileMissing   = "DOCKERFILE_MISSING"
+	ErrCodeStatefulNoVolume    = "STATEFUL_NO_VOLUME"
+	ErrCodeRouteInvalid        = "ROUTE_INVALID"
 )
 
 // Error is the structured error returned by the CLI validator.
@@ -56,22 +56,22 @@ type Manifest struct {
 // Service holds the per-service fields the CLI cares about for local
 // validation. The server's manifest module has the complete shape.
 type Service struct {
-	Build       any         `yaml:"build,omitempty"`        // string or object
-	Image       any         `yaml:"image,omitempty"`        // string or env-aware map
-	Port        *int        `yaml:"port,omitempty"`
-	Public      any         `yaml:"public,omitempty"`
-	Replicas    any         `yaml:"replicas,omitempty"`
-	CPU         any         `yaml:"cpu,omitempty"`
-	Memory      any         `yaml:"memory,omitempty"`
-	Environment any         `yaml:"environment,omitempty"`
-	Command     []string    `yaml:"command,omitempty"`
-	Entrypoint  []string    `yaml:"entrypoint,omitempty"`
-	Volumes     []Volume    `yaml:"volumes,omitempty"`
-	Profiles    []string    `yaml:"profiles,omitempty"`
-	DependsOn   []string    `yaml:"depends_on,omitempty"`
-	ExposeTo    []string    `yaml:"expose_to,omitempty"`
-	Stateful    *bool       `yaml:"stateful,omitempty"`
-	Routes      []Route     `yaml:"routes,omitempty"`
+	Build       any      `yaml:"build,omitempty"` // string or object
+	Image       any      `yaml:"image,omitempty"` // string or env-aware map
+	Port        *int     `yaml:"port,omitempty"`
+	Public      any      `yaml:"public,omitempty"`
+	Replicas    any      `yaml:"replicas,omitempty"`
+	CPU         any      `yaml:"cpu,omitempty"`
+	Memory      any      `yaml:"memory,omitempty"`
+	Environment any      `yaml:"environment,omitempty"`
+	Command     []string `yaml:"command,omitempty"`
+	Entrypoint  []string `yaml:"entrypoint,omitempty"`
+	Volumes     []Volume `yaml:"volumes,omitempty"`
+	Profiles    []string `yaml:"profiles,omitempty"`
+	DependsOn   []string `yaml:"depends_on,omitempty"`
+	ExposeTo    []string `yaml:"expose_to,omitempty"`
+	Stateful    *bool    `yaml:"stateful,omitempty"`
+	Routes      []Route  `yaml:"routes,omitempty"`
 }
 
 // Volume is a per-service persistent volume entry.
@@ -118,7 +118,7 @@ func fileExists(p string) bool {
 }
 
 var (
-	serviceNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,29}$`)
+	serviceNameRe  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,29}$`)
 	imageWithTagRe = regexp.MustCompile(`^[^\s]+:[^\s/:@]+$`)
 	dnsLabelRe     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 )

@@ -38,9 +38,9 @@ type DeployEvent struct {
 // renderers actually use — extra fields the server may add are ignored on
 // decode (json.Unmarshal default).
 type DeployResult struct {
-	Status     string         `json:"status"`
+	Status     string           `json:"status"`
 	Deployment ResultDeployment `json:"deployment"`
-	VCSCommit  string         `json:"vcs_commit,omitempty"`
+	VCSCommit  string           `json:"vcs_commit,omitempty"`
 }
 
 type ResultDeployment struct {
@@ -111,14 +111,14 @@ func (r RouteView) ConnectionURL() string {
 // DeployError is the failure payload. Mirrors the server's
 // DeployErrorEvent.
 type DeployError struct {
-	APIError    *APIError            `json:"api_error"`
-	StatusCode  int                  `json:"status_code"`
-	FailedStep  string               `json:"failed_step,omitempty"`
-	StepIndex   int                  `json:"step_index,omitempty"`
-	StepCount   int                  `json:"step_count,omitempty"`
-	BuildLogs   string               `json:"build_logs,omitempty"`
-	ParsedItems []ParsedBuildError   `json:"parsed_errors,omitempty"`
-	RetryCmd    string               `json:"retry_cmd,omitempty"`
+	APIError    *APIError          `json:"api_error"`
+	StatusCode  int                `json:"status_code"`
+	FailedStep  string             `json:"failed_step,omitempty"`
+	StepIndex   int                `json:"step_index,omitempty"`
+	StepCount   int                `json:"step_count,omitempty"`
+	BuildLogs   string             `json:"build_logs,omitempty"`
+	ParsedItems []ParsedBuildError `json:"parsed_errors,omitempty"`
+	RetryCmd    string             `json:"retry_cmd,omitempty"`
 }
 
 type APIError struct {

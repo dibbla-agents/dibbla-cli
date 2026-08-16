@@ -1,36 +1,59 @@
 name: Release
 
+# Pipeline shape (and why it is shaped this way):
+#
+#   release ──┬── sign-macos ──┬── checksums ── homebrew ──┐
+#             └── sign-windows ┘                           ├── notify
+#             (parallel)                                   ┘
+#
+# Ordering rules that are load-bearing:
+#
+#  * Nothing that talks to the Homebrew tap runs before signing. Until
+#    v1.2.51 GoReleaser pushed the tap at the end of the `release` job, so an
+#    expired HOMEBREW_TAP_GITHUB_TOKEN failed that job and *skipped both
+#    signing jobs*. Five releases (v1.2.47–v1.2.51) shipped unsigned macOS
+#    and Windows binaries before anyone noticed. The tap is now the last
+#    thing to happen, and it cannot take anything else down with it.
+#
+#  * checksums.txt is written by exactly one job, once, after every artifact
+#    has reached its final form. The signing jobs used to each download,
+#    regex-patch and re-upload the shared file, which is why sign-windows had
+#    to wait on sign-macos. With a single writer they run in parallel.
+
 on:
   push:
     tags:
       - "v*"
 
+# Never let two tag pushes race over the same release assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
+    name: Build and publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-          version: latest
-
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          # Read the version from go.mod so the release toolchain can't drift
-          # behind the module's `go` directive (GOTOOLCHAIN=local blocks upgrades).
-          go-version-file: "go.mod"
+          # Single source of truth: go.mod's `go` directive, which is both the
+          # published compatibility floor for `go install` and the version we
+          # build with. Bump it there, not here — hardcoding a version in the
+          # workflow is the drift ea9125f fixed. See CLAUDE.md for why there is
+          # deliberately no `toolchain` directive (Snyk cannot parse it).
+          go-version-file: go.mod
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -38,62 +61,42 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
+          # No HOMEBREW_TAP_GITHUB_TOKEN here on purpose — GoReleaser no
+          # longer touches the tap, so a tap credential problem can no longer
+          # abort the build. See the `homebrew` job and .goreleaser.yml.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
-      - name: Package skill archive
-        run: |
-          mkdir -p dist
-          cd .claude/skills
-          zip -r ../../dist/dibbla-cli-skill.zip dibbla/
-          echo "✓ Packaged dibbla-cli-skill.zip (will be attached to release)"
-
-      - name: Attach skill archive to release
-        id: attach
+      - name: Package and attach skill archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          gh release upload "$TAG" dist/dibbla-cli-skill.zip --clobber
-
-      - name: Notify Slack
-        if: always()
-        run: |
-          if [ "${{ steps.attach.outcome }}" = "success" ]; then status="success"; else status="failed"; fi
-          cluster_ip="$(dig +short ash.dibbla.net @1.1.1.1 | head -1)"
-          curl -fsS -X POST https://slack-bot.dibbla.net/api/notify \
-            --resolve "slack-bot.dibbla.net:443:${cluster_ip}" \
-            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_API_SECRET }}" \
-            -H "Content-Type: application/json" \
-            -d "$(cat <<EOF
-          {
-            "service": "dibbla-cli",
-            "environment": "release",
-            "tag": "${GITHUB_REF#refs/tags/}",
-            "status": "${status}",
-            "actor": "${{ github.actor }}",
-            "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          EOF
-          )" || true
+          set -euo pipefail
+          mkdir -p dist
+          # Packaged from the editable source dir, matching prior releases.
+          ( cd .claude/skills && zip -qr ../../dist/dibbla-cli-skill.zip dibbla/ )
+          gh release upload "$GITHUB_REF_NAME" dist/dibbla-cli-skill.zip --clobber
 
   sign-macos:
+    name: Sign and notarize macOS
     needs: release
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - name: Install Apple certificate
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -hex 32)
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
           echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
           security import "$CERT_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
@@ -101,7 +104,7 @@ jobs:
             -t cert \
             -f pkcs12 \
             -k "$KEYCHAIN_PATH"
-          rm "$CERT_PATH"
+          rm -f "$CERT_PATH"
 
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -109,7 +112,7 @@ jobs:
 
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
-      - name: Sign and notarize macOS binaries
+      - name: Sign, notarize and republish darwin archives
         env:
           APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -117,119 +120,72 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
           VERSION="${TAG#v}"
+          WORK="$RUNNER_TEMP/sign"
 
           for ARCH in amd64 arm64; do
-            ARCHIVE="dibbla_${VERSION}_darwin_${ARCH}"
-            TARBALL="${ARCHIVE}.tar.gz"
+            TARBALL="dibbla_${VERSION}_darwin_${ARCH}.tar.gz"
+            EXTRACT="$WORK/$ARCH"
+            echo "::group::Signing ${TARBALL}"
 
-            echo "==> Signing ${TARBALL}"
+            mkdir -p "$EXTRACT"
+            gh release download "$TAG" -p "$TARBALL" -D "$WORK" --clobber -R "$GITHUB_REPOSITORY"
+            tar -xzf "$WORK/$TARBALL" -C "$EXTRACT"
 
-            gh release download "$TAG" -p "$TARBALL" -D /tmp/sign -R "$GITHUB_REPOSITORY"
-
-            mkdir -p /tmp/sign/extract
-            tar -xzf "/tmp/sign/${TARBALL}" -C /tmp/sign/extract
+            test -f "$EXTRACT/dibbla" || { echo "::error::dibbla binary missing from $TARBALL"; exit 1; }
 
             codesign --force --options runtime \
               --sign "$APPLE_DEVELOPER_ID" \
               --timestamp \
-              /tmp/sign/extract/dibbla
+              "$EXTRACT/dibbla"
+            codesign --verify --strict --verbose=2 "$EXTRACT/dibbla"
 
-            ditto -c -k /tmp/sign/extract/dibbla /tmp/sign/dibbla-notarize.zip
-
-            xcrun notarytool submit /tmp/sign/dibbla-notarize.zip \
+            ditto -c -k "$EXTRACT/dibbla" "$WORK/notarize-${ARCH}.zip"
+            xcrun notarytool submit "$WORK/notarize-${ARCH}.zip" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_ID_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" \
               --wait
+            # A bare Mach-O executable cannot carry a stapled ticket, so there
+            # is no `stapler staple` here — Gatekeeper verifies these online.
 
-            tar -czf "/tmp/sign/${TARBALL}" -C /tmp/sign/extract .
-            gh release upload "$TAG" "/tmp/sign/${TARBALL}" --clobber -R "$GITHUB_REPOSITORY"
+            # Repack from inside the extract dir so entries keep the flat names
+            # GoReleaser produced (`README.md`, `dibbla`). The old `-C ... .`
+            # form rewrote them as `./dibbla`, gratuitously differing from the
+            # untouched linux archives.
+            ( cd "$EXTRACT" && tar -czf "$WORK/$TARBALL" -- * )
 
-            rm -rf /tmp/sign/extract /tmp/sign/dibbla-notarize.zip
+            gh release upload "$TAG" "$WORK/$TARBALL" --clobber -R "$GITHUB_REPOSITORY"
+            echo "::endgroup::"
           done
 
-          # Update checksums for the replaced archives
-          gh release download "$TAG" -p "checksums.txt" -D /tmp/sign -R "$GITHUB_REPOSITORY"
-          for ARCH in amd64 arm64; do
-            TARBALL="dibbla_${VERSION}_darwin_${ARCH}.tar.gz"
-            NEW_SUM=$(shasum -a 256 "/tmp/sign/${TARBALL}" | awk '{print $1}')
-            sed -i '' "s/^[a-f0-9]*  ${TARBALL}$/${NEW_SUM}  ${TARBALL}/" /tmp/sign/checksums.txt
-          done
-          gh release upload "$TAG" /tmp/sign/checksums.txt --clobber -R "$GITHUB_REPOSITORY"
-
-          rm -rf /tmp/sign
-
-      - name: Update Homebrew formula checksums
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
-
-          # Download the signed tarballs to compute checksums
-          mkdir -p /tmp/brew
-          for ARCH in amd64 arm64; do
-            TARBALL="dibbla_${VERSION}_darwin_${ARCH}.tar.gz"
-            gh release download "$TAG" -p "$TARBALL" -D /tmp/brew -R "$GITHUB_REPOSITORY"
-          done
-
-          SHA_AMD64=$(shasum -a 256 "/tmp/brew/dibbla_${VERSION}_darwin_amd64.tar.gz" | awk '{print $1}')
-          SHA_ARM64=$(shasum -a 256 "/tmp/brew/dibbla_${VERSION}_darwin_arm64.tar.gz" | awk '{print $1}')
-
-          # Fetch current formula
-          FORMULA=$(gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
-            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
-            --jq '.content' | base64 -d)
-          FORMULA_SHA=$(gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
-            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
-            --jq '.sha')
-
-          # Replace darwin checksums in formula
-          # Match the sha256 line that follows the darwin_amd64 url
-          FORMULA=$(echo "$FORMULA" | awk -v new="$SHA_AMD64" '
-            /darwin_amd64\.tar\.gz/ { found_amd64=1 }
-            found_amd64 && /sha256 "/ { sub(/sha256 "[a-f0-9]+"/, "sha256 \"" new "\""); found_amd64=0 }
-            { print }
-          ')
-          FORMULA=$(echo "$FORMULA" | awk -v new="$SHA_ARM64" '
-            /darwin_arm64\.tar\.gz/ { found_arm64=1 }
-            found_arm64 && /sha256 "/ { sub(/sha256 "[a-f0-9]+"/, "sha256 \"" new "\""); found_arm64=0 }
-            { print }
-          ')
-
-          # Push updated formula
-          ENCODED=$(echo "$FORMULA" | base64)
-          gh api repos/dibbla-agents/homebrew-tap/contents/Formula/dibbla.rb \
-            -X PUT \
-            -H "Authorization: token $HOMEBREW_TAP_GITHUB_TOKEN" \
-            -f message="Update darwin checksums for v${VERSION} (signed binaries)" \
-            -f content="$ENCODED" \
-            -f sha="$FORMULA_SHA"
-
-          rm -rf /tmp/brew
-          echo "✓ Updated Homebrew formula with signed checksums"
+          # checksums.txt is deliberately NOT touched here; the `checksums`
+          # job regenerates it once both signing jobs have finished.
 
       - name: Clean up keychain
         if: always()
         run: |
-          if [ -n "$KEYCHAIN_PATH" ]; then
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
             security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           fi
 
   sign-windows:
-    # Runs after sign-macos (not in parallel): both jobs edit and --clobber the
-    # single shared checksums.txt, so they must serialize to avoid losing edits.
-    needs: [release, sign-macos]
+    name: Sign Windows
+    # Only needs `release`. It used to also need sign-macos purely because both
+    # jobs rewrote checksums.txt; that file now has a single writer downstream.
+    needs: release
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Download and stage Windows binaries
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $tag = "${{ github.ref_name }}"
           $version = $tag -replace '^v', ''
           $signDir = Join-Path $env:RUNNER_TEMP 'sign'
@@ -250,7 +206,7 @@ jobs:
           "SIGN_DIR=$signDir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Sign Windows binaries
-        uses: azure/trusted-signing-action@v0
+        uses: azure/trusted-signing-action@v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -265,11 +221,12 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
-      - name: Verify, repackage, and publish signed binaries
+      - name: Verify, repackage and publish signed binaries
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
             Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
           if (-not $signtool) { throw "signtool.exe not found" }
@@ -287,25 +244,202 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload $zip" }
           }
 
-      - name: Update checksums for the re-signed Windows archives
-        shell: pwsh
+          # checksums.txt is deliberately NOT touched here; see the `checksums` job.
+
+  checksums:
+    name: Regenerate checksums
+    needs: [release, sign-macos, sign-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Rebuild checksums.txt from the published assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $checksums = Join-Path $env:SIGN_DIR 'checksums.txt'
-          gh release download $env:TAG -p 'checksums.txt' -D $env:SIGN_DIR --clobber -R $env:GITHUB_REPOSITORY
-          if ($LASTEXITCODE -ne 0) { throw "Failed to download checksums.txt" }
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
 
-          # GoReleaser format: "<sha256>  <filename>" (two spaces). Touch only the
-          # two Windows lines; leave darwin/linux entries (incl. sign-macos's) intact.
-          $content = Get-Content $checksums -Raw
-          foreach ($arch in @('amd64', 'arm64')) {
-            $zip = "dibbla_${env:VERSION}_windows_${arch}.zip"
-            $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $env:SIGN_DIR $zip)).Hash.ToLower()
-            $pattern = "(?m)^[0-9a-f]+  $([regex]::Escape($zip))$"
-            $content = $content -replace $pattern, "$hash  $zip"
+          # Recomputing from what is actually attached to the release beats
+          # patching individual lines with sed/regex: it cannot drift, and it
+          # also covers assets GoReleaser never knew about (the skill archive).
+          mkdir -p assets
+          gh release download "$TAG" -D assets --clobber -R "$GITHUB_REPOSITORY"
+          rm -f assets/checksums.txt
+
+          ( cd assets && sha256sum -- * ) > checksums.txt
+
+          echo "::group::checksums.txt"
+          cat checksums.txt
+          echo "::endgroup::"
+
+          gh release upload "$TAG" checksums.txt --clobber -R "$GITHUB_REPOSITORY"
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: checksums
+    # Stable releases only. `brew install dibbla` tracks the single formula in
+    # the tap, so publishing a release candidate there would hand every Homebrew
+    # user an rc. SemVer prerelease identifiers always contain a hyphen
+    # (v1.2.52-rc.1); stable tags (v1.2.52) never do — the same rule GoReleaser's
+    # `prerelease: auto` uses to decide how to mark the GitHub release.
+    #
+    # Everything upstream (build, both signing jobs, checksums) still runs for a
+    # prerelease, which is what makes `-rc` tags usable as a full rehearsal.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Render formula from the final checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          command -v envsubst >/dev/null || sudo apt-get install -y --no-install-recommends gettext-base
+
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+
+          gh release download "$TAG" -p checksums.txt -D . --clobber -R "$GITHUB_REPOSITORY"
+
+          # Match on the exact filename rather than relying on line order.
+          sha_for() { awk -v f="$1" '$2 == f { print $1 }' checksums.txt; }
+
+          SHA_DARWIN_AMD64="$(sha_for "dibbla_${VERSION}_darwin_amd64.tar.gz")"
+          SHA_DARWIN_ARM64="$(sha_for "dibbla_${VERSION}_darwin_arm64.tar.gz")"
+          SHA_LINUX_AMD64="$(sha_for "dibbla_${VERSION}_linux_amd64.tar.gz")"
+          SHA_LINUX_ARM64="$(sha_for "dibbla_${VERSION}_linux_arm64.tar.gz")"
+          export VERSION SHA_DARWIN_AMD64 SHA_DARWIN_ARM64 SHA_LINUX_AMD64 SHA_LINUX_ARM64
+
+          # Validate separately: `export VAR=$(...)` masks the substitution's
+          # exit status, so a guard inside sha_for could never fail the step.
+          bad=0
+          for var in SHA_DARWIN_AMD64 SHA_DARWIN_ARM64 SHA_LINUX_AMD64 SHA_LINUX_ARM64; do
+            if ! printf '%s' "${!var}" | grep -Eq '^[0-9a-f]{64}$'; then
+              echo "::error::$var is not a sha256 — missing from checksums.txt? (got '${!var}')"
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+
+          # Explicit variable list so envsubst leaves anything else literal;
+          # with no list it would silently blank out unknown placeholders and
+          # the guard below could never fire.
+          envsubst '${VERSION} ${SHA_DARWIN_AMD64} ${SHA_DARWIN_ARM64} ${SHA_LINUX_AMD64} ${SHA_LINUX_ARM64}' \
+            < .github/homebrew/dibbla.rb.tmpl > dibbla.rb
+
+          if grep -q '\${' dibbla.rb; then
+            echo "::error::Unsubstituted placeholder left in the rendered formula"
+            grep -n '\${' dibbla.rb
+            exit 1
+          fi
+          ruby -c dibbla.rb
+
+          echo "::group::Formula/dibbla.rb"
+          cat dibbla.rb
+          echo "::endgroup::"
+
+      - name: Push to dibbla-agents/homebrew-tap
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # gh must authenticate as the tap token, not the workflow token,
+          # so the preflight below actually tests the credential we rely on.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set. Create a PAT with"
+            echo "::error::write access to dibbla-agents/homebrew-tap and add it as a repo secret."
+            exit 1
+          fi
+
+          # Fail loudly and specifically on an expired/insufficient token — the
+          # 401 that broke v1.2.47+ was buried in GoReleaser's output.
+          if ! gh api repos/dibbla-agents/homebrew-tap --silent 2>/dev/null; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot read dibbla-agents/homebrew-tap"
+            echo "::error::(expired, revoked, or missing repo scope). Rotate the secret and re-run this job."
+            exit 1
+          fi
+
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/dibbla-agents/homebrew-tap.git" tap
+
+          mkdir -p tap/Formula
+          cp dibbla.rb tap/Formula/dibbla.rb
+
+          cd tap
+          git add Formula/dibbla.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for v${VERSION}"
+            exit 0
+          fi
+
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "dibbla ${VERSION}"
+          git push origin HEAD
+          echo "✓ Tap updated to v${VERSION} with signed checksums"
+
+  notify:
+    name: Notify Slack
+    needs: [release, sign-macos, sign-windows, checksums, homebrew]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Lifted to job level so the step `if` below can test it — the `secrets`
+    # context is not available in a step-level `if`, but `env` is.
+    env:
+      SLACK_BOT_URL: ${{ secrets.SLACK_BOT_URL }}
+      SLACK_CLUSTER_DNS: ${{ secrets.SLACK_CLUSTER_DNS }}
+    steps:
+      - name: Connect to Tailscale
+        if: env.SLACK_BOT_URL != '' && env.SLACK_CLUSTER_DNS != ''
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: latest
+
+      - name: Post release status
+        env:
+          # SLACK_BOT_URL / SLACK_CLUSTER_DNS are inherited from the job env.
+          # They live in secrets so this public repo does not map internal
+          # infrastructure (same rule as the skill content — see CLAUDE.md).
+          SLACK_BOT_API_SECRET: ${{ secrets.SLACK_BOT_API_SECRET }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_BOT_URL:-}" ] || [ -z "${SLACK_CLUSTER_DNS:-}" ]; then
+            echo "SLACK_BOT_URL / SLACK_CLUSTER_DNS not configured — skipping notification."
+            exit 0
+          fi
+
+          if [ "$FAILED" = "true" ]; then status="failed"; else status="success"; fi
+
+          # scheme://host[:port]/path -> host
+          host="${SLACK_BOT_URL#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          cluster_ip="$(dig +short "$SLACK_CLUSTER_DNS" @1.1.1.1 | head -1)"
+
+          curl -fsS -X POST "$SLACK_BOT_URL" \
+            --resolve "${host}:443:${cluster_ip}" \
+            -H "Authorization: Bearer ${SLACK_BOT_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<EOF
+          {
+            "service": "dibbla-cli",
+            "environment": "release",
+            "tag": "${GITHUB_REF_NAME}",
+            "status": "${status}",
+            "actor": "${GITHUB_ACTOR}",
+            "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
-          [System.IO.File]::WriteAllText($checksums, $content)
-
-          gh release upload $env:TAG $checksums --clobber -R $env:GITHUB_REPOSITORY
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload checksums.txt" }
+          EOF
+          )" || true

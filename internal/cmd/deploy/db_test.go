@@ -16,10 +16,10 @@ var stubFetchProxyInfoUnavailable dbProxyInfoFetcher = func(string, string) (dbP
 
 func TestDeriveDBHostAndSSLMode(t *testing.T) {
 	tests := []struct {
-		name         string
-		apiURL       string
-		wantHost     string
-		wantSSLMode  string
+		name        string
+		apiURL      string
+		wantHost    string
+		wantSSLMode string
 	}{
 		{"prod default", "https://api.dibbla.com", "db.dibbla.com", "require"},
 		{"prod no scheme", "api.dibbla.com", "db.dibbla.com", "require"},

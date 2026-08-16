@@ -14,23 +14,29 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: publish-skill-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
   publish-skill:
+    # Stable tags only. The contract in CLAUDE.md is that every tag in the
+    # public mirror is a shipped version whose contents match the CLI binary at
+    # that version; mirroring `v1.2.52-rc.1` would break that. Manual
+    # workflow_dispatch runs are always allowed.
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
+    # Lifted to job level so the notify step's `if` can test them — the
+    # `secrets` context is not available in a step-level `if`, but `env` is.
+    env:
+      SLACK_BOT_URL: ${{ secrets.SLACK_BOT_URL }}
+      SLACK_CLUSTER_DNS: ${{ secrets.SLACK_CLUSTER_DNS }}
     steps:
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-          version: latest
-
       - name: Checkout dibbla-cli
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
 
@@ -113,23 +119,50 @@ jobs:
 
           echo "✓ Published $VERSION to dibbla-agents/skills"
 
+      # Tailscale is only needed to reach the Slack bot, so it is connected
+      # here rather than at the top of the job — the mirror push itself only
+      # talks to github.com.
+      - name: Connect to Tailscale
+        if: always() && env.SLACK_BOT_URL != '' && env.SLACK_CLUSTER_DNS != ''
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: latest
+
       - name: Notify Slack
         if: always()
+        env:
+          # Hostnames live in secrets so this public repo does not map
+          # internal infrastructure (see CLAUDE.md).
+          SLACK_BOT_API_SECRET: ${{ secrets.SLACK_BOT_API_SECRET }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if [ "${{ job.status }}" = "success" ]; then status="success"; else status="failed"; fi
-          cluster_ip="$(dig +short ash.dibbla.net @1.1.1.1 | head -1)"
-          curl -fsS -X POST https://slack-bot.dibbla.net/api/notify \
-            --resolve "slack-bot.dibbla.net:443:${cluster_ip}" \
-            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_API_SECRET }}" \
+          set -euo pipefail
+          if [ -z "${SLACK_BOT_URL:-}" ] || [ -z "${SLACK_CLUSTER_DNS:-}" ]; then
+            echo "SLACK_BOT_URL / SLACK_CLUSTER_DNS not configured — skipping notification."
+            exit 0
+          fi
+
+          if [ "$JOB_STATUS" = "success" ]; then status="success"; else status="failed"; fi
+
+          # scheme://host[:port]/path -> host
+          host="${SLACK_BOT_URL#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          cluster_ip="$(dig +short "$SLACK_CLUSTER_DNS" @1.1.1.1 | head -1)"
+
+          curl -fsS -X POST "$SLACK_BOT_URL" \
+            --resolve "${host}:443:${cluster_ip}" \
+            -H "Authorization: Bearer ${SLACK_BOT_API_SECRET}" \
             -H "Content-Type: application/json" \
             -d "$(cat <<EOF
           {
             "service": "dibbla-cli-skill",
             "environment": "prod",
-            "tag": "${{ github.sha }}",
+            "tag": "${GITHUB_REF_NAME}",
             "status": "${status}",
-            "actor": "${{ github.actor }}",
-            "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            "actor": "${GITHUB_ACTOR}",
+            "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
           EOF
           )" || true

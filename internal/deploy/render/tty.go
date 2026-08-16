@@ -14,7 +14,7 @@ import (
 // redraws the moving region on each event by emitting cursor-up + clear
 // sequences so we never scroll the terminal during the build.
 type TTY struct {
-	w        io.Writer
+	w          io.Writer
 	enableANSI bool // set false in tests for stable golden output
 
 	startedAt   time.Time
@@ -179,7 +179,7 @@ func (t *TTY) handleRollout(ev DeployEvent) {
 func (t *TTY) redraw() {
 	if t.enableANSI && t.lastDrawnLines > 0 {
 		fmt.Fprintf(t.w, "\033[%dF", t.lastDrawnLines) // move up N lines
-		fmt.Fprint(t.w, "\033[J")                       // clear to end of screen
+		fmt.Fprint(t.w, "\033[J")                      // clear to end of screen
 	}
 	lines := t.frame()
 	for _, line := range lines {

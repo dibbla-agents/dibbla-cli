@@ -50,31 +50,27 @@ release:
   prerelease: auto
   name_template: "v{{.Version}}"
 
-brews:
-  - name: dibbla
-    repository:
-      owner: dibbla-agents
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    
-    directory: Formula
-    description: "Dibbla CLI for managing Dibbla applications"
-    homepage: "https://dibbla.com"
-
-    install: |
-      bin.install "dibbla"
-      # Generate and install shell completions
-      (bash_completion/"dibbla").write `#{bin}/dibbla completion bash`
-      (zsh_completion/"_dibbla").write `#{bin}/dibbla completion zsh`
-      (fish_completion/"dibbla.fish").write `#{bin}/dibbla completion fish`
-    test: |
-      system "#{bin}/dibbla --version"
+# NOTE: there is deliberately no `brews`/`homebrew_casks` block here.
+#
+# GoReleaser used to push the Homebrew formula as the last step of its
+# publish phase. That was wrong twice over:
+#
+#   1. It published checksums for the *unsigned* darwin tarballs, which the
+#      sign-macos job then replaced — leaving a window where `brew install`
+#      failed on a checksum mismatch.
+#   2. A failure there (e.g. an expired tap token) aborted the whole release
+#      job, silently skipping macOS/Windows code signing in downstream jobs.
+#      That is exactly what broke v1.2.47–v1.2.51.
+#
+# The tap is now rendered from .github/homebrew/dibbla.rb.tmpl by the
+# `homebrew` job in release.yml, which runs *after* signing against the
+# final checksums. See that workflow for the ordering.
 
 nfpms:
   - id: dibbla-deb
     package_name: dibbla
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    
+
     ids:
       - dibbla
 
@@ -87,3 +83,5 @@ nfpms:
     vendor: "Dibbla Agents"
     homepage: "https://dibbla.com"
     description: "Dibbla CLI for managing Dibbla applications"
+    # Required by deb/rpm; GoReleaser deprecation-warns when unset.
+    maintainer: "Dibbla Agents <support@dibbla.com>"
