@@ -1,18 +1,19 @@
 module github.com/dibbla-agents/dibbla-cli
 
-go 1.25.0
-
-// The `go` directive above is the compatibility floor for
-// `go install github.com/dibbla-agents/dibbla-cli/cmd/dibbla@latest`. It sits
-// at 1.25.0 because the patched golang.org/x/crypto, x/text and x/sys all
-// declare `go 1.25.0`; holding it at 1.24 would have meant shipping 13 known
-// x/crypto CVEs. GOTOOLCHAIN defaults to `auto`, so users on an older Go
-// still install fine — they just auto-fetch a newer toolchain.
+// Compatibility floor for
+// `go install github.com/dibbla-agents/dibbla-cli/cmd/dibbla@latest`, and the
+// version actions/setup-go installs for CI and the release build.
 //
-// This line is separate: it only selects the toolchain we build *with*.
-// actions/setup-go reads it in preference to the `go` directive, so CI,
-// skill-sync and the release build all match the dev machine.
-toolchain go1.26.6
+// It sits at 1.25.0 because the patched golang.org/x/crypto, x/text and x/sys
+// all declare `go 1.25.0`; holding it at 1.24 would have meant shipping 13
+// known x/crypto CVEs. GOTOOLCHAIN defaults to `auto`, so users on an older
+// Go still install fine — they just auto-fetch a newer toolchain.
+//
+// Deliberately no `toolchain` directive: Snyk's go.mod parser rejects it
+// ("Failed to process go.mod"), which errors the security check on every PR.
+// Verified gofmt 1.25.13 and 1.26.6 agree on this tree, so building CI on
+// 1.25.0 while dev machines run newer does not destabilise the format gate.
+go 1.25.0
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7

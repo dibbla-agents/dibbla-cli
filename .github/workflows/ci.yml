@@ -27,8 +27,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          # Same source of truth as the release build — resolves via the
-          # `toolchain` directive in go.mod.
+          # Same source of truth as the release build — go.mod's `go` directive.
           go-version-file: go.mod
 
       - name: Check formatting
@@ -36,7 +35,8 @@ jobs:
           set -euo pipefail
           # gofmt's own exit status ignores formatting, so test for output.
           #
-          # This runs the go.mod-pinned toolchain's gofmt. Locally, prefer
+          # This runs the gofmt of the Go that setup-go installed from go.mod.
+          # Locally, prefer
           # `go fmt ./...` over bare `gofmt` — gofmt is a standalone binary
           # that does NOT honour GOTOOLCHAIN, so a system gofmt of a different
           # vintage can format differently than this gate expects.

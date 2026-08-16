@@ -110,15 +110,22 @@ copy in the tap is generated and carries a DO-NOT-EDIT header.
 ### Go version is pinned in go.mod, not in the workflows
 
 No workflow hardcodes a Go version — all three use `setup-go` with
-`go-version-file: go.mod`. go.mod carries two directives that mean
-different things:
+`go-version-file: go.mod`. The single `go` directive therefore does two jobs:
+it is the **compatibility floor** for `go install .../cmd/dibbla@latest` *and*
+the version CI and the release build install. To move CI, bump it — never add
+a version to a workflow file.
 
-- `go 1.25.0` — the **compatibility floor**. README advertises `go install
-  .../cmd/dibbla@latest`, so raising this raises the minimum Go a consumer
-  needs to build from source. Change it deliberately.
-- `toolchain go1.26.6` — the toolchain we **build with**. `setup-go` reads
-  this in preference to the `go` directive, so bumping it moves CI, the
-  skill-sync check and the release build together.
+**Do not add a `toolchain` directive.** It is the natural way to separate
+"floor" from "what we build with", and it does work with `setup-go`, which
+reads it in preference to `go`. But Snyk's go.mod parser rejects it: the PR
+security check errors with `Failed to process go.mod` and reports
+`state: error` with no vulnerability detail, which reads like a real security
+finding and cost a long detour to diagnose. This was tried and reverted —
+don't rediscover it.
+
+The cost is that dev machines may run a newer Go than CI. That is fine as long
+as the format gate agrees across both; gofmt 1.25.13 and 1.26.6 were verified
+to agree on this tree. Re-check if that gap widens.
 
 The floor is not a free choice — it is pinned by the dependency graph.
 `golang.org/x/crypto` carried 13 CVEs whose fixes all land in versions
@@ -128,13 +135,10 @@ require before assuming the floor can stay put. `govulncheck ./...` is the
 tool to confirm reachability — Snyk's PR check reports on presence alone, so
 the two will disagree and govulncheck is the one that reflects real exposure.
 
-To move CI to a newer Go, bump `toolchain` — never add a version to a
-workflow file. `go mod tidy` (a GoReleaser before-hook) preserves both lines.
-
 One trap: **`gofmt` is a standalone binary and ignores `GOTOOLCHAIN`**, so a
 system `gofmt` of a different vintage can disagree with the CI gate. Use
 `go fmt ./...` locally, which routes through the `go` command and therefore
-the pinned toolchain. gofmt's doc-comment normalisation is the part that
+the module-resolved toolchain. gofmt's doc-comment normalisation is the part that
 actually differs between releases — it rewrites `''` and double-backticks in
 doc comments into typographic quotes, which once silently corrupted a SQL
 snippet in `internal/secrets/secrets.go`.

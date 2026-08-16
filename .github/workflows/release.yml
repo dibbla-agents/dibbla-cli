@@ -48,11 +48,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          # Single source of truth: go.mod. setup-go reads the `toolchain`
-          # directive in preference to `go`, so the release builds with the
-          # pinned toolchain (go1.26.6) while `go 1.25.0` stays the published
-          # compatibility floor for `go install`. Bump the pin in go.mod, not
-          # here — hardcoding a version in the workflow is the drift ea9125f fixed.
+          # Single source of truth: go.mod's `go` directive, which is both the
+          # published compatibility floor for `go install` and the version we
+          # build with. Bump it there, not here — hardcoding a version in the
+          # workflow is the drift ea9125f fixed. See CLAUDE.md for why there is
+          # deliberately no `toolchain` directive (Snyk cannot parse it).
           go-version-file: go.mod
 
       - name: Run GoReleaser
