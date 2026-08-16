@@ -14,10 +14,10 @@ import (
 
 func TestIsSSHSession(t *testing.T) {
 	tests := []struct {
-		name        string
-		connection  string
-		tty         string
-		want        bool
+		name       string
+		connection string
+		tty        string
+		want       bool
 	}{
 		{"both unset", "", "", false},
 		{"SSH_CONNECTION set", "10.0.0.1 1234 10.0.0.2 22", "", true},

@@ -16,7 +16,7 @@ type fakePreviewServer struct {
 	called   int32
 	formVals map[string]string
 	hasFile  bool
-	response any    // PreviewResponse | ErrorResponse
+	response any // PreviewResponse | ErrorResponse
 	status   int
 }
 

@@ -4,12 +4,12 @@ import (
 	_ "embed"
 	"fmt"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/admincmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/aigateway"
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/initcmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/manifestcmd"
-	"github.com/dibbla-agents/dibbla-cli/internal/cmd/admincmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/preview"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"

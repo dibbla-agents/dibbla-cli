@@ -91,7 +91,7 @@ func Stream(ctx context.Context, apiURL, apiToken, alias string, opts Options) (
 // the pod name as `[<pod>] <line>` so the caller can tell which replica
 // produced each row.
 type PodStreamOptions struct {
-	Tail   int  // 0 = no tail param; >0 = last-N lines per pod
+	Tail   int // 0 = no tail param; >0 = last-N lines per pod
 	Follow bool
 }
 
@@ -141,9 +141,9 @@ var servicePodNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,29}$`)
 
 // RunOptions controls the GET /api/wf/slim/runs/{runId}/logs query string.
 type RunOptions struct {
-	Since  time.Time     // Zero = server default (now-15m)
-	Tail   int           // 0 = none; >0 = last-N persisted entries
-	Level  string        // "debug" | "info" | "warn" | "error"; empty = info
+	Since  time.Time // Zero = server default (now-15m)
+	Tail   int       // 0 = none; >0 = last-N persisted entries
+	Level  string    // "debug" | "info" | "warn" | "error"; empty = info
 	Follow bool
 }
 

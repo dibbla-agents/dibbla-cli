@@ -316,4 +316,3 @@ func renderPointerBlock(id, cliVersion string) string {
 	b.WriteString(markerClose)
 	return b.String()
 }
-

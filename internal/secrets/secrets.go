@@ -102,7 +102,7 @@ func parseError(body []byte, statusCode int) error {
 
 // ListSecrets returns secrets for a scope:
 //   - deployment empty                  → org-global only
-//   - deployment non-empty, service ""  → deployment-wide entries (service_name='')
+//   - deployment non-empty, service ""  → deployment-wide entries (empty service_name)
 //   - deployment non-empty, service X   → per-service entries for X
 func ListSecrets(apiURL, apiToken, deployment, service string) (*SecretsListResponse, error) {
 	query := url.Values{}

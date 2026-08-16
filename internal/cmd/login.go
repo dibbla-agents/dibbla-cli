@@ -378,13 +378,13 @@ func browserLogin(apiBaseURL string) (string, error) {
 }
 
 // resolveLoginBaseURL picks the API URL to validate against, in order:
-//   1. --api-url flag OR positional arg (explicit; mutually exclusive — error if both).
-//   2. DIBBLA_API_URL env var.
-//   3. DIBBLA_AUTH_SERVICE_URL env var (the name used by the dibbla-tasks
-//      steprunner when injecting env into subprocesses — ensures `dibbla
-//      login` invoked from inside a task file targets the same service
-//      the parent CLI is logged into).
-//   4. config.DefaultAPIURL.
+//  1. --api-url flag OR positional arg (explicit; mutually exclusive — error if both).
+//  2. DIBBLA_API_URL env var.
+//  3. DIBBLA_AUTH_SERVICE_URL env var (the name used by the dibbla-tasks
+//     steprunner when injecting env into subprocesses — ensures `dibbla
+//     login` invoked from inside a task file targets the same service
+//     the parent CLI is logged into).
+//  4. config.DefaultAPIURL.
 //
 // The keyring URL is intentionally NOT consulted here — a login command's
 // purpose is to set that value, so reading it back would be circular.

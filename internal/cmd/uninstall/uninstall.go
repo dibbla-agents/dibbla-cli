@@ -14,8 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
+	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
@@ -24,11 +24,11 @@ import (
 )
 
 var (
-	flagYes         bool
-	flagDryRun      bool
-	flagKeepConfig  bool
-	flagKeepSkills  bool
-	flagSkillOnly   bool
+	flagYes        bool
+	flagDryRun     bool
+	flagKeepConfig bool
+	flagKeepSkills bool
+	flagSkillOnly  bool
 )
 
 // version is the build-time CLI version, wired in via Register.
@@ -322,4 +322,3 @@ func joinErrs(errs []error) error {
 	}
 	return fmt.Errorf("%s", msg)
 }
-

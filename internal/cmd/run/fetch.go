@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	maxYAMLBytes  = 5 * 1024 * 1024
-	fetchTimeout  = 30 * time.Second
+	maxYAMLBytes = 5 * 1024 * 1024
+	fetchTimeout = 30 * time.Second
 )
 
 // FetchYAML downloads a yaml task file from the given URL into a temp file.

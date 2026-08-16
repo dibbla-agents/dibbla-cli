@@ -18,8 +18,8 @@ import (
 
 // Entry is a single record of a skill install.
 type Entry struct {
-	ID         string    `json:"id"`
-	Root       string    `json:"root"`
+	ID          string    `json:"id"`
+	Root        string    `json:"root"`
 	InstalledAt time.Time `json:"installed_at"`
 }
 
