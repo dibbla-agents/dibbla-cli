@@ -113,12 +113,20 @@ No workflow hardcodes a Go version — all three use `setup-go` with
 `go-version-file: go.mod`. go.mod carries two directives that mean
 different things:
 
-- `go 1.24.0` — the **compatibility floor**. README advertises `go install
+- `go 1.25.0` — the **compatibility floor**. README advertises `go install
   .../cmd/dibbla@latest`, so raising this raises the minimum Go a consumer
   needs to build from source. Change it deliberately.
 - `toolchain go1.26.6` — the toolchain we **build with**. `setup-go` reads
   this in preference to the `go` directive, so bumping it moves CI, the
   skill-sync check and the release build together.
+
+The floor is not a free choice — it is pinned by the dependency graph.
+`golang.org/x/crypto` carried 13 CVEs whose fixes all land in versions
+declaring `go 1.25.0`, so 1.24 could not be held without shipping them.
+Expect the same pressure next time: check what the patched `x/*` modules
+require before assuming the floor can stay put. `govulncheck ./...` is the
+tool to confirm reachability — Snyk's PR check reports on presence alone, so
+the two will disagree and govulncheck is the one that reflects real exposure.
 
 To move CI to a newer Go, bump `toolchain` — never add a version to a
 workflow file. `go mod tidy` (a GoReleaser before-hook) preserves both lines.

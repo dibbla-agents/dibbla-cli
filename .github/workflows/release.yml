@@ -50,7 +50,7 @@ jobs:
         with:
           # Single source of truth: go.mod. setup-go reads the `toolchain`
           # directive in preference to `go`, so the release builds with the
-          # pinned toolchain (go1.26.6) while `go 1.24.0` stays the published
+          # pinned toolchain (go1.26.6) while `go 1.25.0` stays the published
           # compatibility floor for `go install`. Bump the pin in go.mod, not
           # here — hardcoding a version in the workflow is the drift ea9125f fixed.
           go-version-file: go.mod
