@@ -2,11 +2,19 @@ module github.com/dibbla-agents/dibbla-cli
 
 go 1.24.0
 
+// Compatibility floor stays at the `go` directive above so `go install
+// github.com/dibbla-agents/dibbla-cli/cmd/dibbla@latest` keeps working on
+// Go 1.24+. This line only selects the toolchain we build *with*:
+// actions/setup-go reads it in preference to the `go` directive, so CI,
+// skill-sync and the release build all match the dev machine.
+toolchain go1.26.6
+
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20
+	github.com/minio/selfupdate v0.6.0
 	github.com/spf13/cobra v1.8.1
 	github.com/zalando/go-keyring v0.2.6
 	gopkg.in/yaml.v3 v3.0.1
@@ -14,7 +22,6 @@ require (
 
 require (
 	aead.dev/minisign v0.2.0 // indirect
-	github.com/minio/selfupdate v0.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20211209193657-4570a0811e8b // indirect
 )
 
