@@ -75,6 +75,36 @@ nodes:
       - weather_tool                        # node IDs that act as this agent's tools
     outputs: [response]
 
+  # ── The same agent, using every optional capability ───────
+  # Only valid on a function that DECLARES the capability — check with
+  # `dibbla fn get <server> <name>`, which lists them under `capabilities:`.
+  # `reasoning_agent_with_toolbox` declares all of the ones below.
+  - id: rich_agent
+    type: function
+    function: reasoning_agent_with_toolbox
+    server: go-function-server1
+    inputs:
+      model: "claude-sonnet-4-5-20250514"
+      prompt_message: ~
+      system_message: ~
+    tools: [weather_tool]           # capability "tools" — tool NODES, wired as edges
+    toolbox_tools: [generate_image] # capability "tools" — tools resolved by registry NAME
+    mcp_servers:                    # capability "mcp"
+      - name: acme                  # also the lookup key into the run's credentials
+        url: https://mcp.acme.test
+        allowed_tools: [lookup]     # optional allowlist; keeps the tool list small
+    data_sources: [ds_abc]          # capability "data_sources"; or full objects (below)
+    memory:                         # capability "memory"
+      history_policy: last-N        # tiered | full | text-only | last-N | custom
+      history_policy_n: 7
+    tool_search:                    # capability "tool_search"
+      allow: true
+      persist: true
+      scope:                        # empty = the full non-agent pool
+        - { type: tag,  value: search }
+        - { type: tool, value: dangerous_thing, exclude: true }
+    outputs: [response]
+
   # ── A tool: ordinary function node, referenced from agent.tools ──
   - id: weather_tool
     type: function
@@ -99,7 +129,27 @@ edges:
   # Tool-connection edges are auto-generated from the agent's `tools:` list — do not author them manually.
 ```
 
-That's all there is. Only three top-level keys (`nodes`, `edges`, plus metadata); nine keys per node (`id`, `type`, `label`, `function`, `server`, `linked_to`, `inputs`, `outputs`, `tools`); edges are plain strings.
+That's all there is. Three top-level keys (`nodes`, `edges`, plus metadata); edges are plain strings.
+
+### Every node key
+
+| Key | Applies to | Shape |
+|---|---|---|
+| `id` | all | Unique within the workflow. **This is the name the workflow keeps** — it is what `edges:`, `tools:` and every patch command address. |
+| `type` | all | `api` \| `api_response` \| `function` |
+| `label` | all | Display name on the canvas. Cosmetic; `id` is the identity. |
+| `function`, `server` | `function` | Registry coordinates; both required |
+| `linked_to` | `api_response` | Id of the `api` node this responds for |
+| `inputs`, `outputs` | all | See below |
+| `tools` | agent `function` | Node ids to wire in as tools |
+| `toolbox_tools` | agent `function` | Registry function **names**, resolved at run time |
+| `mcp_servers` | agent `function` | `{name, url, allowed_tools?}` entries |
+| `data_sources` | agent `function` | Bare source id, or `{source_id, access?, allowed_operations?, include_linked_tools?, allowed_linked_tools?}` |
+| `memory` | agent `function` | `{history_policy?, history_policy_n?}` |
+| `tool_search` | agent `function` | `{allow?, persist?, scope?}` |
+| `capability_providers` | agent `function` | Capability seat → provider name |
+
+The agent keys are only accepted on a function that declares the matching capability; otherwise you get `CAPABILITY_NOT_SUPPORTED` (or `TOOLS_NOT_SUPPORTED` for `tools:`) rather than a setting that is saved and then ignored.
 
 ### Inputs is polymorphic by node type
 
@@ -110,6 +160,12 @@ That's all there is. Only three top-level keys (`nodes`, `edges`, plus metadata)
 | `function` | Map of name → value (use `~` for null) | `inputs: { model: "claude-sonnet-4-5", prompt: ~ }` |
 
 `outputs:` is always a list of names. For `function` nodes you only need to list outputs when you want to override or augment what the registry declares.
+
+**You only have to write the inputs that are required.** `dibbla fn get` reports which those are under `required_inputs`; everything else is optional and can be omitted entirely. Optional inputs are still settable — a value or an edge works fine — they just don't have to be. Engine-injected inputs (`_capability_providers`, `has_credentials`, `_original_system_message`) and the agent's internal `tools` array are not authorable at all and never appear in `wf get` output.
+
+### `wf get` output is re-appliable as-is
+
+`dibbla wf get <name> -o yaml` returns exactly what `wf create`/`wf update` accept, and applying it back is a no-op — same ids, same api trigger urls, byte-identical on a second `wf get`. That makes the download → edit → upload loop safe, and makes `wf get` a good way to crib the shape of an existing workflow.
 
 ---
 
@@ -175,28 +231,52 @@ The most-used pattern in production: one `api` input, one or more `function`-as-
   outputs: [date]
 ```
 
-Mid-flight: `dibbla tools add <workflow> <agent_id> <tool_id>` and `dibbla tools remove <workflow> <agent_id> <tool_id>` patch HEAD without rewriting the whole YAML.
+Mid-flight: `dibbla tools add <workflow> <agent_id> <tool_id>` and `dibbla tools remove <workflow> <agent_id> <tool_id>` patch HEAD without rewriting the whole YAML. (Note the namespace: these are top-level commands, not `dibbla wf tools`.) Both fail loudly rather than no-op — adding a tool the agent already has, or removing one it doesn't, is an error with the current tool list in the message.
+
+### Three ways to give an agent tools
+
+They compose; use whichever fits.
+
+| | How | When |
+|---|---|---|
+| `tools:` | Node ids, wired as graph edges | The tool is a node you want to see and configure on the canvas |
+| `toolbox_tools:` | Registry function **names**, resolved at run time | You want many tools without a node each; the tool needs no per-node config |
+| `mcp_servers:` | External MCP server, its tools exposed to the agent | The capability lives outside the registry |
+
+`tools:` needs a node per tool and shows up as wiring; `toolbox_tools:` is just a list of names. For ten tools the second is far less YAML. Use `allowed_tools:` on an MCP server to keep the agent's tool list short — every exposed tool costs context on every turn.
 
 ### Picking an agent function — what works, what to avoid
 
-Several agent-shaped functions exist in the registry. As of this skill's last update, only one is unconditionally safe for new work:
+Several agent-shaped functions exist in the registry. Always confirm against `dibbla fn get` — the list below is a starting point, not the source of truth.
 
-- **`reasoning_agent_function`** (preferred) — the workhorse. `accepts_tools`. Takes `system_message`, `prompt_message`, `model`, `tools`. Use this unless you have a specific reason not to.
+- **`reasoning_agent_with_toolbox`** (preferred when you need more than plain tool calls) — the full-capability agent: `tools`, `toolbox_tools`, `mcp_servers`, `data_sources`, `memory`, `tool_search`, `structured_output`. Required inputs are just `system_message`, `prompt_message`, `model`; every capability is opt-in and can be omitted. Use `*_no_cache` while developing (see below).
+- **`reasoning_agent_function`** — the smaller workhorse. `accepts_tools`, and nothing else: `system_message`, `prompt_message`, `model`, `tools`. Fine when wired tool nodes are all you need.
 - **`reasoning_agent_with_thread`** — adds thread-id-based history. **Has been observed to silently return `{response: ""}` with claude-haiku-4-5 and claude-sonnet-4-5** even with no tools and no thread_id, because most failure paths in the function populate the `error` output instead of `response`. Don't use it for new workflows until you've verified it works in your deployment with the model you want; if you need history, manage it client-side and prepend it to the `prompt_message`.
 - **`reasoning_with_messages`** — takes `chat_messages`, `model`, `tools` only. **No `system_message` input** — you can't combine a system prompt and conversation history without smuggling the system instructions into the first message. Use sparingly.
 
-**Always wire the agent's `error` output to something** — typically into an `api_response` field, or into a downstream handlebars node that surfaces it. Agents that fail silently look identical to agents that succeed with an empty answer, and the result is hours of debugging blind:
+**Do not wire the agent's `error` output into the `api_response` node.** It looks like the right way to surface failures, and it hangs the workflow:
 
 ```yaml
+# ⚠️ This shape never returns.
 - id: api_response
   type: api_response
   linked_to: api_input
-  inputs: [response, error]      # ← surface BOTH
-
+  inputs: [response, error]
 edges:
   - agent.response -> api_response.response
-  - agent.error    -> api_response.error
+  - agent.error    -> api_response.error   # ← api_response now waits for this too
 ```
+
+A wired input on an `api_response` gates it. On a successful run the agent produces `response` and never produces `error`, so the response node waits for a value nothing will send — the run stalls until the stuck-run watchdog logs `run is not making progress`, and the caller blocks to its own timeout. Verified on dev 2026-08-16: the identical workflow without the `error` edge returns in seconds.
+
+Surface agent failures through the run instead, which costs nothing and works on both paths:
+
+```bash
+dibbla wf execute <name> --data '{…}' --follow   # errors appear in the log tail
+dibbla wf logs <runId>                           # after the fact
+```
+
+Agents that fail silently do still look identical to agents that succeed with an empty answer — that problem is real, the `api_response` wiring just isn't the fix for it. If you need the error in the HTTP body, put a `handlebars_template` node between the agent and the response that merges `response` and `error` into one field, and wire only that node's output into `api_response`.
 
 ### Cache TTL — vary your input or fail your tests
 
@@ -222,7 +302,9 @@ For any input to be satisfied (and the node to fire), it needs a value from one 
 
 You can introspect a function's tags with `dibbla fn get <server> <name>`.
 
-**Match YAML types to the function's declared types.** Tool inputs are decoded into Go structs via reflection; sending `triggered: "true"` (string) into a `bool` input fails at runtime with `cannot unmarshal string into Go struct field Inputs.x of type bool`. Send native YAML types: `true` not `"true"`, `42` not `"42"`. **`dibbla fn get <server> <name>` is the ground truth** — it now reports the actual Go-reflected types (`boolean` / `integer` / `float` / `string`). Older cached function definitions or pre-fix YAML may have stringly-typed slots; when in doubt, regenerate the input shape from `fn get`, or read the function source at `go-toolserver/functions/<name>/function.go`.
+**Match YAML types to the function's declared types.** Tool inputs are decoded into Go structs via reflection; sending `triggered: "true"` (string) into a `bool` input fails at runtime with `cannot unmarshal string into Go struct field Inputs.x of type bool`. Send native YAML types: `true` not `"true"`, `42` not `"42"`. **`dibbla fn get <server> <name>` is the ground truth** — it reports the actual Go-reflected types (`boolean` / `integer` / `float` / `string`). When in doubt, regenerate the input shape from `fn get`, or read the function source at `go-toolserver/functions/<name>/function.go`.
+
+**Array-typed inputs are spelled with a `[]` suffix in the schema** (`files[]`, `mcp_servers[]`, `toolbox_tools[]`). Edges accept either spelling — `agent.files` and `agent.files[]` resolve to the same port — but `wf get` emits the schema spelling.
 
 ---
 
@@ -237,10 +319,22 @@ dibbla fn list --server go-function-server1
 dibbla fn get go-function-server1 reasoning_agent_function   # full schema for one
 ```
 
+`fn get` answers from what the function itself publishes, so it works for every registered function whether or not any workflow uses it yet. The fields that matter when authoring:
+
+| Field | Use |
+|---|---|
+| `required_inputs` | The only inputs you must satisfy. Write these; omit the rest. |
+| `inputs.<name>.required` | Same thing per-input, alongside `type` and `allowed_values` |
+| `inputs.<name>.capability` | Which optional capability an input belongs to |
+| `capabilities` | The agent keys this function accepts (`tools`, `mcp`, `memory`, …) |
+| `accepts_tools` | Whether a `tools:` list is legal at all |
+| `collects_values` | Whether arbitrary extra inputs are allowed (handlebars-style) |
+
 A reasonable warmup before authoring anything non-trivial:
 
 ```bash
-dibbla fn list -o json | jq '.[] | {name, server, tags}'
+dibbla fn list --tag accepts_tools
+dibbla fn get go-function-server1 reasoning_agent_with_toolbox -o json | jq '{required_inputs, capabilities}'
 dibbla wf get <some_existing_workflow> -o yaml > /tmp/template.yaml   # crib the shape
 ```
 
@@ -328,12 +422,35 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `INVALID_ENUM_VALUE` | An input value is constrained by an `enum:` tag (e.g. valid models) and the value isn't in the allowed list | `dibbla fn get <server> <name>` — the allowed values are listed under each input's `allowed_values` |
 | `UNKNOWN_TOOL_NODE` | An agent's `tools: [foo]` references a node id that doesn't exist | Add the tool node, or fix the id reference |
 | `INVALID_LINK` | `api_response.linked_to` points at a missing node, or at a node that isn't `type: api` | Point it at the corresponding `api` node |
-| `UNSATISFIED_INPUT` | A `function` node's input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Tool-node inputs are exempt (they're filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
+| `UNSATISFIED_INPUT` | A **required** input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Only inputs in the function's `required_inputs` are checked — optional and capability inputs are not. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
+| `TOOLS_NOT_SUPPORTED` | `tools:` on a function that isn't tagged `accepts_tools` | Pick an agent function — `dibbla fn list --tag accepts_tools`. (Previously this was accepted and the tools were silently ignored at runtime.) |
+| `CAPABILITY_NOT_SUPPORTED` | `toolbox_tools:` / `mcp_servers:` / `data_sources:` / `memory:` / `tool_search:` on a function that doesn't declare that capability | `dibbla fn get <server> <name>` lists the capabilities the function has |
+| `INVALID_MCP_SERVER` | An `mcp_servers:` entry is missing `name` or `url`, or uses the reserved `_` name prefix | Supply both; rename off the `_` prefix |
+| `SELF_REFERENTIAL_TOOL` | A node lists its own id in `tools:` | Remove it — that's an immediate cycle |
+| `INVALID_VALUE` | A capability setting is out of range (e.g. negative `history_policy_n`) | Correct the value |
 | `INVALID_EDGE_FORMAT` | Edge string isn't `"src.port -> tgt.port"` (note the spaces) | Fix the syntax |
 | `UNKNOWN_NODE` | Edge references a node id that doesn't exist | Fix the id |
 | `UNKNOWN_PORT` | Edge port name isn't in the node's declared inputs/outputs (registry-declared inputs/outputs count too) | Use `dibbla fn get` to confirm the right names |
 | `DUPLICATE_INPUT_EDGE` | Two edges target the same input port | Remove one — an input only takes one feed |
 | `CYCLE_DETECTED` | The graph contains a cycle | Restructure; the runtime won't execute cycles. If you need iteration, model it as a sub-workflow called repeatedly |
+
+### Exit codes — script against these, not against stderr
+
+Every `wf` / `nodes` / `edges` / `inputs` / `tools` / `revisions` / `functions` command exits with a code that identifies the failure class:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success. For `wf validate`, the workflow is valid. |
+| 1 | Everything else — network failure, unreadable file, bad flags |
+| 3 | Not authorised (401/403) — `dibbla login` |
+| 4 | Not found (404) |
+| 5 | Validation or patch failure (422). **`wf validate` exits 5 on an invalid workflow**, so it works as a CI gate |
+| 6 | Already exists (409) — use `update` instead of `create` |
+| 7 | Timeout (408) |
+
+```bash
+dibbla wf validate -f workflow.yaml || exit 1   # fails the build on an invalid workflow
+```
 
 ---
 
@@ -541,12 +658,12 @@ Things that compile clean but bite at runtime, or that look right but aren't:
 - **`revisions restore` overwrites HEAD; it does not check out.** If you restore to recover from a bad change, then edit, then realize you wanted the *previous* HEAD back, you've already lost it unless you snapshotted.
 - **`wf delete` removes ALL revisions.** There's no soft delete and no per-revision delete.
 - **Patches don't snapshot.** `nodes add` / `edges add` / `inputs set` / `tools add` modify HEAD with no automatic revision. Wrap risky patch sequences in `revisions create` before, `revisions create` after.
+- **Patches are strict, and that's deliberate.** Adding a tool the agent already has, removing one it doesn't, setting an input the function doesn't declare, removing a node that isn't there, or removing an edge whose spacing doesn't match exactly — each is an error (exit 5) naming what's actually there, not a silent success.
+- **The editor and the CLI are safe to use on the same workflow.** A slim write preserves everything the YAML doesn't describe: canvas positions and sizes, and node settings with no slim key. Agent capability config (`toolbox_tools`, `mcp_servers`, `data_sources`, `memory`, `tool_search`) *is* described by the YAML, so it round-trips — but that also means deleting one of those keys from your file and running `wf update` clears the setting. Concurrent writes are still caught by the ETag check (see §12).
 - **The registry can change underneath you.** A function that exists today on `go-function-server1` may not next week. Workflows referencing a removed function fail at execution with `UNKNOWN_FUNCTION`. Pinning a revision pins the YAML, not the registry — there is no function-version pinning at the workflow level beyond the function's own `version` field.
 - **Edge spaces are load-bearing.** `"a.x->b.y"` is `INVALID_EDGE_FORMAT`. Always `"a.x -> b.y"`.
-- **`accepts_tools` is invisible from the YAML.** A node with `tools: […]` but a function that lacks the `accepts_tools` registry tag will accept the syntax silently and then ignore the tools at runtime. Verify with `dibbla fn get`.
 - **Tool-connection edges are auto-generated.** Don't hand-author entries like `agent.tool-connection:foo -> tool.tool-connection:bar` in `edges:`; the slim YAML has no syntax for this and the converter fills it in from `tools: […]`.
-- **`<urlid>` can go silently stale on `wf update`.** The converter preserves a node's UUID across an update only when its **semantic id** (function name, or label if set) matches one in the existing workflow. When a match isn't found, the node gets a fresh UUID and any baked-in `<urlid>` in production callers points at nothing. Most common triggers: renaming an api node, changing its label, swapping its function, or restructuring its `inputs:` enough that the slim id can't map back. **No client-side warning is emitted today** — verify by running `dibbla wf api-docs <name>` after the update and comparing the printed url id to the previous one. If it changed, update the production caller (or rebuild + redeploy if the url id is baked at build time). Symptom of a missed change: gateway-path calls hang for the full caller-side timeout (typically the undici 5-min default) while `dibbla wf execute` against the same workflow keeps working — the CLI's slim path resolves the api node dynamically and isn't affected. When iterating heavily, `wf delete --yes && wf create -f file.yaml` gives a clean state for the rest of the session.
-- **Node IDs collapse to the function name on `wf create`.** If you write `id: garden_search` for a node with `function: call_http_api`, the server normalizes the node id to `call_http_api` on save. Two nodes that share the same function name will collide and one will be lost. **Don't pick custom ids — refer to a tool by its function name** in your system prompts and your `tools:` lists. Confirmed via the round-trip note in the workflow server's e2e tests: "After create -> GET round-trip, function node IDs are derived from function names."
+- **`<urlid>` goes stale if you rename an api node.** Node identity is the `id:` you wrote, so a node keeps its UUID — and its api node keeps its `<urlid>` — across updates as long as the id doesn't change. **Changing an api node's `id:` is a rename**, and a rename gets a fresh UUID, invalidating any `<urlid>` baked into production callers. Labels, inputs and function swaps no longer affect it. After renaming an api node, run `dibbla wf api-docs <name>` and update the caller (or rebuild + redeploy if the url id is baked at build time). Symptom of a missed rename: gateway-path calls hang for the full caller-side timeout (typically the undici 5-min default) while `dibbla wf execute` keeps working — the CLI's slim path resolves the api node dynamically and isn't affected.
 - **Result cache is 1 hour, including failed runs.** `reasoning_agent_function` caches by input — re-running `wf execute` with the same body returns the cached prior result. If a prior run silently failed and returned an empty response (see §6), the empty answer is cached for an hour and looks like a persistent bug. Vary the input or use a `*_no_cache` variant during development.
-- **Silent-empty agents.** If an agent's `error` output isn't wired to anything, a runtime failure shows up as a successful response with an empty `response` field. Always route `agent.error -> api_response.error` (or into a downstream node that surfaces it).
+- **Silent-empty agents.** A runtime failure shows up as a successful response with an empty `response` field. The obvious fix — routing `agent.error -> api_response.error` — makes it worse: it hangs every successful run (§6). Watch the run instead (`wf execute --follow`, `wf logs <runId>`), or merge `response` and `error` in a `handlebars_template` node and wire only that node's output into the response.
 - **File-emitting functions need `API_TOKEN` on go-toolserver.** `generate_image`, `transcribe_audio`, and anything that uploads an artefact via `/api/files/init` authenticate with the toolserver's `API_TOKEN` env var. Missing it → the model API call succeeds but the upload 401s, and the agent's reply reads as a generic "authentication error" (the storage layer, not the model API). Platform-operator concern, not workflow-author — see [platform.md](platform.md) § 10.5.

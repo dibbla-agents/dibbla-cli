@@ -1285,14 +1285,16 @@ nodes:
   - id: api_response
     type: api_response
     linked_to: api_input
-    inputs: [response, error]
+    inputs: [response]
+    # `error` is deliberately NOT wired in — a wired input gates the response
+    # node, and a successful run never produces `error`, so the workflow would
+    # hang. See workflows.md §6. Read failures from `wf logs <runId>` instead.
 
 edges:
   - api_input.message -> agent.prompt_message
   - today.date        -> prompt.date
   - prompt.output     -> agent.system_message
   - agent.response    -> api_response.response
-  - agent.error       -> api_response.error
 ```
 
 Verify with a follow-mode smoke test, which surfaces watchdog WARNs immediately if anything fails to fire:

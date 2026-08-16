@@ -214,11 +214,76 @@ var workflowsValidateCmd = &cobra.Command{
 		if err := parseJSON(resp.Body, &result); err != nil {
 			return err
 		}
+
+		// The validate endpoint answers 200 whether or not the workflow is
+		// valid — the verdict is in the body. Reporting success on an invalid
+		// workflow made `dibbla wf validate` useless as a CI gate: the step
+		// passed and the breakage surfaced at deploy time instead.
+		if valid, ok := result["valid"].(bool); ok && !valid {
+			details := parseValidationDetails(result["errors"])
+			if flagOutput == "json" || flagOutput == "yaml" {
+				if flagOutput == "json" {
+					_ = output.PrintJSON(result)
+				} else {
+					_ = output.PrintYAML(result)
+				}
+				return &validationFailure{msg: fmt.Sprintf("workflow is not valid (%d problems)", len(details))}
+			}
+			return &validationFailure{msg: renderValidationErrors("Workflow is not valid", details)}
+		}
+
 		if flagOutput == "json" {
 			return output.PrintJSON(result)
 		}
-		return output.PrintYAML(result)
+		if flagOutput == "yaml" {
+			return output.PrintYAML(result)
+		}
+		nodes, edges := result["node_count"], result["edge_count"]
+		output.Stderr("Valid — %v nodes, %v edges", nodes, edges)
+		printWarnings(result)
+		return nil
 	},
+}
+
+// printWarnings surfaces the advisory findings the server returns alongside a
+// successful write. The response has always carried a `warnings` field; the CLI
+// used to drop it, so a workflow that saved cleanly but contained, say, a node
+// that can never fire looked indistinguishable from a perfect one.
+func printWarnings(result map[string]interface{}) {
+	items, _ := result["warnings"].([]interface{})
+	if len(items) == 0 {
+		return
+	}
+	output.Stderr("%d %s:", len(items), pluralWord(len(items), "warning", "warnings"))
+	for _, w := range items {
+		output.Stderr("  %v", w)
+	}
+}
+
+func pluralWord(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// parseValidationDetails re-reads the validator entries out of a decoded
+// response body.
+func parseValidationDetails(raw interface{}) []validationError {
+	items, _ := raw.([]interface{})
+	details := make([]validationError, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		d := validationError{}
+		d.Rule, _ = m["rule"].(string)
+		d.Message, _ = m["message"].(string)
+		d.Location, _ = m["location"].(string)
+		details = append(details, d)
+	}
+	return details
 }
 
 var workflowsExecuteCmd = &cobra.Command{
