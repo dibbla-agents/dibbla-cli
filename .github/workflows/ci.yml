@@ -1,0 +1,61 @@
+name: CI
+
+# Build, vet and test on every PR and every push to main.
+#
+# Until now the only PR gate was the skill-sync check, so a change that broke
+# the build was not caught until someone pushed a v* tag — at which point the
+# failure surfaces as a broken release rather than a red PR.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build, vet and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # Same source of truth as the release build — resolves via the
+          # `toolchain` directive in go.mod.
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          set -euo pipefail
+          # gofmt's own exit status ignores formatting, so test for output.
+          #
+          # This runs the go.mod-pinned toolchain's gofmt. Locally, prefer
+          # `go fmt ./...` over bare `gofmt` — gofmt is a standalone binary
+          # that does NOT honour GOTOOLCHAIN, so a system gofmt of a different
+          # vintage can format differently than this gate expects.
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Not gofmt-clean. Run 'gofmt -w .' and commit:"
+            printf '%s\n' "$unformatted" | while read -r f; do
+              echo "::error file=$f::$f needs gofmt"
+            done
+            gofmt -d .
+            exit 1
+          fi
+          echo "✓ gofmt clean"
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
