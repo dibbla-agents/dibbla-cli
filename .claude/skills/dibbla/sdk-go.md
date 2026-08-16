@@ -1,6 +1,6 @@
 # Dibbla Go SDK (`sdk-go`)
 
-The Go SDK at `github.com/dibbla-agents/sdk-go` is how Go workers register **functions** and **jobs** with the Dibbla workflow runtime. A worker is a long-lived process that opens a gRPC connection to the platform, declares what it can do, and handles incoming events. The platform's workflow registry is the single source of truth — once your worker is connected, its functions become callable from any workflow YAML by `(server, function)` pair, and its jobs become triggerable from `job_trigger` nodes.
+The Go SDK at `github.com/dibbla-agents/sdk-go` is how Go workers register **functions** and **jobs** with the Dibbla workflow runtime. A worker is a long-lived process that opens a gRPC connection to the platform, declares what it can do, and handles incoming events. The platform's workflow registry is the single source of truth — once your worker is connected, its functions become callable from any workflow YAML by `(server, function)` pair, and its jobs run as **pipeline jobs** — a pipeline (on a cron schedule, or via a pipeline webhook) makes the platform dispatch a `job_trigger` gRPC event to the worker. There is no `job_trigger` workflow-YAML node type.
 
 This doc covers building workers. For the workflow side (calling registered functions from YAML, validator errors, the agent+tools pattern), see [workflows.md](workflows.md). For deploying the worker as a Dibbla app, see [platform.md](platform.md).
 
@@ -8,9 +8,9 @@ This doc covers building workers. For the workflow side (calling registered func
 
 | Goal | Use |
 |---|---|
-| Add a new function to the workflow function registry | **SDK** — `sdk.NewSimpleFunction` or `sdk.NewFunction` |
+| Add a new function to the workflow function registry | **SDK** — `sdk.NewSimpleFunction` (this is the one for your own module; `sdk.NewFunction` is in-repo-only — see §5.2) |
 | Run a long-running background job that reports progress to the dashboard | **SDK** — `jobs.JobHandler` + `server.RegisterJob` |
-| Call third-party APIs using a workflow user's OAuth tokens (Google/Microsoft/GitHub) | **SDK** — advanced `Function[In, Out]` with `gs.OAuth` |
+| Call third-party APIs using a workflow user's OAuth tokens (Google/Microsoft/GitHub) | **SDK** — advanced `Function[In, Out]` with `gs.OAuth` (in-repo workers only — see §5.2) |
 | Deploy a regular HTTP app (web server, frontend, REST API) | `dibbla deploy` with a `Dockerfile`, **no SDK needed** |
 | Build / iterate / call a workflow without writing Go | `dibbla wf` commands — see [workflows.md](workflows.md) |
 
@@ -112,6 +112,8 @@ The generic `In` and `Out` types drive automatic JSON schema generation — the 
 
 ### 5.2 `Function[In, Out]` — with event + global state
 
+**In-repo only.** `Function[In, Out]` / `sdk.NewFunction` can only be built from **inside the `sdk-go` module** — its `WithHandler` takes `*types.EventMessage` and `*state.GlobalState` from `sdk-go/internal/…`, which Go's `internal/` rule makes unimportable from any other module. **Off-repo user code must use `NewSimpleFunction`** (§5.1); reach for `NewFunction` only when your worker lives inside `sdk-go` (see the footgun below).
+
 The handler signature exposes `*types.EventMessage` (workflow/run/node ids) and `*state.GlobalState` (RPC client, gRPC cache, OAuth client). This is what you need for OAuth, cross-function calls via RPC, or per-function cache control.
 
 ```go
@@ -137,7 +139,7 @@ server.RegisterFunction(
 
 ## 6. Jobs
 
-Long-running work that needs progress reporting, structured task tracking, and dashboard visibility. Triggered from a workflow `job_trigger` node and run asynchronously — each trigger spawns a goroutine on the worker and streams events back over gRPC.
+Long-running work that needs progress reporting, structured task tracking, and dashboard visibility. Registered with `server.RegisterJob` and invoked as a **pipeline job** — a pipeline (typically on a cron schedule) makes the platform send the worker a `job_trigger` gRPC event; there is no workflow-YAML node named `job_trigger`. Each trigger runs asynchronously: it spawns a goroutine on the worker and streams events back over gRPC.
 
 The `JobHost` abstraction was **removed** (see commit `0f2b190`). Register jobs directly on the server. Any tutorial or snippet that calls `server.NewJobHost(...)` or `jobs.NewJobHost(...)` is for an older SDK and will not compile.
 
@@ -271,7 +273,7 @@ These cost real debugging time — check them before suspecting your handler cod
 
 ## 9. OAuth on behalf of the workflow user
 
-Available via `gs.OAuth` on advanced `Function[In, Out]` handlers (see the §5.2 footgun about `internal/` imports).
+Available via `gs.OAuth` on advanced `Function[In, Out]` handlers — which, per the §5.2 footgun, only compile **inside the `sdk-go` module** (off-repo workers cannot import `internal/oauth`, `internal/state`, `internal/types`). This pattern is in-repo-only; external user code built with `NewSimpleFunction` cannot obtain `gs.OAuth`.
 
 ```go
 import (

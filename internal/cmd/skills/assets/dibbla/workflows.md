@@ -55,7 +55,7 @@ nodes:
   - id: system_prompt
     type: function
     function: handlebars_template       # function name from the registry
-    server: go-function-server1         # which function server hosts it
+    server: function-server         # which function server hosts it
     inputs:                             # function inputs is a MAP of name → value
       script: |                         # the template literal
         You are a helpful assistant.
@@ -66,7 +66,7 @@ nodes:
   - id: agent
     type: function
     function: reasoning_agent_function  # tagged accepts_tools in the registry
-    server: go-function-server1
+    server: function-server
     inputs:
       model: "claude-sonnet-4-5-20250514"   # hardcoded constant
       prompt_message: ~                     # ~ = null → must be supplied by an edge
@@ -82,7 +82,7 @@ nodes:
   - id: rich_agent
     type: function
     function: reasoning_agent_with_toolbox
-    server: go-function-server1
+    server: function-server
     inputs:
       model: "claude-sonnet-4-5-20250514"
       prompt_message: ~
@@ -109,7 +109,7 @@ nodes:
   - id: weather_tool
     type: function
     function: get_weather_function
-    server: go-function-server1
+    server: function-server
     inputs:
       query: ~                              # filled at runtime by the agent, NOT by an edge
     outputs: [result]
@@ -213,21 +213,21 @@ The most-used pattern in production: one `api` input, one or more `function`-as-
 - id: agent
   type: function
   function: reasoning_agent_function
-  server: go-function-server1
+  server: function-server
   inputs: { model: "claude-sonnet-4-5-20250514", prompt_message: ~, system_message: ~ }
   tools: [weather_tool, time_tool]   # ← node IDs
 
 - id: weather_tool
   type: function
   function: get_weather_function
-  server: go-function-server1
+  server: function-server
   inputs: { query: ~ }     # ← runtime-filled; do not hardcode
   outputs: [result]
 
 - id: time_tool
   type: function
   function: todays_date
-  server: go-function-server1
+  server: function-server
   outputs: [date]
 ```
 
@@ -315,8 +315,8 @@ The registry, not the YAML, is the source of truth for what functions exist, wha
 ```bash
 dibbla fn list                          # all functions, all servers
 dibbla fn list --tag accepts_tools      # only agent-eligible functions
-dibbla fn list --server go-function-server1
-dibbla fn get go-function-server1 reasoning_agent_function   # full schema for one
+dibbla fn list --server function-server
+dibbla fn get function-server reasoning_agent_function   # full schema for one
 ```
 
 `fn get` answers from what the function itself publishes, so it works for every registered function whether or not any workflow uses it yet. The fields that matter when authoring:
@@ -334,7 +334,7 @@ A reasonable warmup before authoring anything non-trivial:
 
 ```bash
 dibbla fn list --tag accepts_tools
-dibbla fn get go-function-server1 reasoning_agent_with_toolbox -o json | jq '{required_inputs, capabilities}'
+dibbla fn get function-server reasoning_agent_with_toolbox -o json | jq '{required_inputs, capabilities}'
 dibbla wf get <some_existing_workflow> -o yaml > /tmp/template.yaml   # crib the shape
 ```
 
@@ -375,7 +375,7 @@ Use when you have a working workflow and want a small change. Each command appli
 dibbla revisions create my_new_workflow
 
 # Add a node from an inline JSON spec (or a file)
-dibbla nodes add my_new_workflow --inline '{"id":"date_tool","type":"function","function":"todays_date","server":"go-function-server1","outputs":["date"]}'
+dibbla nodes add my_new_workflow --inline '{"id":"date_tool","type":"function","function":"todays_date","server":"function-server","outputs":["date"]}'
 
 # Wire it up
 dibbla edges add my_new_workflow "date_tool.date -> agent.system_message"
@@ -660,7 +660,7 @@ Things that compile clean but bite at runtime, or that look right but aren't:
 - **Patches don't snapshot.** `nodes add` / `edges add` / `inputs set` / `tools add` modify HEAD with no automatic revision. Wrap risky patch sequences in `revisions create` before, `revisions create` after.
 - **Patches are strict, and that's deliberate.** Adding a tool the agent already has, removing one it doesn't, setting an input the function doesn't declare, removing a node that isn't there, or removing an edge whose spacing doesn't match exactly — each is an error (exit 5) naming what's actually there, not a silent success.
 - **The editor and the CLI are safe to use on the same workflow.** A slim write preserves everything the YAML doesn't describe: canvas positions and sizes, and node settings with no slim key. Agent capability config (`toolbox_tools`, `mcp_servers`, `data_sources`, `memory`, `tool_search`) *is* described by the YAML, so it round-trips — but that also means deleting one of those keys from your file and running `wf update` clears the setting. Concurrent writes are still caught by the ETag check (see §12).
-- **The registry can change underneath you.** A function that exists today on `go-function-server1` may not next week. Workflows referencing a removed function fail at execution with `UNKNOWN_FUNCTION`. Pinning a revision pins the YAML, not the registry — there is no function-version pinning at the workflow level beyond the function's own `version` field.
+- **The registry can change underneath you.** A function that exists today on `function-server` may not next week. Workflows referencing a removed function fail at execution with `UNKNOWN_FUNCTION`. Pinning a revision pins the YAML, not the registry — there is no function-version pinning at the workflow level beyond the function's own `version` field.
 - **Edge spaces are load-bearing.** `"a.x->b.y"` is `INVALID_EDGE_FORMAT`. Always `"a.x -> b.y"`.
 - **Tool-connection edges are auto-generated.** Don't hand-author entries like `agent.tool-connection:foo -> tool.tool-connection:bar` in `edges:`; the slim YAML has no syntax for this and the converter fills it in from `tools: […]`.
 - **`<urlid>` goes stale if you rename an api node.** Node identity is the `id:` you wrote, so a node keeps its UUID — and its api node keeps its `<urlid>` — across updates as long as the id doesn't change. **Changing an api node's `id:` is a rename**, and a rename gets a fresh UUID, invalidating any `<urlid>` baked into production callers. Labels, inputs and function swaps no longer affect it. After renaming an api node, run `dibbla wf api-docs <name>` and update the caller (or rebuild + redeploy if the url id is baked at build time). Symptom of a missed rename: gateway-path calls hang for the full caller-side timeout (typically the undici 5-min default) while `dibbla wf execute` keeps working — the CLI's slim path resolves the api node dynamically and isn't affected.

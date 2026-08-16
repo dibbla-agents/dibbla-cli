@@ -454,13 +454,26 @@ jobs:
     image: alpine:3.20
     command: [sh, -c, "/run-report.sh"]
     environment:
+      # jobs: get ONLY the literal environment values rendered here. ${VAR} is
+      # resolved from your DEPLOY SHELL at deploy time (not from a Dibbla secret)
+      # and baked into the manifest literally — that is the only way to get
+      # config into a jobs: container.
       SLACK_WEBHOOK: ${SLACK_WEBHOOK}
 ```
 
 ```bash
-dibbla secrets set SLACK_WEBHOOK https://hooks.slack.com/... -d daily
+export SLACK_WEBHOOK=https://hooks.slack.com/...   # read by ${SLACK_WEBHOOK} at deploy time
 dibbla deploy --alias daily --no-public -m "feat: daily report job"
 ```
+
+> **`jobs:` containers get no Dibbla secrets.** `envFrom` secret injection is
+> attached to `services:` only; the renderer builds a `CronJob` for each `jobs:`
+> entry with **literal `environment:` values and no `envFrom`**, so a cron cannot
+> read any managed secret — including a managed-DB `DATABASE_URL_<NAME>` secret.
+> `${...}` values are interpolated from your deploy shell, not from
+> `dibbla secrets`. This is why the tutorial's stage 5 runs its scheduled work as
+> an **sdk-go worker** (which connects to the runtime and can use OAuth/RPC), not
+> as a `jobs:` cron.
 
 ### Inspect per-service status
 
@@ -1097,9 +1110,10 @@ fi
 
 ```bash
 # 1. Create the database (scoped to the deployment).
-#    When --deployment is set, the auto-created secret is named
-#    DATABASE_URL_<UPPERCASED_NAME>, e.g. DATABASE_URL_MY_APP_DB here.
-#    Without --deployment it is named DATABASE_URL.
+#    The auto-created secret is ALWAYS named DATABASE_URL_<UPPERCASED_NAME>,
+#    e.g. DATABASE_URL_MY_APP_DB here — regardless of scope. --deployment only
+#    controls whether the db + secret are org-wide or scoped to this deployment,
+#    never the secret name (it is never a bare DATABASE_URL).
 dibbla db create my_app_db --deployment my-app
 
 # 2. Set additional secrets
@@ -1171,8 +1185,8 @@ The canonical "ask an LLM a question, let it call a weather tool" shape. Validat
 ```bash
 # 1. Discover what's available — registry, not YAML, is the source of truth
 dibbla fn list --tag accepts_tools                  # agent-eligible functions
-dibbla fn list --server go-function-server1         # all functions on the server
-dibbla fn get go-function-server1 reasoning_agent_function   # full schema
+dibbla fn list --server function-server         # all functions on the server
+dibbla fn get function-server reasoning_agent_function   # full schema
 
 # 2. Author the slim YAML
 cat > /tmp/weather.yaml <<'EOF'
@@ -1188,7 +1202,7 @@ nodes:
   - id: system_prompt
     type: function
     function: handlebars_template
-    server: go-function-server1
+    server: function-server
     inputs:
       script: |
         You are a helpful weather assistant.
@@ -1198,7 +1212,7 @@ nodes:
   - id: agent
     type: function
     function: reasoning_agent_function
-    server: go-function-server1
+    server: function-server
     inputs:
       model: "claude-sonnet-4-5-20250514"
       prompt_message: ~
@@ -1210,7 +1224,7 @@ nodes:
   - id: weather_tool
     type: function
     function: get_weather_function
-    server: go-function-server1
+    server: function-server
     inputs:
       query: ~
     outputs: [result]
@@ -1317,7 +1331,7 @@ dibbla nodes add weather_assistant --inline '{
   "id":"date_tool",
   "type":"function",
   "function":"todays_date",
-  "server":"go-function-server1",
+  "server":"function-server",
   "outputs":["date"]
 }'
 
@@ -1327,7 +1341,7 @@ cat > /tmp/news_tool.json <<'EOF'
   "id": "news_tool",
   "type": "function",
   "function": "news_search_function",
-  "server": "go-function-server1",
+  "server": "function-server",
   "inputs": {"query": null},
   "outputs": ["headlines"]
 }
