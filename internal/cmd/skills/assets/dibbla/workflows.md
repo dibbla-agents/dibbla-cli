@@ -254,18 +254,29 @@ Several agent-shaped functions exist in the registry. Always confirm against `di
 - **`reasoning_agent_with_thread`** — adds thread-id-based history. **Has been observed to silently return `{response: ""}` with claude-haiku-4-5 and claude-sonnet-4-5** even with no tools and no thread_id, because most failure paths in the function populate the `error` output instead of `response`. Don't use it for new workflows until you've verified it works in your deployment with the model you want; if you need history, manage it client-side and prepend it to the `prompt_message`.
 - **`reasoning_with_messages`** — takes `chat_messages`, `model`, `tools` only. **No `system_message` input** — you can't combine a system prompt and conversation history without smuggling the system instructions into the first message. Use sparingly.
 
-**Always wire the agent's `error` output to something** — typically into an `api_response` field, or into a downstream handlebars node that surfaces it. Agents that fail silently look identical to agents that succeed with an empty answer, and the result is hours of debugging blind:
+**Do not wire the agent's `error` output into the `api_response` node.** It looks like the right way to surface failures, and it hangs the workflow:
 
 ```yaml
+# ⚠️ This shape never returns.
 - id: api_response
   type: api_response
   linked_to: api_input
-  inputs: [response, error]      # ← surface BOTH
-
+  inputs: [response, error]
 edges:
   - agent.response -> api_response.response
-  - agent.error    -> api_response.error
+  - agent.error    -> api_response.error   # ← api_response now waits for this too
 ```
+
+A wired input on an `api_response` gates it. On a successful run the agent produces `response` and never produces `error`, so the response node waits for a value nothing will send — the run stalls until the stuck-run watchdog logs `run is not making progress`, and the caller blocks to its own timeout. Verified on dev 2026-08-16: the identical workflow without the `error` edge returns in seconds.
+
+Surface agent failures through the run instead, which costs nothing and works on both paths:
+
+```bash
+dibbla wf execute <name> --data '{…}' --follow   # errors appear in the log tail
+dibbla wf logs <runId>                           # after the fact
+```
+
+Agents that fail silently do still look identical to agents that succeed with an empty answer — that problem is real, the `api_response` wiring just isn't the fix for it. If you need the error in the HTTP body, put a `handlebars_template` node between the agent and the response that merges `response` and `error` into one field, and wire only that node's output into `api_response`.
 
 ### Cache TTL — vary your input or fail your tests
 
@@ -654,5 +665,5 @@ Things that compile clean but bite at runtime, or that look right but aren't:
 - **Tool-connection edges are auto-generated.** Don't hand-author entries like `agent.tool-connection:foo -> tool.tool-connection:bar` in `edges:`; the slim YAML has no syntax for this and the converter fills it in from `tools: […]`.
 - **`<urlid>` goes stale if you rename an api node.** Node identity is the `id:` you wrote, so a node keeps its UUID — and its api node keeps its `<urlid>` — across updates as long as the id doesn't change. **Changing an api node's `id:` is a rename**, and a rename gets a fresh UUID, invalidating any `<urlid>` baked into production callers. Labels, inputs and function swaps no longer affect it. After renaming an api node, run `dibbla wf api-docs <name>` and update the caller (or rebuild + redeploy if the url id is baked at build time). Symptom of a missed rename: gateway-path calls hang for the full caller-side timeout (typically the undici 5-min default) while `dibbla wf execute` keeps working — the CLI's slim path resolves the api node dynamically and isn't affected.
 - **Result cache is 1 hour, including failed runs.** `reasoning_agent_function` caches by input — re-running `wf execute` with the same body returns the cached prior result. If a prior run silently failed and returned an empty response (see §6), the empty answer is cached for an hour and looks like a persistent bug. Vary the input or use a `*_no_cache` variant during development.
-- **Silent-empty agents.** If an agent's `error` output isn't wired to anything, a runtime failure shows up as a successful response with an empty `response` field. Always route `agent.error -> api_response.error` (or into a downstream node that surfaces it).
+- **Silent-empty agents.** A runtime failure shows up as a successful response with an empty `response` field. The obvious fix — routing `agent.error -> api_response.error` — makes it worse: it hangs every successful run (§6). Watch the run instead (`wf execute --follow`, `wf logs <runId>`), or merge `response` and `error` in a `handlebars_template` node and wire only that node's output into the response.
 - **File-emitting functions need `API_TOKEN` on go-toolserver.** `generate_image`, `transcribe_audio`, and anything that uploads an artefact via `/api/files/init` authenticate with the toolserver's `API_TOKEN` env var. Missing it → the model API call succeeds but the upload 401s, and the agent's reply reads as a generic "authentication error" (the storage layer, not the model API). Platform-operator concern, not workflow-author — see [platform.md](platform.md) § 10.5.
