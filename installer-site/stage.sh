@@ -27,6 +27,12 @@ PUBLIC="$HERE/public"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# GNU stat is not portable and this script is documented as runnable locally,
+# including on macOS. One helper rather than two call sites getting it wrong.
+filesize() {
+    wc -c < "$1" | tr -d ' '
+}
+
 for tool in gh jq sha256sum; do
     command -v "$tool" >/dev/null 2>&1 || { echo "stage.sh: $tool is required" >&2; exit 1; }
 done
@@ -82,12 +88,12 @@ echo "==> Generating latest.json"
         name="$(basename "$a")"
         jq -n --arg name "$name" \
               --arg url "$BASE_URL/latest/$name" \
-              --argjson size "$(stat -c%s "$a")" \
+              --argjson size "$(filesize "$a")" \
               --arg digest "sha256:$(sha256sum "$a" | cut -d' ' -f1)" \
               '{name: $name, browser_download_url: $url, size: $size, digest: $digest}'
     done
     jq -n --arg url "$BASE_URL/checksums.txt" \
-          --argjson size "$(stat -c%s "$PUBLIC/checksums.txt")" \
+          --argjson size "$(filesize "$PUBLIC/checksums.txt")" \
           --arg digest "sha256:$(sha256sum "$PUBLIC/checksums.txt" | cut -d' ' -f1)" \
           '{name: "checksums.txt", browser_download_url: $url, size: $size, digest: $digest}'
 } | jq -s --arg tag "$TAG" '{tag_name: $tag, assets: .}' > "$PUBLIC/latest.json"
@@ -95,7 +101,9 @@ echo "==> Generating latest.json"
 # Fail here rather than shipping a latest.json no client can parse, and hold the
 # grep-able-tag_name assumption install.sh depends on.
 jq -e '.tag_name and (.assets | length > 6)' "$PUBLIC/latest.json" >/dev/null
-grep -q '"tag_name"' "$PUBLIC/latest.json"
+# Anchored to the start of a line: a bare grep for the key passes on compact
+# single-line JSON too, which is exactly the shape install.sh cannot parse.
+grep -q '^[[:space:]]*"tag_name"' "$PUBLIC/latest.json"
 
 # The mirror's archive names must match AssetName() in
 # internal/cmd/update/selfreplace.go, which carries a "MUST stay in sync with
@@ -111,6 +119,47 @@ for a in "$PUBLIC/latest/"*; do
     echo "      ok $name"
 done
 
+# The six archive names AssetName() in internal/cmd/update/selfreplace.go
+# constructs. Checked by identity, not by count: `length > 6` passes with
+# darwin_arm64 missing and two unrelated tar.gz present, which would ship a
+# mirror that 404s for real users on one platform while every other check
+# stayed green.
+echo "==> Verifying the archive set matches AssetName()"
+VERSION_NUM="${TAG#v}"
+for want in \
+    "dibbla_${VERSION_NUM}_darwin_amd64.tar.gz" \
+    "dibbla_${VERSION_NUM}_darwin_arm64.tar.gz" \
+    "dibbla_${VERSION_NUM}_linux_amd64.tar.gz" \
+    "dibbla_${VERSION_NUM}_linux_arm64.tar.gz" \
+    "dibbla_${VERSION_NUM}_windows_amd64.zip" \
+    "dibbla_${VERSION_NUM}_windows_arm64.zip"; do
+    [ -s "$PUBLIC/latest/$want" ] || { echo "stage.sh: missing archive $want" >&2; exit 1; }
+done
+staged_count="$(ls -1 "$PUBLIC/latest" | wc -l | tr -d ' ')"
+[ "$staged_count" -eq 6 ] || {
+    echo "stage.sh: /latest holds $staged_count files, expected exactly 6" >&2
+    ls -1 "$PUBLIC/latest" >&2
+    exit 1
+}
+echo "      ok 6 archives, names match AssetName()"
+
+# The 50 MB platform upload limit is the entire reason the mirror is
+# latest-only, so assert it rather than only naming it in prose. Failing here
+# points at the real cause; failing later surfaces as a `dibbla deploy`
+# rejection from deploy-api *after* `checksums` has already published the
+# release -- an error from the wrong layer, at the worst moment.
+#
+# 45, not 50: room for the two scripts and tar overhead, and one new
+# architecture (~5 MB) trips this instead of the deploy.
 total_kb="$(du -sk "$PUBLIC" | cut -f1)"
-echo "==> Staged $TAG into $PUBLIC ($((total_kb / 1024)) MB, base URL $BASE_URL)"
-echo "    MAX_ARCHIVE_SIZE_MB on the platform is 50; the upload is a tar.gz of this tree."
+total_mb=$((total_kb / 1024))
+BUDGET_MB="${DIBBLA_MIRROR_BUDGET_MB:-45}"
+if [ "$total_mb" -gt "$BUDGET_MB" ]; then
+    echo "stage.sh: staged tree is ${total_mb} MB, over the ${BUDGET_MB} MB budget." >&2
+    echo "          The platform rejects uploads above MAX_ARCHIVE_SIZE_MB (50)." >&2
+    echo "          If a new architecture pushed it over, the mirror no longer fits" >&2
+    echo "          latest-only -- see P-0020's Alternatives for the proxy design." >&2
+    exit 1
+fi
+
+echo "==> Staged $TAG into $PUBLIC (${total_mb} MB of a ${BUDGET_MB} MB budget, base URL $BASE_URL)"

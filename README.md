@@ -414,8 +414,19 @@ dibbla-cli/
 │   │   └── checks.go        # Pre-flight checks
 │   └── prompt/
 │       └── prompt.go        # Interactive prompts
-├── install.sh               # macOS/Linux installer
-├── install.ps1              # Windows installer
+├── docs/
+│   ├── install.sh           # macOS/Linux installer (served at install.dibbla.com)
+│   └── install.ps1          # Windows installer
+├── installer-site/          # the app that serves install.dibbla.com
+│   ├── Caddyfile            # the origin contract: /, /latest.json, /latest/*
+│   ├── Dockerfile
+│   └── stage.sh             # stages public/ for one release tag
+├── scripts/e2e/             # shell E2E (install with GitHub unreachable)
 ├── .goreleaser.yml          # Cross-platform build config
 └── go.mod
 ```
+
+`docs/` holds the installer *content*; it is no longer a deploy source. The
+scripts reach users when the `mirror` job (on a release tag) or
+`mirror-redeploy.yml` (on a push to `main` touching them) copies them into the
+`installer-site` app. See CLAUDE.md.

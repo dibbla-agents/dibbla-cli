@@ -141,7 +141,7 @@ Every service container in a multi-service deploy receives a fixed env-var set:
 
 - **One public service:** `https://<alias>.dibbla.com` routes to that service. Backwards-compatible with the legacy single-Dockerfile path.
 - **Multiple public services (F14):** the lex-first ("primary") public service serves at `https://<alias>.dibbla.com`; subsequent public services serve at `https://<alias>-<service>.dibbla.com` (one DNS label deep, covered by the existing `*.dibbla.com` wildcard cert). Use `domain:` to claim a custom hostname instead. Per-service auth (`auth.require_login` / `auth.access_policy` / `auth.google_scopes`) is supported and env-aware so a service can be open in dev and locked down in prod with one manifest.
-- **Custom domain (`domain:`):** the platform's ingress uses your hostname directly; the alias URL keeps working in parallel. DNS (CNAME to the platform's ingress hostname) is the user's responsibility; cert provisioning is automatic via Let's Encrypt.
+- **Custom domain (`domain:`):** the platform's ingress uses your hostname directly, and the alias URL **stops serving the app** — one Ingress per public service, and the custom domain wins. Do not plan on having both. DNS (CNAME to the platform's ingress hostname) is the user's responsibility; cert provisioning is automatic via Let's Encrypt.
 
 ### Init containers and healthchecks
 

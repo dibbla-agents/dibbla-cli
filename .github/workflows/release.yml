@@ -289,6 +289,13 @@ jobs:
     # pre-signing darwin/windows archives — the exact bug .goreleaser.yml:53-67
     # records for the old Homebrew step. Do not reorder.
     needs: checksums
+    # Serialized against mirror-redeploy.yml, which publishes the same app on a
+    # push to main. Two concurrent `dibbla deploy --update` calls on one alias
+    # would race, and the loser could leave `latest.json` describing a `/latest/`
+    # it does not match.
+    concurrency:
+      group: installer-site-mirror
+      cancel-in-progress: false
     # Prereleases publish nothing here. `latest.json` and `/latest/` must stay
     # consistent with each other, so an -rc tag either moves both or neither;
     # moving `latest` to an rc would hand every new install a release candidate.
@@ -322,13 +329,30 @@ jobs:
           echo "::endgroup::"
 
       - name: Install the Dibbla CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Bootstrapped from the mirror itself, which is fine: GitHub Actions
-          # runners can reach GitHub, so even a broken mirror leaves this step
-          # working via the previous release's assets. It also means this job
-          # exercises the installer it publishes.
-          curl -fsSL https://install.dibbla.com/install.sh | sh
+          # Installed from the GitHub release, NOT from install.dibbla.com.
+          #
+          # This job's whole purpose is to deploy the install app, so it must not
+          # depend on that app already working: if the mirror is broken or serving
+          # a bad script, bootstrapping from it means the job cannot deploy the
+          # fix, and recovery becomes a manual out-of-band deploy. GitHub is
+          # reachable from Actions runners by definition — the 403 that motivated
+          # P-0020 is a sandbox restriction, not a GitHub one — so taking the
+          # binary straight off the release we just published breaks the cycle.
+          TAG="$GITHUB_REF_NAME"
+          gh release download "$TAG" -p "dibbla_${TAG#v}_linux_amd64.tar.gz" -D cli --clobber -R "$GITHUB_REPOSITORY"
+
+          # Verify it the same way the installer would, against the checksums the
+          # `checksums` job regenerated from the signed assets.
+          gh release download "$TAG" -p checksums.txt -D cli --clobber -R "$GITHUB_REPOSITORY"
+          ( cd cli && sha256sum -c --ignore-missing checksums.txt )
+
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "cli/dibbla_${TAG#v}_linux_amd64.tar.gz" -C cli
+          install -m 0755 cli/dibbla "$HOME/.local/bin/dibbla"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Deploy the install app
@@ -363,6 +387,17 @@ jobs:
           }
 
           curl -fsSL "$BASE/checksums.txt" -o live-checksums.txt
+
+          # Assert there is something to verify BEFORE the loop. The loop below
+          # reads from process substitution, which discards jq's exit status, so
+          # an empty or absent `.assets` produced zero iterations, left fail=0,
+          # and printed "Mirror verified" having checked nothing at all. The
+          # tag_name assertion above would still have passed.
+          ASSET_COUNT="$(jq -r '.assets | length' live-latest.json)"
+          [ "$ASSET_COUNT" -ge 7 ] || {
+            echo "live latest.json lists $ASSET_COUNT assets, expected at least 7 (6 archives + checksums.txt)" >&2
+            exit 1
+          }
 
           fail=0
           while read -r name url digest; do
@@ -407,13 +442,88 @@ jobs:
           curl -fsSL "$BASE/install.ps1" -o /dev/null
 
           ARCHIVE="$(jq -r '.assets[] | select(.name | endswith("linux_amd64.tar.gz")) | .browser_download_url' live-latest.json)"
-          REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
+          # -f matters: without it a 404 also yields num_redirects=0 and exit 0,
+          # so a mirror serving nothing would pass this assertion.
+          REDIRECTS="$(curl -fsS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
           [ "$REDIRECTS" = "0" ] || {
             echo "archive download followed $REDIRECTS redirect(s); it must terminate on our own origin" >&2
             exit 1
           }
 
           echo "Mirror verified: $GITHUB_REF_NAME"
+
+  verify-windows-installer:
+    name: Verify install.ps1 on Windows
+    # P-0020 E2E test 5. Until this existed, install.ps1's new Assert-Checksum
+    # had never been executed on any machine: `sign-windows` signs binaries and
+    # never invokes the installer, despite a comment in scripts/e2e that claimed
+    # otherwise. This is the only place the PowerShell path runs.
+    needs: mirror
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Install from install.dibbla.com and verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = "$env:GITHUB_REF_NAME".TrimStart('v')
+
+          irm https://install.dibbla.com/install.ps1 | iex
+
+          $exe = Join-Path $env:LOCALAPPDATA 'dibbla\dibbla.exe'
+          if (-not (Test-Path $exe)) { throw "installer did not produce $exe" }
+
+          $out = & $exe --version
+          Write-Host "installed: $out"
+          if ($out -notmatch [regex]::Escape($expected)) {
+            throw "expected version $expected, got '$out'"
+          }
+
+      - name: A corrupted archive must be refused
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Serve a valid checksums.txt alongside deliberately wrong bytes, and
+          # assert the installer aborts. Without this leg the fail-closed
+          # guarantee is only ever proven on the shell side.
+          $root = Join-Path $env:RUNNER_TEMP 'fixture'
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'latest') | Out-Null
+
+          $tag = "$env:GITHUB_REF_NAME"
+          $ver = $tag.TrimStart('v')
+          $name = "dibbla_${ver}_windows_amd64.zip"
+
+          irm https://install.dibbla.com/checksums.txt -OutFile (Join-Path $root 'checksums.txt')
+          irm https://install.dibbla.com/install.ps1  -OutFile (Join-Path $root 'install.ps1')
+          Set-Content -Path (Join-Path $root 'latest\' + $name) -Value 'not a zip' -NoNewline
+          Set-Content -Path (Join-Path $root 'latest.json') -Value ('{"tag_name":"' + $tag + '","assets":[]}')
+
+          $job = Start-Job -ScriptBlock {
+            param($p) Set-Location $p; python -m http.server 8099
+          } -ArgumentList $root
+          Start-Sleep -Seconds 3
+
+          try {
+            $env:DIBBLA_INSTALL_BASE_URL = 'http://127.0.0.1:8099'
+            $env:DIBBLA_INSTALLER_FORCE = '1'   # don't delegate to the dibbla already installed above
+            $env:DIBBLA_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'corrupt-target'
+
+            $ErrorActionPreference = 'Continue'
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'install.ps1')
+            $rc = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+
+            if ($rc -eq 0) { throw "installer exited 0 on a corrupted archive" }
+            $left = Join-Path $env:DIBBLA_INSTALL_DIR 'dibbla.exe'
+            if (Test-Path $left) { throw "installer left a binary behind after a checksum failure" }
+            Write-Host "refused correctly (exit $rc), nothing written"
+          }
+          finally {
+            Stop-Job $job -ErrorAction SilentlyContinue
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+          }
 
   homebrew:
     name: Update Homebrew tap
@@ -528,7 +638,7 @@ jobs:
 
   notify:
     name: Notify Slack
-    needs: [release, sign-macos, sign-windows, checksums, mirror, homebrew]
+    needs: [release, sign-macos, sign-windows, checksums, mirror, verify-windows-installer, homebrew]
     if: always()
     runs-on: ubuntu-latest
     permissions:

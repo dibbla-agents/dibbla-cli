@@ -70,7 +70,8 @@ Run the install command again; it almost always succeeds on the second try.
 
 **"Neither sha256sum nor shasum is available"** — your system is missing the tool
 needed to check the download. On macOS, install Homebrew and run
-`brew install dibbla-agents/tap/dibbla` instead.
+`brew tap dibbla-agents/tap && brew install dibbla` instead — the same command the
+error message itself prints.
 
 **Anything else** — copy the exact error message and send it to
 support@dibbla.com. The message text is the useful part; a screenshot of the

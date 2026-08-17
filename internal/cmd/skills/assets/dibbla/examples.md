@@ -676,7 +676,7 @@ services:
     domain: api.example.com
 ```
 
-DNS is your job: point `CNAME api.example.com → <region>.ingress.dibbla.com` (the platform operator publishes the target). Once DNS is live, the platform issues a TLS cert via Let's Encrypt automatically. `https://<alias>.dibbla.com` keeps working in addition to the custom domain.
+DNS is your job: point `CNAME api.example.com → <region>.ingress.dibbla.com` (the platform operator publishes the target). Once DNS is live, the platform issues a TLS cert via Let's Encrypt automatically. **`https://<alias>.dibbla.com` stops serving this app** — the custom domain replaces the alias host rather than adding to it, because only one Ingress is rendered per public service.
 
 ### Build-time secret
 
