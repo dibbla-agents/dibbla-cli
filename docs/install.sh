@@ -70,7 +70,17 @@ detect_arch() {
 }
 
 get_latest_version() {
-    VERSION=$(curl -fsSL "${BASE_URL}/latest.json" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    # Anchored on the key rather than "last quoted token on the line". The old
+    # form (inherited from the GitHub API version) used a greedy `.*"` and so
+    # returned whatever quoted string came LAST on the matching line — on
+    # compact, single-line JSON that is the final asset's digest, giving
+    # VERSION=sha256:deadbeef, which is non-empty and therefore sails past the
+    # emptiness check below to die on a 404 much later. jq pretty-prints
+    # latest.json today, so this was latent, but a parser that depends on the
+    # producer's whitespace is a parser waiting to break.
+    VERSION=$(curl -fsSL "${BASE_URL}/latest.json" \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        | head -n1)
     if [ -z "$VERSION" ]; then
         error "Failed to fetch latest version from ${BASE_URL}/latest.json"
         exit 1
@@ -308,6 +318,14 @@ maybe_delegate_to_update() {
         info "  Found existing dibbla $ver at $existing — delegating to 'dibbla update'."
         info "  (set DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
         printf "\n"
+        # Carry the override across the exec. Without this,
+        # DIBBLA_INSTALL_BASE_URL=<staging> on a machine that already has
+        # dibbla >= 1.2.10 silently updates from PRODUCTION instead, with no
+        # warning — which would quietly invalidate exactly the pre-cutover
+        # verification the override exists for.
+        if [ -n "${DIBBLA_INSTALL_BASE_URL:-}" ]; then
+            export DIBBLA_INSTALL_BASE_URL
+        fi
         exec "$existing" update --yes
     fi
 }

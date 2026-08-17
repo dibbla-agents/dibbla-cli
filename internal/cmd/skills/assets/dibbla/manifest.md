@@ -741,7 +741,7 @@ The Ingress is rendered with that hostname and the platform's TLS issuer takes c
 
 - Create a `CNAME` from `api.example.com` → the platform's ingress hostname (the platform operator publishes the target — usually `<region>.ingress.dibbla.com`).
 - Once DNS is live, the cert issuer issues a Let's Encrypt cert (HTTP-01 by default; DNS-01 if the operator has configured a DNS provider).
-- `https://<alias>.dibbla.com` is preserved in addition to the custom domain.
+- **The alias host is REPLACED, not kept alongside.** deploy-api's `PublicHostname` returns *only* the custom domain when `domain:` is set, and exactly one Ingress is rendered per public service — so setting `domain:` takes `https://<alias>.<base-domain>` away. Plan for that: it is the URL you would otherwise use to verify a deploy before DNS points at the custom name, and the one to fall back to if the custom domain misbehaves. If you need both, claim the hostname in the platform's ingress layer instead of in the manifest (P-0020 did this for `install.dibbla.com`).
 
 Multiple custom domains for the same service aren't supported in v1 (one `domain:` per service). For wildcard or apex domains, talk to the platform operator about the DNS-01 path — apex `example.com` needs a DNS-01 challenge because most registrars don't support `ALIAS`/`ANAME` at the apex.
 

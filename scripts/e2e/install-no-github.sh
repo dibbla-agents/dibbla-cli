@@ -88,7 +88,10 @@ curl -fsSL "$BASE_URL/checksums.txt" -o "$WORK/checksums.txt" \
 pass "checksums.txt is served from the same origin as the archives"
 
 ARCHIVE="dibbla_${TAG#v}_linux_amd64.tar.gz"
-REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$BASE_URL/latest/$ARCHIVE")"
+# -f matters here more than in CI: this is the ONLY fetch of this URL in the
+# harness, so without it a mirror 404ing every archive would still print
+# "✓ archive download does not redirect off-origin".
+REDIRECTS="$(curl -fsS -o /dev/null -w '%{num_redirects}' -L "$BASE_URL/latest/$ARCHIVE")"
 [ "$REDIRECTS" = "0" ] \
     || fail "archive download followed $REDIRECTS redirect(s); it must terminate on our own origin"
 pass "archive download does not redirect off-origin"
@@ -224,10 +227,61 @@ echo
 # silently tested nothing.
 # ---------------------------------------------------------------------------
 echo "[4/5] dibbla update with GitHub unreachable"
+
+# Two assertions that need no second release and therefore always run: that the
+# unpinned path reaches the mirror at all, and that the pinned path fails with an
+# explanation. Previously this whole step was skipped unless E2E_OLD_VERSION was
+# set, which meant the pinned-error message — the part a user actually reads —
+# had no coverage here.
+docker run --rm --platform linux/amd64 \
+    -v "$WORK/blackhole:/blackhole:ro" \
+    -e "DIBBLA_INSTALL_BASE_URL=$BASE_URL" \
+    debian:stable-slim bash -euo pipefail -c '
+        apt-get update -qq >/dev/null
+        apt-get install -y -qq --no-install-recommends curl ca-certificates >/dev/null
+
+        curl -fsSL "$DIBBLA_INSTALL_BASE_URL/install.sh" | sh >/dev/null
+        export PATH="$HOME/.local/bin:$PATH"
+
+        cat /blackhole >> /etc/hosts
+
+        # Reaching the mirror at all is the assertion; being already-latest is
+        # the expected answer, since we just installed from that same mirror.
+        out="$(dibbla update --check 2>&1)" || true
+        echo "$out" | grep -qi "up to date" || {
+            echo "unpinned update --check did not reach the mirror: $out" >&2
+            exit 1
+        }
+        echo "UNPINNED-REACHES-MIRROR-OK"
+
+        set +e
+        pinned="$(dibbla update --version v0.0.1 --yes 2>&1)"
+        rc=$?
+        set -e
+        [ "$rc" -ne 0 ] || { echo "pinned update unexpectedly succeeded with GitHub blocked" >&2; exit 1; }
+        echo "$pinned" | grep -q "without --version" || {
+            echo "pinned-update error does not name the way out: $pinned" >&2
+            exit 1
+        }
+        echo "PINNED-ERROR-OK"
+    ' > "$WORK/out-update-basic.txt" 2>&1 \
+    || { cat "$WORK/out-update-basic.txt" >&2; fail "update assertions failed"; }
+
+grep -q "UNPINNED-REACHES-MIRROR-OK" "$WORK/out-update-basic.txt" \
+    || fail "unpinned dibbla update does not resolve against the mirror"
+pass "unpinned dibbla update resolves against the mirror with GitHub blackholed"
+grep -q "PINNED-ERROR-OK" "$WORK/out-update-basic.txt" \
+    || fail "pinned --version did not fail with an actionable message"
+pass "dibbla update --version fails naming the unpinned command as the way out"
+
+# The full old->new upgrade leg needs a starting binary that ALREADY ships the
+# P-0020 update path, i.e. a tag >= v1.2.54, plus a newer release to move to.
+# Skipped loudly rather than silently until both exist.
 if [ -z "$OLD_VERSION" ]; then
-    echo "      - skipped: set E2E_OLD_VERSION to a tag that ships the P-0020 update path"
-    echo "        (a pre-P-0020 binary resolves updates against GitHub by design, so it"
-    echo "         cannot pass here — that is the bug, not a test failure)"
+    echo "      - upgrade leg skipped: set E2E_OLD_VERSION to a tag >= v1.2.54 that is"
+    echo "        older than the current release. A pre-v1.2.54 binary resolves updates"
+    echo "        against GitHub by design and cannot pass here — that is the bug this"
+    echo "        change fixed, not a test failure."
 else
     docker run --rm --platform linux/amd64 \
         -v "$WORK/blackhole:/blackhole:ro" \
@@ -286,7 +340,12 @@ echo
 #    reach from Linux. Named rather than silently omitted.
 # ---------------------------------------------------------------------------
 echo "[5/5] Windows (install.ps1)"
-echo "      - not run here: needs a Windows runner. See release.yml."
+echo "      - not run here: needs a Windows runner. The real leg is the"
+echo "        \`verify-windows-installer\` job in .github/workflows/release.yml,"
+echo "        which installs from the live mirror and asserts a corrupted archive"
+echo "        is refused. (An earlier version of this note claimed \`sign-windows\`"
+echo "        covered it. It does not — that job signs binaries and never runs"
+echo "        the installer.)"
 echo
 
 echo "==> All Linux legs passed against $BASE_URL ($TAG)"

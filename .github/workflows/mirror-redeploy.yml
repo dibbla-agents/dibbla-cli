@@ -1,0 +1,125 @@
+name: Redeploy install.dibbla.com
+
+# Republishes the install.dibbla.com mirror WITHOUT cutting a release.
+#
+# Why this exists: under GitHub Pages, an edit to docs/install.sh went live the
+# moment it merged to the default branch. Since P-0020 the scripts are served by
+# the `install` app, which is only redeployed by the `mirror` job in release.yml
+# — i.e. on a tag. Without this workflow, a one-line installer fix would sit
+# unpublished until the next CLI release, which is a trap rather than a policy:
+# nothing about an installer fix should require a version bump.
+#
+# It re-stages from the LATEST PUBLISHED RELEASE, never from the working tree's
+# idea of a version, so the binaries it serves are always the ones GitHub
+# published and signed. Only the scripts and the app config can change here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/install.sh"
+      - "docs/install.ps1"
+      - "installer-site/**"
+      - ".github/workflows/mirror-redeploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redeploy:
+    name: Restage and redeploy the mirror
+    runs-on: ubuntu-latest
+    # Shared with the `mirror` job in release.yml: two concurrent
+    # `dibbla deploy --update` calls on one alias would race.
+    concurrency:
+      group: installer-site-mirror
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve the latest published release
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # --exclude-drafts and --exclude-pre-releases so a rehearsal -rc tag
+          # can never become what install.dibbla.com serves. Same rule the
+          # release pipeline's prerelease guard enforces.
+          TAG="$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases \
+                   --json tagName -q '.[0].tagName' -R "$GITHUB_REPOSITORY")"
+          [ -n "$TAG" ] || { echo "no stable release found" >&2; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Restaging $TAG"
+
+      - name: Stage the mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./installer-site/stage.sh "${{ steps.tag.outputs.tag }}" https://install.dibbla.com
+
+      - name: Install the Dibbla CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # From the release, not from install.dibbla.com — this job may well be
+          # the one fixing a broken mirror, so it must not depend on the mirror.
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release download "$TAG" -p "dibbla_${TAG#v}_linux_amd64.tar.gz" -D cli --clobber -R "$GITHUB_REPOSITORY"
+          gh release download "$TAG" -p checksums.txt -D cli --clobber -R "$GITHUB_REPOSITORY"
+          ( cd cli && sha256sum -c --ignore-missing checksums.txt )
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "cli/dibbla_${TAG#v}_linux_amd64.tar.gz" -C cli
+          install -m 0755 cli/dibbla "$HOME/.local/bin/dibbla"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy the install app
+        env:
+          DIBBLA_API_TOKEN: ${{ secrets.DIBBLA_API_TOKEN }}
+          DIBBLA_API_URL: https://api.dibbla.com
+        run: |
+          set -euo pipefail
+          # --update, never --force: --force tears the app down, and this app is
+          # on the critical path for every new install.
+          dibbla deploy ./installer-site \
+            --alias install \
+            --update \
+            -m "P-0020 mirror redeploy: scripts from ${{ github.sha }}, binaries from ${{ steps.tag.outputs.tag }}"
+
+      - name: Verify the published bytes
+        run: |
+          set -euo pipefail
+          BASE=https://install.dibbla.com
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          curl -fsSL "$BASE/latest.json" -o live-latest.json
+          LIVE_TAG="$(jq -r .tag_name live-latest.json)"
+          [ "$LIVE_TAG" = "$TAG" ] || {
+            echo "live latest.json says $LIVE_TAG, expected $TAG" >&2
+            exit 1
+          }
+
+          # The contract a `curl … | sh` user depends on: the bare origin answers
+          # with the shell script, and it is the script from THIS commit.
+          curl -fsSL "$BASE/" -o root.sh
+          head -n1 root.sh | grep -q '^#!/bin/sh' \
+            || { echo "GET / did not return the shell script" >&2; exit 1; }
+          cmp -s root.sh docs/install.sh \
+            || { echo "GET / does not match docs/install.sh in this commit" >&2; exit 1; }
+
+          curl -fsSL "$BASE/install.ps1" -o live.ps1
+          cmp -s live.ps1 docs/install.ps1 \
+            || { echo "/install.ps1 does not match docs/install.ps1 in this commit" >&2; exit 1; }
+
+          ARCHIVE="$(jq -r '.assets[] | select(.name | endswith("linux_amd64.tar.gz")) | .browser_download_url' live-latest.json)"
+          REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
+          [ "$REDIRECTS" = "0" ] || {
+            echo "archive download followed $REDIRECTS redirect(s); it must terminate on our own origin" >&2
+            exit 1
+          }
+
+          echo "Mirror redeployed: scripts from ${{ github.sha }}, binaries from $TAG"

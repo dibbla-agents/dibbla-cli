@@ -13,7 +13,16 @@ log
 # state the contract explicitly instead of relying on a filesystem trick.
 rewrite / /install.sh
 
-@sh path /install.sh
+# BOTH paths, not just /install.sh. Caddy runs `header` BEFORE `rewrite` in its
+# fixed directive order, so a matcher listing only /install.sh is evaluated
+# against the original path and misses the bare origin entirely — `GET /` then
+# fell through to file_server with no Cache-Control at all. That is the path
+# essentially every documented command uses (`curl https://install.dibbla.com
+# -fsS | sh`), and it now sits behind the Cloudflare proxy, which GitHub Pages
+# did not. Verified against prod before fixing: `GET /` returned
+# `content-type: application/x-sh` (from file_server's extension sniffing after
+# the rewrite) and no cache-control.
+@sh path / /install.sh
 header @sh {
 	Content-Type "application/x-sh"
 	Cache-Control "public, max-age=300"

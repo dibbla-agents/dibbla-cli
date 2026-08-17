@@ -23,7 +23,21 @@ import (
 // both api.github.com and github.com return 403 inside Anthropic-hosted agent
 // sandboxes, where the block is repository-scoped by Anthropic and cannot be
 // allowlisted away. See P-0020.
-var mirrorBaseURL = "https://install.dibbla.com"
+var mirrorBaseURL = defaultMirrorBaseURL()
+
+// defaultMirrorBaseURL honours DIBBLA_INSTALL_BASE_URL, the same variable both
+// bootstrap installers read.
+//
+// Without it, `dibbla update` could not be pointed at a staging deploy at all,
+// so the mitigation the mirror relies on — verify at the install-*.dibbla.app
+// alias before DNS moves onto it — covered only the two shell scripts and left
+// half the client surface unverifiable before a cutover.
+func defaultMirrorBaseURL() string {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("DIBBLA_INSTALL_BASE_URL")), "/"); v != "" {
+		return v
+	}
+	return "https://install.dibbla.com"
+}
 
 // githubAPIBaseURL still serves `dibbla update --version <tag>`: the mirror is
 // latest-only (it would not fit the platform's 50 MB upload limit otherwise), so
