@@ -90,6 +90,9 @@ jobs:
             --update \
             -m "P-0020 mirror redeploy: scripts from ${{ github.sha }}, binaries from ${{ steps.tag.outputs.tag }}"
 
+      - name: Wait for the app to serve the new tag
+        run: ./installer-site/wait-ready.sh https://install.dibbla.com "${{ steps.tag.outputs.tag }}"
+
       - name: Verify the published bytes
         run: |
           set -euo pipefail
@@ -100,6 +103,11 @@ jobs:
           LIVE_TAG="$(jq -r .tag_name live-latest.json)"
           [ "$LIVE_TAG" = "$TAG" ] || {
             echo "live latest.json says $LIVE_TAG, expected $TAG" >&2
+            exit 1
+          }
+          ASSET_COUNT="$(jq -r '.assets | length' live-latest.json)"
+          [ "$ASSET_COUNT" -ge 7 ] || {
+            echo "live latest.json lists $ASSET_COUNT assets, expected at least 7" >&2
             exit 1
           }
 
@@ -116,7 +124,8 @@ jobs:
             || { echo "/install.ps1 does not match docs/install.ps1 in this commit" >&2; exit 1; }
 
           ARCHIVE="$(jq -r '.assets[] | select(.name | endswith("linux_amd64.tar.gz")) | .browser_download_url' live-latest.json)"
-          REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
+          # -f: without it a 404 also yields num_redirects=0 and exit 0.
+          REDIRECTS="$(curl -fsS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
           [ "$REDIRECTS" = "0" ] || {
             echo "archive download followed $REDIRECTS redirect(s); it must terminate on our own origin" >&2
             exit 1
