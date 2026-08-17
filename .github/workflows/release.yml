@@ -396,9 +396,15 @@ jobs:
           # download terminates on our own origin. An off-origin redirect is the
           # precise failure this whole change exists to remove, so assert that
           # curl was never redirected.
-          curl -fsSL "$BASE/" | head -n1 | grep -q '^#!/bin/sh' \
+          # Downloaded to a file rather than piped into `head`: under `set -o
+          # pipefail`, head closing the pipe early can hand curl a write error
+          # and fail this step even though the assertion passed. It happens to
+          # survive today only because the script is smaller than the pipe
+          # buffer — which is exactly the kind of thing that turns flaky later.
+          curl -fsSL "$BASE/" -o root.sh
+          head -n1 root.sh | grep -q '^#!/bin/sh' \
             || { echo "GET / did not return the shell script" >&2; exit 1; }
-          curl -fsSL "$BASE/install.ps1" >/dev/null
+          curl -fsSL "$BASE/install.ps1" -o /dev/null
 
           ARCHIVE="$(jq -r '.assets[] | select(.name | endswith("linux_amd64.tar.gz")) | .browser_download_url' live-latest.json)"
           REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
