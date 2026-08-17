@@ -49,9 +49,31 @@ func SelfReplace(rel *update.Release, targetPath, currentVersion string) error {
 		return fmt.Errorf("release %s has no asset for %s/%s (looked for %s)",
 			rel.TagName, runtime.GOOS, runtime.GOARCH, AssetName(rel.TagName))
 	}
-	checksums := rel.ChecksumAsset()
-	if checksums == nil {
-		return fmt.Errorf("release %s has no checksums.txt — refusing to install without verification", rel.TagName)
+	// Prefer the inline digest, fall back to checksums.txt.
+	//
+	// Dibbla's own latest.json carries a `digest` per asset (P-0016's
+	// convention), so the common path now verifies without a second HTTP
+	// request — which also means one fewer thing that can fail in a
+	// restricted network. The GitHub API payload has no such field, so the
+	// pinned-`--version` path still goes through checksums.txt. Either way
+	// verification is mandatory: no digest AND no checksums.txt refuses.
+	expected, inlineDigest := asset.SHA256()
+	if !inlineDigest {
+		checksums := rel.ChecksumAsset()
+		if checksums == nil {
+			return fmt.Errorf("release %s has no per-asset digest and no checksums.txt — refusing to install without verification", rel.TagName)
+		}
+
+		checksumsBody, err := downloadBytes(checksums.DownloadURL, currentVersion)
+		if err != nil {
+			return fmt.Errorf("download checksums.txt: %w", err)
+		}
+
+		var ok bool
+		expected, ok = lookupChecksum(checksumsBody, asset.Name)
+		if !ok {
+			return fmt.Errorf("checksums.txt missing entry for %s", asset.Name)
+		}
 	}
 
 	tmpDir, err := os.MkdirTemp(filepath.Dir(targetPath), ".dibbla-update-*")
@@ -65,15 +87,6 @@ func SelfReplace(rel *update.Release, targetPath, currentVersion string) error {
 		return fmt.Errorf("download archive: %w", err)
 	}
 
-	checksumsBody, err := downloadBytes(checksums.DownloadURL, currentVersion)
-	if err != nil {
-		return fmt.Errorf("download checksums.txt: %w", err)
-	}
-
-	expected, ok := lookupChecksum(checksumsBody, asset.Name)
-	if !ok {
-		return fmt.Errorf("checksums.txt missing entry for %s", asset.Name)
-	}
 	got, err := sha256File(archivePath)
 	if err != nil {
 		return fmt.Errorf("hash archive: %w", err)

@@ -21,6 +21,10 @@ The `dibbla` CLI scaffolds projects and manages **applications**, **databases**,
 
 The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if needed. Self-update is available inside task files via the same installer URL.
 
+**Installation needs `install.dibbla.com` and nothing else.** The version list, the archive and `checksums.txt` all come from that one origin, and the archive's SHA-256 is verified before anything is written to disk. This matters if you are an agent running in a sandbox: inside Claude Cowork and Claude Code on the web, **GitHub returns 403**, so anything that fetched the binary from GitHub Releases could not install at all. If `curl -fsSL https://install.dibbla.com/install.sh | sh` fails in such an environment, the problem is not GitHub access — report the actual error rather than trying to work around it via `git clone` or `go install`.
+
+`dibbla update` follows the same origin. The one exception is a pinned `dibbla update --version <tag>`, which resolves against GitHub because only the latest release is mirrored; where GitHub is blocked, drop `--version`.
+
 **Deploying requires a `Dockerfile`** at the root of the directory you pass to `dibbla deploy`. The CLI does **not** auto-detect languages or generate a Dockerfile — if it's missing, the backend rejects the build with log output. All bundled templates in `dibbla-agents/dibbla-public-templates` ship a working Dockerfile you can copy (typically multi-stage: Node → JS build → Go → binary → small runtime image, `EXPOSE 80`).
 
 ## Commands at a glance

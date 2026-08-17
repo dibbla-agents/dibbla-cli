@@ -380,3 +380,140 @@ func writeZip(t *testing.T, path, name string, body []byte) {
 	w.Write(body)
 	zw.Close()
 }
+
+// --- P-0020: verification via the inline digest from latest.json ---
+
+// The mirror path verifies without a second HTTP request. The assertion that
+// matters is not just "it worked" but that checksums.txt was never fetched —
+// one fewer request is the whole benefit, and a silent fallback would hide a
+// regression.
+func TestSelfReplace_PrefersInlineDigest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("happy-path test exercises tar.gz; windows uses zip")
+	}
+	tmpHome := t.TempDir()
+	target := filepath.Join(tmpHome, "dibbla")
+	if err := os.WriteFile(target, []byte("OLD"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	newBinary := []byte("NEW-BINARY-CONTENT")
+	archiveBytes := mustTarGzBytes(t, "dibbla", newBinary)
+	sum := sha256.Sum256(archiveBytes)
+
+	checksumsFetched := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/archive":
+			w.Write(archiveBytes)
+		case "/checksums":
+			checksumsFetched = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	rel := &update.Release{
+		TagName: "v9.9.9",
+		Assets: []update.Asset{
+			{
+				Name:        AssetName("v9.9.9"),
+				DownloadURL: srv.URL + "/archive",
+				Digest:      "sha256:" + hex.EncodeToString(sum[:]),
+			},
+			{Name: "checksums.txt", DownloadURL: srv.URL + "/checksums"},
+		},
+	}
+
+	if err := SelfReplace(rel, target, "v0.0.1"); err != nil {
+		t.Fatalf("SelfReplace failed: %v", err)
+	}
+	if checksumsFetched {
+		t.Error("checksums.txt was fetched even though the asset carried a digest")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, newBinary) {
+		t.Errorf("target binary not replaced: got %q want %q", got, newBinary)
+	}
+}
+
+// A digest that disagrees with the bytes must abort and leave the running
+// binary untouched — the mirror is a new origin, and this is the check that
+// makes trusting it reasonable.
+func TestSelfReplace_InlineDigestMismatchLeavesBinaryIntact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("happy-path only exercised on unix")
+	}
+	tmpHome := t.TempDir()
+	target := filepath.Join(tmpHome, "dibbla")
+	original := []byte("OLD")
+	if err := os.WriteFile(target, original, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	archiveBytes := mustTarGzBytes(t, "dibbla", []byte("NEW"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/archive" {
+			w.Write(archiveBytes)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	rel := &update.Release{
+		TagName: "v9.9.9",
+		Assets: []update.Asset{
+			{
+				Name:        AssetName("v9.9.9"),
+				DownloadURL: srv.URL + "/archive",
+				Digest:      "sha256:" + strings.Repeat("0", 64),
+			},
+		},
+	}
+
+	err := SelfReplace(rel, target, "v0.0.1")
+	if err == nil {
+		t.Fatal("expected a checksum mismatch error")
+	}
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Errorf("error should name the mismatch, got: %v", err)
+	}
+	got, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("binary was replaced despite a bad digest: got %q", got)
+	}
+}
+
+// An unparseable digest is treated as absent, not as a reason to skip
+// verification. With no checksums.txt to fall back on, the update must refuse.
+func TestSelfReplace_MalformedDigestFallsBackAndRefuses(t *testing.T) {
+	tmpHome := t.TempDir()
+	target := filepath.Join(tmpHome, "dibbla")
+	if err := os.WriteFile(target, []byte("OLD"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	rel := &update.Release{
+		TagName: "v9.9.9",
+		Assets: []update.Asset{
+			{Name: AssetName("v9.9.9"), DownloadURL: "http://127.0.0.1:1/archive", Digest: "sha256:nope"},
+		},
+	}
+
+	err := SelfReplace(rel, target, "v0.0.1")
+	if err == nil {
+		t.Fatal("expected a refusal when there is neither a usable digest nor checksums.txt")
+	}
+	if !strings.Contains(err.Error(), "refusing to install without verification") {
+		t.Errorf("error should refuse explicitly, got: %v", err)
+	}
+}

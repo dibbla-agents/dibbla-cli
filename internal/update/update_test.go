@@ -38,7 +38,7 @@ func TestCheckInBackground_SkipsCI(t *testing.T) {
 
 func TestFetchLatest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/dibbla-agents/dibbla-cli/releases/latest" {
+		if r.URL.Path != "/latest.json" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -54,9 +54,9 @@ func TestFetchLatest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
 
 	got := fetchLatest("1.0.0")
 	if got != "v2.0.0" {
@@ -70,9 +70,9 @@ func TestFetchLatest_Non200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
 
 	got := fetchLatest("1.0.0")
 	if got != "" {
@@ -86,9 +86,9 @@ func TestFetchLatest_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
 
 	got := fetchLatest("1.0.0")
 	if got != "" {
@@ -198,8 +198,13 @@ func TestPrintNotice_NewerVersion(t *testing.T) {
 	if !strings.Contains(output, "1.0.0") || !strings.Contains(output, "2.0.0") {
 		t.Errorf("expected version numbers in output, got: %s", output)
 	}
-	if !strings.Contains(output, "https://github.com/dibbla-agents/dibbla-cli/releases/latest") {
-		t.Errorf("expected release URL in output, got: %s", output)
+	// The notice points at Dibbla's own origin, not GitHub Releases: it is the
+	// one URL that works everywhere the CLI runs, agent sandboxes included.
+	if !strings.Contains(output, "https://install.dibbla.com") {
+		t.Errorf("expected install URL in output, got: %s", output)
+	}
+	if strings.Contains(output, "github.com") {
+		t.Errorf("notice should not send users to GitHub, got: %s", output)
 	}
 }
 
@@ -246,7 +251,7 @@ func TestPrintNotice_InvalidCurrentVersion(t *testing.T) {
 
 func TestFetchRelease_LatestParsesAssets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/dibbla-agents/dibbla-cli/releases/latest" {
+		if r.URL.Path != "/latest.json" {
 			http.NotFound(w, r)
 			return
 		}
@@ -260,9 +265,9 @@ func TestFetchRelease_LatestParsesAssets(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
 
 	rel, err := FetchRelease("1.0.0", "")
 	if err != nil {
@@ -293,9 +298,9 @@ func TestFetchRelease_ByTag(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := githubAPIBaseURL
+	githubAPIBaseURL = srv.URL
+	defer func() { githubAPIBaseURL = old }()
 
 	rel, err := FetchRelease("1.0.0", "v1.2.3")
 	if err != nil {
@@ -312,9 +317,9 @@ func TestFetchRelease_Non200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = old }()
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
 
 	if _, err := FetchRelease("1.0.0", ""); err == nil {
 		t.Error("expected error on non-200")
@@ -364,9 +369,9 @@ func TestCheckForUpdate_StaleCache(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oldURL := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = oldURL }()
+	oldURL := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = oldURL }()
 
 	info := checkForUpdate("1.0.0")
 	if info == nil {
@@ -393,9 +398,9 @@ func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oldURL := apiBaseURL
-	apiBaseURL = srv.URL
-	defer func() { apiBaseURL = oldURL }()
+	oldURL := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = oldURL }()
 
 	info := checkForUpdate("1.0.0")
 	if info != nil {
@@ -414,5 +419,158 @@ func TestCheckForUpdate_FetchFailureRefreshesCheckedAt(t *testing.T) {
 	}
 	if got.LatestVersion != "v1.5.0" {
 		t.Fatalf("expected latest version to be preserved, got %q", got.LatestVersion)
+	}
+}
+
+// --- P-0020: Dibbla's own mirror (latest.json) ---
+
+func TestAssetSHA256(t *testing.T) {
+	valid := strings.Repeat("ab", 32) // 64 hex chars
+	cases := []struct {
+		name   string
+		digest string
+		want   string
+		ok     bool
+	}{
+		{"mirror asset", "sha256:" + valid, valid, true},
+		{"uppercase hex is normalised", "sha256:" + strings.ToUpper(valid), valid, true},
+		// A GitHub API asset simply has no digest; that is normal, and the
+		// caller must fall back to checksums.txt rather than skip verification.
+		{"absent", "", "", false},
+		{"wrong algorithm", "sha512:" + valid, "", false},
+		{"no prefix", valid, "", false},
+		{"truncated", "sha256:" + valid[:63], "", false},
+		{"not hex", "sha256:" + strings.Repeat("z", 64), "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &Asset{Digest: tc.digest}
+			got, ok := a.SHA256()
+			if ok != tc.ok {
+				t.Fatalf("ok = %v want %v", ok, tc.ok)
+			}
+			if got != tc.want {
+				t.Errorf("digest = %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFetchRelease_MirrorLatestJSONCarriesDigests(t *testing.T) {
+	archiveDigest := strings.Repeat("1", 64)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/latest.json" {
+			t.Errorf("unpinned update must read /latest.json, got %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tag_name": "v1.2.54",
+			"assets": []map[string]interface{}{
+				{
+					"name":                 "dibbla_1.2.54_linux_amd64.tar.gz",
+					"browser_download_url": "https://install.dibbla.com/latest/dibbla_1.2.54_linux_amd64.tar.gz",
+					"size":                 4933635,
+					"digest":               "sha256:" + archiveDigest,
+				},
+				{
+					"name":                 "checksums.txt",
+					"browser_download_url": "https://install.dibbla.com/checksums.txt",
+					"size":                 1065,
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
+
+	rel, err := FetchRelease("1.0.0", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.2.54" {
+		t.Errorf("tag = %q want v1.2.54", rel.TagName)
+	}
+
+	// The whole point of the shape: FindAsset/ChecksumAsset are indifferent to
+	// which origin answered, so the self-replace flow needs no branch.
+	asset := rel.FindAsset("dibbla_1.2.54_linux_amd64.tar.gz")
+	if asset == nil {
+		t.Fatal("expected the platform archive to be found")
+	}
+	if asset.DownloadURL != "https://install.dibbla.com/latest/dibbla_1.2.54_linux_amd64.tar.gz" {
+		t.Errorf("download URL must stay on our own origin, got %q", asset.DownloadURL)
+	}
+	got, ok := asset.SHA256()
+	if !ok || got != archiveDigest {
+		t.Errorf("digest = %q ok=%v want %q true", got, ok, archiveDigest)
+	}
+	if rel.ChecksumAsset() == nil {
+		t.Error("expected checksums.txt asset for the no-digest fallback")
+	}
+}
+
+func TestFetchRelease_MalformedLatestJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Truncated mid-object: what a half-written mirror deploy looks like.
+		w.Write([]byte(`{"tag_name": "v1.2.54", "assets": [{"name":`))
+	}))
+	defer srv.Close()
+
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
+
+	if _, err := FetchRelease("1.0.0", ""); err == nil {
+		t.Error("expected an error on malformed latest.json, not a zero-value Release")
+	}
+}
+
+// A pinned --version has no mirror equivalent, and GitHub is exactly what is
+// unreachable in the environments P-0020 exists for. The error has to say so:
+// a bare i/o timeout reads as a broken network and sends people hunting in the
+// wrong place.
+func TestFetchRelease_PinnedTagErrorNamesTheWayOut(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden) // what an agent sandbox actually returns
+	}))
+	defer srv.Close()
+
+	old := githubAPIBaseURL
+	githubAPIBaseURL = srv.URL
+	defer func() { githubAPIBaseURL = old }()
+
+	_, err := FetchRelease("1.0.0", "v1.2.52")
+	if err == nil {
+		t.Fatal("expected an error when GitHub is unreachable for a pinned tag")
+	}
+	for _, want := range []string{"--version", "install.dibbla.com", "without --version"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must mention %q; got: %v", want, err)
+		}
+	}
+}
+
+// The mirror path must not be wrapped with the pinned-tag advice — suggesting
+// "run without --version" to someone who already did would be nonsense.
+func TestFetchRelease_UnpinnedErrorIsNotWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	old := mirrorBaseURL
+	mirrorBaseURL = srv.URL
+	defer func() { mirrorBaseURL = old }()
+
+	_, err := FetchRelease("1.0.0", "")
+	if err == nil {
+		t.Fatal("expected an error on a 503 from the mirror")
+	}
+	if strings.Contains(err.Error(), "--version") {
+		t.Errorf("unpinned failure must not carry the pinned-tag advice; got: %v", err)
 	}
 }

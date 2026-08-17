@@ -8,9 +8,23 @@
 
 set -e
 
-REPO="dibbla-agents/dibbla-cli"
 BINARY="dibbla"
 INSTALL_DIR="${DIBBLA_INSTALL_DIR:-$HOME/.local/bin}"
+
+# Every request this script makes goes to BASE_URL and nowhere else.
+#
+# It used to resolve the version from api.github.com and download from
+# github.com. Both return 403 inside Anthropic-hosted agent sandboxes (Claude
+# Cowork, Claude Code on the web) — the block is repository-scoped by Anthropic,
+# not something we or a customer can allowlist away, and release assets on
+# github.com additionally 302 to release-assets.githubusercontent.com, a third
+# host. Dibbla's own domains are reachable from those sandboxes with no
+# configuration, so the artefacts are mirrored here instead. See P-0020.
+#
+# DIBBLA_INSTALL_BASE_URL points the installer at a staging deploy or a test
+# fixture; it is what makes the mirror verifiable before DNS moves onto it.
+BASE_URL="${DIBBLA_INSTALL_BASE_URL:-https://install.dibbla.com}"
+BASE_URL="${BASE_URL%/}"
 
 # State shared between configure_path() and verify()
 PATH_UPDATED_FILE=""
@@ -56,25 +70,80 @@ detect_arch() {
 }
 
 get_latest_version() {
-    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    VERSION=$(curl -fsSL "${BASE_URL}/latest.json" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$VERSION" ]; then
-        error "Failed to fetch latest version."
+        error "Failed to fetch latest version from ${BASE_URL}/latest.json"
         exit 1
     fi
     # Strip leading 'v' for the download URL
     VERSION_NUM="${VERSION#v}"
 }
 
+# Verify the downloaded archive against the mirror's checksums.txt.
+#
+# This is new, and it closes a real gap: until now a first install downloaded
+# and extracted a binary with no verification at all. The delegation comment
+# further down used to say that was unavoidable — "both things this bootstrap
+# script can't do on its own" — and it was, because checksums.txt was one more
+# GitHub asset behind the same 403. Now that it is served from the same origin
+# as the archive, verification costs a handful of lines.
+#
+# Deliberately fail-closed with no opt-out: on a mismatch, on a missing entry,
+# and on a machine with neither sha256sum nor shasum. A silent skip is how a
+# security control turns into decoration. The package-manager installs
+# (brew/apt/rpm) remain the answer for anything too minimal for either tool.
+verify_checksum() {
+    _archive_path="$1"
+    _archive_name="$2"
+    _sums="${TMP_INSTALL_DIR}/checksums.txt"
+
+    if ! curl -fsSL "${BASE_URL}/checksums.txt" -o "$_sums"; then
+        error "Failed to fetch ${BASE_URL}/checksums.txt — refusing to install unverified."
+        exit 1
+    fi
+
+    # goreleaser writes "<sha256>  <name>"; the name is occasionally prefixed
+    # with "*" for binary mode.
+    _expected=$(awk -v n="$_archive_name" '{ sub(/^\*/, "", $2); if ($2 == n) { print $1; exit } }' "$_sums")
+    if [ -z "$_expected" ]; then
+        error "checksums.txt has no entry for ${_archive_name} — refusing to install unverified."
+        exit 1
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        _actual=$(sha256sum "$_archive_path" | cut -d' ' -f1)
+    elif command -v shasum >/dev/null 2>&1; then
+        _actual=$(shasum -a 256 "$_archive_path" | cut -d' ' -f1)
+    else
+        error "Neither sha256sum nor shasum is available — cannot verify the download."
+        error "Install one, or use a package manager: brew tap dibbla-agents/tap && brew install dibbla"
+        exit 1
+    fi
+
+    if [ "$_expected" != "$_actual" ]; then
+        error "Checksum mismatch for ${_archive_name}!"
+        error "  expected ${_expected}"
+        error "  actual   ${_actual}"
+        error "Refusing to install. Nothing was written to ${INSTALL_DIR}."
+        exit 1
+    fi
+
+    ok "  Verified SHA-256."
+}
+
 install_dibbla() {
     get_latest_version
     ARCHIVE_NAME="${BINARY}_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
+    DOWNLOAD_URL="${BASE_URL}/latest/${ARCHIVE_NAME}"
 
     TMP_INSTALL_DIR=$(mktemp -d)
     trap 'rm -rf "$TMP_INSTALL_DIR"' EXIT
 
     info "Downloading ${BINARY} ${VERSION} for ${OS}/${ARCH}..."
     curl -fsSL "$DOWNLOAD_URL" -o "${TMP_INSTALL_DIR}/${ARCHIVE_NAME}"
+
+    info "Verifying..."
+    verify_checksum "${TMP_INSTALL_DIR}/${ARCHIVE_NAME}" "$ARCHIVE_NAME"
 
     info "Extracting..."
     tar -xzf "${TMP_INSTALL_DIR}/${ARCHIVE_NAME}" -C "$TMP_INSTALL_DIR"
@@ -209,12 +278,14 @@ MIN_UPDATE_VERSION="1.2.10"
 
 # If a working dibbla is already on PATH and is new enough to know the
 # `update` subcommand (v1.2.10+), delegate to it. That path goes through
-# install-method detection (refuses to clobber a brew/apt install) and
-# verifies the SHA-256 of the downloaded archive — both things this
-# bootstrap script can't do on its own. We gate on the parsed `--version`
-# number (kept in lockstep with install.ps1, which needs the version gate
-# to avoid an stderr-on-Stop trap); a dev or unparseable build falls
-# through to a fresh install, which is always safe.
+# install-method detection, so it refuses to clobber a brew/apt install —
+# still the thing this bootstrap script cannot do on its own. (SHA-256
+# verification used to be on that list too; since P-0020 mirrored
+# checksums.txt onto the same origin as the archive, verify_checksum()
+# above does it here as well.) We gate on the parsed `--version` number
+# (kept in lockstep with install.ps1, which needs the version gate to
+# avoid an stderr-on-Stop trap); a dev or unparseable build falls through
+# to a fresh install, which is always safe.
 #
 # Set DIBBLA_INSTALLER_FORCE=1 to skip delegation when:
 #   - the existing dibbla update is broken and you need to reinstall fresh

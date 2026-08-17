@@ -1,0 +1,58 @@
+:80
+
+root * /srv
+
+# Access logs to stderr so `dibbla logs install` shows real installer traffic.
+# This app is on the critical path for every new install; a silent origin is
+# not debuggable.
+log
+
+# The bare origin has always answered with the shell script: under GitHub Pages
+# that came from a `docs/index.html` symlink to `install.sh`, which is what makes
+# `curl https://install.dibbla.com | sh` work. Off Pages there is no symlink, so
+# state the contract explicitly instead of relying on a filesystem trick.
+rewrite / /install.sh
+
+@sh path /install.sh
+header @sh {
+	Content-Type "application/x-sh"
+	Cache-Control "public, max-age=300"
+}
+
+@ps1 path /install.ps1
+header @ps1 {
+	Content-Type "text/plain; charset=utf-8"
+	Cache-Control "public, max-age=300"
+}
+
+# Version resolution and the digest list must never be served stale: a cached
+# `latest.json` pins users to an old release, and worse, can name an archive
+# that `/latest/` no longer holds (the mirror is latest-only by design). Short
+# TTL + revalidation keeps the cutover window to about a minute.
+@latestjson path /latest.json
+header @latestjson {
+	Content-Type "application/json; charset=utf-8"
+	Cache-Control "public, max-age=60, must-revalidate"
+}
+
+@checksums path /checksums.txt
+header @checksums {
+	Content-Type "text/plain; charset=utf-8"
+	Cache-Control "public, max-age=60, must-revalidate"
+}
+
+# Archive URLs carry the version in the filename, so the bytes at a given URL
+# never change. Content-Type comes from the extension (application/gzip,
+# application/zip) and Content-Length from file_server — deliberately NOT
+# `encode`d, because re-compressing an already-compressed archive would switch
+# the response to chunked transfer and drop Content-Length. The sandbox failure
+# this whole app exists to fix was a cross-origin redirect, so nothing here may
+# redirect off-origin either.
+@archives path /latest/*
+header @archives Cache-Control "public, max-age=31536000, immutable"
+
+# GitHub Pages served the scripts with this header; keep it so anything that
+# fetched them from a browser context does not break on the move.
+header Access-Control-Allow-Origin "*"
+
+file_server
