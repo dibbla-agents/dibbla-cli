@@ -4,9 +4,19 @@
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repo = "dibbla-agents/dibbla-cli"
 $Binary = "dibbla"
 $InstallDir = if ($env:DIBBLA_INSTALL_DIR) { $env:DIBBLA_INSTALL_DIR } else { "$env:LOCALAPPDATA\dibbla" }
+
+# Every request this script makes goes to $BaseUrl and nowhere else. It used to
+# resolve the version from api.github.com and download from github.com, both of
+# which return 403 inside Anthropic-hosted agent sandboxes (the block is
+# repository-scoped by Anthropic, not allowlistable by us or a customer), and
+# github.com release assets additionally 302 to a third host. Kept in lockstep
+# with install.sh. See P-0020.
+#
+# DIBBLA_INSTALL_BASE_URL points the installer at a staging deploy or a test
+# fixture; it is what makes the mirror verifiable before DNS moves onto it.
+$BaseUrl = if ($env:DIBBLA_INSTALL_BASE_URL) { $env:DIBBLA_INSTALL_BASE_URL.TrimEnd("/") } else { "https://install.dibbla.com" }
 
 function Write-Info($msg)  { Write-Host $msg -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host $msg -ForegroundColor Green }
@@ -32,13 +42,59 @@ function Get-Arch {
 # Get latest release version
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "dibbla-installer" }
+        $release = Invoke-RestMethod -Uri "$BaseUrl/latest.json" -Headers @{ "User-Agent" = "dibbla-installer" }
         return $release.tag_name
     }
     catch {
-        Write-Err "Failed to fetch latest version: $_"
+        Write-Err "Failed to fetch latest version from $BaseUrl/latest.json: $_"
         exit 1
     }
+}
+
+# Verify the downloaded archive against the mirror's checksums.txt.
+#
+# New in P-0020, and it closes a real gap: until now a first install expanded a
+# zip with no verification at all. It was unavoidable while checksums.txt was one
+# more GitHub asset behind the same 403; now that it is served from the same
+# origin as the archive, it is four lines.
+#
+# Fail-closed with no opt-out, matching install.sh — a skippable checksum is
+# decoration. Get-FileHash ships with PowerShell 4+, so there is no
+# missing-tool branch to worry about on this side.
+function Assert-Checksum($archivePath, $archiveName) {
+    try {
+        $sums = Invoke-RestMethod -Uri "$BaseUrl/checksums.txt" -Headers @{ "User-Agent" = "dibbla-installer" }
+    }
+    catch {
+        Write-Err "  Failed to fetch $BaseUrl/checksums.txt — refusing to install unverified: $_"
+        exit 1
+    }
+
+    # goreleaser writes "<sha256>  <name>"; the name is occasionally prefixed
+    # with "*" for binary mode.
+    $expected = $null
+    foreach ($line in ($sums -split "`n")) {
+        $fields = $line.Trim() -split '\s+'
+        if ($fields.Count -ge 2 -and $fields[1].TrimStart("*") -eq $archiveName) {
+            $expected = $fields[0].ToLower()
+            break
+        }
+    }
+    if (-not $expected) {
+        Write-Err "  checksums.txt has no entry for $archiveName — refusing to install unverified."
+        exit 1
+    }
+
+    $actual = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLower()
+    if ($expected -ne $actual) {
+        Write-Err "  Checksum mismatch for $archiveName!"
+        Write-Err "    expected $expected"
+        Write-Err "    actual   $actual"
+        Write-Err "  Refusing to install. Nothing was written to $InstallDir."
+        exit 1
+    }
+
+    Write-Ok "  Verified SHA-256."
 }
 
 # Download and install
@@ -48,7 +104,7 @@ function Install-Dibbla {
     $versionNum = $version.TrimStart("v")
 
     $archiveName = "${Binary}_${versionNum}_windows_${arch}.zip"
-    $downloadUrl = "https://github.com/$Repo/releases/download/$version/$archiveName"
+    $downloadUrl = "$BaseUrl/latest/$archiveName"
 
     $tmpDir = Join-Path $env:TEMP "dibbla-install-$(Get-Random)"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
@@ -62,6 +118,9 @@ function Install-Dibbla {
         Write-Info "  Downloading dibbla $version for windows/$arch..."
         $archivePath = Join-Path $tmpDir $archiveName
         Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
+
+        Write-Info "  Verifying..."
+        Assert-Checksum $archivePath $archiveName
 
         Write-Info "  Extracting..."
         Expand-Archive -Path $archivePath -DestinationPath $tmpDir -Force
@@ -145,9 +204,12 @@ function Get-ExistingVersion($exe) {
 }
 
 # If a working dibbla is already on PATH and is new enough to know the
-# `update` subcommand (v1.2.10+), delegate to it. That path verifies the
-# SHA-256 of the downloaded archive and does the running-exe rename dance —
-# both things this bootstrap script can't do on its own. We gate on the
+# `update` subcommand (v1.2.10+), delegate to it. That path does the
+# running-exe rename dance and the install-method detection — still the
+# things this bootstrap script can't do on its own. (SHA-256 verification
+# used to be on that list too; since P-0020 mirrored checksums.txt onto the
+# same origin as the archive, Assert-Checksum above does it here as well.)
+# We gate on the
 # parsed `--version` number rather than probing `update --help`: the probe
 # made an old binary write to stderr, which under $ErrorActionPreference =
 # "Stop" became a terminating error that aborted the installer instead of

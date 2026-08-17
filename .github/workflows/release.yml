@@ -2,9 +2,9 @@ name: Release
 
 # Pipeline shape (and why it is shaped this way):
 #
-#   release ──┬── sign-macos ──┬── checksums ── homebrew ──┐
-#             └── sign-windows ┘                           ├── notify
-#             (parallel)                                   ┘
+#   release ──┬── sign-macos ──┬── checksums ──┬── mirror ───┐
+#             └── sign-windows ┘               └── homebrew ─┼── notify
+#             (parallel)                        (parallel)   ┘
 #
 # Ordering rules that are load-bearing:
 #
@@ -19,6 +19,12 @@ name: Release
 #    has reached its final form. The signing jobs used to each download,
 #    regex-patch and re-upload the shared file, which is why sign-windows had
 #    to wait on sign-macos. With a single writer they run in parallel.
+#
+#  * Everything that republishes artifacts elsewhere hangs off `checksums`, not
+#    off `release`. `mirror` (install.dibbla.com, P-0020) and `homebrew` are
+#    siblings for the same reason: both copy the final, signed bytes and the
+#    checksums that match them. A mirror built from `release` would serve
+#    pre-signing darwin/windows archives with post-signing checksums.
 
 on:
   push:
@@ -275,6 +281,134 @@ jobs:
 
           gh release upload "$TAG" checksums.txt --clobber -R "$GITHUB_REPOSITORY"
 
+  mirror:
+    name: Publish the install.dibbla.com mirror
+    # A SIBLING of homebrew, and for the same reason: `needs: checksums` is what
+    # guarantees the mirror publishes the *signed* binaries and the checksums
+    # that match them. Hanging this off `release` instead would republish
+    # pre-signing darwin/windows archives — the exact bug .goreleaser.yml:53-67
+    # records for the old Homebrew step. Do not reorder.
+    needs: checksums
+    # Prereleases publish nothing here. `latest.json` and `/latest/` must stay
+    # consistent with each other, so an -rc tag either moves both or neither;
+    # moving `latest` to an rc would hand every new install a release candidate.
+    # Same rule and same reasoning as the homebrew job below.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Stage the mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./installer-site/stage.sh "$GITHUB_REF_NAME" https://install.dibbla.com
+
+          # A mirror whose tag_name disagrees with the tag being released is
+          # worse than no mirror: it silently pins every new install to another
+          # version. Assert it before anything is deployed.
+          STAGED="$(jq -r .tag_name installer-site/public/latest.json)"
+          [ "$STAGED" = "$GITHUB_REF_NAME" ] || {
+            echo "latest.json tag_name=$STAGED but GITHUB_REF_NAME=$GITHUB_REF_NAME" >&2
+            exit 1
+          }
+
+          echo "::group::latest.json"
+          cat installer-site/public/latest.json
+          echo "::endgroup::"
+
+      - name: Install the Dibbla CLI
+        run: |
+          set -euo pipefail
+          # Bootstrapped from the mirror itself, which is fine: GitHub Actions
+          # runners can reach GitHub, so even a broken mirror leaves this step
+          # working via the previous release's assets. It also means this job
+          # exercises the installer it publishes.
+          curl -fsSL https://install.dibbla.com/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy the install app
+        env:
+          # A bare user-identity bearer with no scopes (auth-service ApiToken has
+          # no per-app or per-permission column), so it can deploy any app in the
+          # org. Accepted knowingly; a dedicated service user is the follow-up.
+          DIBBLA_API_TOKEN: ${{ secrets.DIBBLA_API_TOKEN }}
+          DIBBLA_API_URL: https://api.dibbla.com
+        run: |
+          set -euo pipefail
+          # --update, never --force: --force tears the app down, and this app is
+          # on the critical path for every new install.
+          dibbla deploy ./installer-site \
+            --alias install \
+            --update \
+            -m "P-0020 mirror: $GITHUB_REF_NAME"
+
+      - name: Verify the published bytes
+        run: |
+          set -euo pipefail
+          BASE=https://install.dibbla.com
+
+          # Same check P-0016 Part C applies to the hosted skill index: fetch what
+          # the origin actually serves and re-hash it. A green deploy proves the
+          # app started, not that it serves the right bytes.
+          curl -fsSL "$BASE/latest.json" -o live-latest.json
+          LIVE_TAG="$(jq -r .tag_name live-latest.json)"
+          [ "$LIVE_TAG" = "$GITHUB_REF_NAME" ] || {
+            echo "live latest.json says $LIVE_TAG, expected $GITHUB_REF_NAME" >&2
+            exit 1
+          }
+
+          curl -fsSL "$BASE/checksums.txt" -o live-checksums.txt
+
+          fail=0
+          while read -r name url digest; do
+            curl -fsSL "$url" -o asset.bin
+            got="$(sha256sum asset.bin | cut -d' ' -f1)"
+
+            want_inline="${digest#sha256:}"
+            if [ "$got" != "$want_inline" ]; then
+              echo "  ✗ $name: digest in latest.json is $want_inline, served bytes hash to $got" >&2
+              fail=1
+              continue
+            fi
+
+            # checksums.txt has no line for itself, so only cross-check archives.
+            if [ "$name" != "checksums.txt" ]; then
+              want_file="$(awk -v n="$name" '{ sub(/^\*/, "", $2); if ($2 == n) { print $1; exit } }' live-checksums.txt)"
+              if [ "$want_file" != "$got" ]; then
+                echo "  ✗ $name: checksums.txt says $want_file, served bytes hash to $got" >&2
+                fail=1
+                continue
+              fi
+            fi
+
+            echo "  ✓ $name"
+            rm -f asset.bin
+          done < <(jq -r '.assets[] | "\(.name) \(.browser_download_url) \(.digest)"' live-latest.json)
+          [ "$fail" -eq 0 ] || exit 1
+
+          # The two contracts a client depends on beyond the assets: `/` answers
+          # with the shell script (GitHub Pages did this with a symlink), and the
+          # download terminates on our own origin. An off-origin redirect is the
+          # precise failure this whole change exists to remove, so assert that
+          # curl was never redirected.
+          curl -fsSL "$BASE/" | head -n1 | grep -q '^#!/bin/sh' \
+            || { echo "GET / did not return the shell script" >&2; exit 1; }
+          curl -fsSL "$BASE/install.ps1" >/dev/null
+
+          ARCHIVE="$(jq -r '.assets[] | select(.name | endswith("linux_amd64.tar.gz")) | .browser_download_url' live-latest.json)"
+          REDIRECTS="$(curl -sS -o /dev/null -w '%{num_redirects}' -L "$ARCHIVE")"
+          [ "$REDIRECTS" = "0" ] || {
+            echo "archive download followed $REDIRECTS redirect(s); it must terminate on our own origin" >&2
+            exit 1
+          }
+
+          echo "Mirror verified: $GITHUB_REF_NAME"
+
   homebrew:
     name: Update Homebrew tap
     needs: checksums
@@ -388,7 +522,7 @@ jobs:
 
   notify:
     name: Notify Slack
-    needs: [release, sign-macos, sign-windows, checksums, homebrew]
+    needs: [release, sign-macos, sign-windows, checksums, mirror, homebrew]
     if: always()
     runs-on: ubuntu-latest
     permissions:

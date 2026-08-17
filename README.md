@@ -22,6 +22,14 @@ curl https://install.dibbla.com -fsS | sh
 irm https://install.dibbla.com/install.ps1 | iex
 ```
 
+Both script installers talk to `install.dibbla.com` and nothing else — the
+version list, the archive and `checksums.txt` are all served from that one
+origin, and the archive's SHA-256 is verified before anything is written to
+disk. That matters beyond tidiness: inside AI coding-agent sandboxes such as
+**Claude Cowork** and Claude Code on the web, GitHub returns 403, so an
+installer that fetched its binary from GitHub Releases could not run there at
+all. This one can.
+
 ### Go developers
 
 ```bash
@@ -32,7 +40,10 @@ go install github.com/dibbla-agents/dibbla-cli/cmd/dibbla@latest
 
 ### Manual download
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/dibbla-agents/dibbla-cli/releases).
+Download the latest binary for your platform from [GitHub Releases](https://github.com/dibbla-agents/dibbla-cli/releases),
+which remains the archive of record — it is also where the `.deb`/`.rpm`
+packages and every historical version live. `install.dibbla.com` mirrors the
+**latest** release only.
 
 ## Usage
 
@@ -96,15 +107,24 @@ When the notifier reports a newer version, run `dibbla update` to upgrade in pla
 ```bash
 dibbla update                  # latest, with confirmation
 dibbla update --check          # only report drift; non-zero exit if behind
-dibbla update --version v1.4.2 # pin / downgrade to a specific tag
+dibbla update --version v1.4.2 # pin / downgrade to a specific tag (needs GitHub, see below)
 dibbla update --yes            # skip the confirmation prompt
 ```
 
 `dibbla update` detects how the binary was installed:
 
 - **Homebrew / apt / rpm / scoop / choco**: prints the right upgrade command for your package manager (`brew upgrade dibbla`, etc.). It does not run the command itself, so there's no implicit `sudo`.
-- **Script install** (from `install.dibbla.com`, lands in `~/.local/bin` or `%LOCALAPPDATA%\dibbla`): downloads the matching release archive, verifies its SHA-256 against `checksums.txt`, and atomically replaces the binary.
+- **Script install** (from `install.dibbla.com`, lands in `~/.local/bin` or `%LOCALAPPDATA%\dibbla`): downloads the matching release archive, verifies its SHA-256, and atomically replaces the binary. Verification prefers the per-asset `digest` in `latest.json` and falls back to `checksums.txt`; with neither available it refuses rather than installing unverified. The **first** install verifies too — that used to be true only of `dibbla update`, because `checksums.txt` was one more GitHub asset the bootstrap script could not reach.
 - **`go install` / development builds (`Version == "dev"`)**: refuses to self-replace; rebuild from source instead.
+
+**One asymmetry worth knowing.** An unpinned `dibbla update` resolves against
+`install.dibbla.com`, so it works in the same restricted environments the
+installer now works in. A pinned `dibbla update --version <tag>` still resolves
+against the GitHub API, because the mirror carries the latest release only — all
+12 assets of a single release are 44.7 MB against the platform's 50 MB upload
+limit, so more than one version does not fit. Where GitHub is blocked, a pinned
+update fails with a message that says so and names the unpinned command as the
+way out.
 
 Re-running the `curl … | sh` (or `irm … | iex`) installer also picks up `dibbla update` automatically: if a working dibbla is already on `PATH` and recognizes the `update` subcommand, the installer delegates to it instead of overwriting the binary in place. That way running the installer on a Homebrew or apt install prints the right `brew upgrade` / `apt-get install --only-upgrade` command rather than silently replacing the package-manager copy.
 

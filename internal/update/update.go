@@ -16,8 +16,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// apiBaseURL is the GitHub API base URL. Override in tests.
-var apiBaseURL = "https://api.github.com"
+// mirrorBaseURL is the origin serving Dibbla's own release mirror
+// (latest.json + /latest/<archive> + checksums.txt). Override in tests.
+//
+// The unpinned update path resolves here rather than at api.github.com because
+// both api.github.com and github.com return 403 inside Anthropic-hosted agent
+// sandboxes, where the block is repository-scoped by Anthropic and cannot be
+// allowlisted away. See P-0020.
+var mirrorBaseURL = "https://install.dibbla.com"
+
+// githubAPIBaseURL still serves `dibbla update --version <tag>`: the mirror is
+// latest-only (it would not fit the platform's 50 MB upload limit otherwise), so
+// a pinned tag has no mirror equivalent. Override in tests.
+var githubAPIBaseURL = "https://api.github.com"
 
 const checkInterval = 24 * time.Hour
 
@@ -26,11 +37,40 @@ type UpdateInfo struct {
 	LatestVersion string
 }
 
-// Asset describes one file attached to a GitHub release.
+// Asset describes one file attached to a release.
 type Asset struct {
 	Name        string `json:"name"`
 	DownloadURL string `json:"browser_download_url"`
 	Size        int64  `json:"size"`
+
+	// Digest is "sha256:" + 64 lowercase hex, following the convention
+	// P-0016 established for the hosted agent-skill index. Present on
+	// assets from Dibbla's own mirror, absent on the GitHub API payload
+	// (so an empty value is normal, not an error) — which is why
+	// checksums.txt remains the fallback rather than being replaced.
+	Digest string `json:"digest"`
+}
+
+// SHA256 returns the bare hex digest from Digest, and false when the field is
+// absent or not in the expected "sha256:<64 hex>" form. Anything unparseable is
+// treated as absent so the caller falls back to checksums.txt rather than
+// skipping verification.
+func (a *Asset) SHA256() (string, bool) {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(a.Digest, prefix) {
+		return "", false
+	}
+	hex := strings.ToLower(strings.TrimPrefix(a.Digest, prefix))
+	if len(hex) != 64 {
+		return "", false
+	}
+	for i := 0; i < len(hex); i++ {
+		c := hex[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", false
+		}
+	}
+	return hex, true
 }
 
 // Release is the subset of the GitHub release payload we care about.
@@ -127,7 +167,7 @@ func PrintNotice(info *UpdateInfo, currentVersion string) {
 
 	icon := platform.Icon("✦", "*")
 	fmt.Fprintf(os.Stderr, "\n%s A new version of dibbla is available: v%s → v%s\n", icon, current.String(), latest.String())
-	fmt.Fprintln(os.Stderr, "  https://github.com/dibbla-agents/dibbla-cli/releases/latest")
+	fmt.Fprintln(os.Stderr, "  https://install.dibbla.com")
 }
 
 func checkForUpdate(currentVersion string) *UpdateInfo {
@@ -212,16 +252,22 @@ func fetchLatest(currentVersion string) string {
 	return rel.TagName
 }
 
-// FetchRelease retrieves a release from the dibbla-cli GitHub repo. If tag
-// is empty the "latest" release is returned; otherwise the release with the
-// given tag (e.g. "v1.2.3") is fetched. The notifier and the `dibbla update`
-// command both go through this function.
+// FetchRelease retrieves a release descriptor. If tag is empty it reads
+// latest.json from Dibbla's own mirror; otherwise it resolves the pinned tag
+// against the GitHub API, which is the only place historical releases exist.
+// The notifier and the `dibbla update` command both go through this function.
+//
+// The two paths return the same shape on purpose: latest.json carries exactly
+// the subset decoded here, so FindAsset/ChecksumAsset and the whole self-replace
+// flow are indifferent to which origin answered.
 func FetchRelease(currentVersion, tag string) (*Release, error) {
+	pinned := tag != ""
+
 	var url string
-	if tag == "" {
-		url = apiBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/latest"
+	if pinned {
+		url = githubAPIBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/tags/" + tag
 	} else {
-		url = apiBaseURL + "/repos/dibbla-agents/dibbla-cli/releases/tags/" + tag
+		url = mirrorBaseURL + "/latest.json"
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -234,19 +280,39 @@ func FetchRelease(currentVersion, tag string) (*Release, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, wrapPinnedTagError(pinned, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+		if pinned {
+			return nil, wrapPinnedTagError(pinned, fmt.Errorf("GitHub API returned status %d", resp.StatusCode))
+		}
+		return nil, fmt.Errorf("%s returned status %d", url, resp.StatusCode)
 	}
 
 	var release Release
 	// Limit response to 1MB to prevent memory exhaustion from unexpected responses.
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
-		return nil, err
+		return nil, wrapPinnedTagError(pinned, err)
 	}
 
 	return &release, nil
+}
+
+// wrapPinnedTagError explains the one case where `dibbla update` still needs
+// GitHub. The mirror is latest-only, so a pinned `--version` has nowhere else to
+// resolve — and in the environments P-0020 exists for (agent sandboxes, locked
+// down CI) GitHub is exactly what is unreachable. Naming the unpinned command as
+// the way out matters: a bare "dial tcp: i/o timeout" reads as a broken network
+// and sends people hunting in the wrong place.
+func wrapPinnedTagError(pinned bool, err error) error {
+	if !pinned || err == nil {
+		return err
+	}
+	return fmt.Errorf("%w\n\n"+
+		"Pinned updates (--version) resolve against GitHub, which some environments\n"+
+		"block — agent sandboxes and restricted CI among them. Dibbla's own mirror at\n"+
+		"%s serves the latest release only.\n"+
+		"Run `dibbla update` without --version to upgrade via the mirror.", err, mirrorBaseURL)
 }

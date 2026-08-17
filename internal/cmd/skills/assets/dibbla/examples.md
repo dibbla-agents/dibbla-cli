@@ -21,6 +21,11 @@ dibbla --version
 
 # Upgrade (same command as install — replaces in place)
 curl -fsSL https://install.dibbla.com/install.sh | sh
+
+# Everything above talks to install.dibbla.com only: version list, archive and
+# checksums.txt come from that one origin, and the SHA-256 is verified before
+# anything lands on disk. Inside agent sandboxes (Claude Cowork, Claude Code on
+# the web) GitHub returns 403, so this is the install path that works there.
 # …or on macOS Homebrew:
 brew upgrade dibbla
 ```

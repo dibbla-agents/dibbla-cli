@@ -82,11 +82,11 @@ side effects. Confirm with the user before tagging.
 ### `release.yml` job order is load-bearing
 
 ```
-release ──┬── sign-macos ──┬── checksums ── homebrew ──┐
-          └── sign-windows ┘                           ├── notify
+release ──┬── sign-macos ──┬── checksums ──┬── mirror ───┐
+          └── sign-windows ┘               └── homebrew ─┼── notify
 ```
 
-Two rules hold this together; breaking either has bitten us before:
+Three rules hold this together; breaking any of them has bitten us before:
 
 1. **Nothing touches the Homebrew tap until after signing.** GoReleaser
    used to push the tap itself, at the end of the `release` job. When
@@ -102,10 +102,46 @@ Two rules hold this together; breaking either has bitten us before:
    regenerates it wholesale from the published assets once signing is
    done, so the signing jobs run in parallel.
 
+3. **Anything that republishes artifacts hangs off `checksums`, never off
+   `release`.** `mirror` and `homebrew` are siblings for that reason: both
+   copy the final, signed bytes together with the checksums that match them.
+   A mirror built from `release` would serve pre-signing darwin/windows
+   archives with post-signing checksums — the exact bug the comment in
+   `.goreleaser.yml` records for the old Homebrew step.
+
 The Homebrew formula is rendered from `.github/homebrew/dibbla.rb.tmpl`,
 **not** by GoReleaser — its `brews` feature is deprecated upstream, and it
 could only ever see the pre-signing checksums. Edit the template here; the
 copy in the tap is generated and carries a DO-NOT-EDIT header.
+
+### The `mirror` job publishes install.dibbla.com
+
+`install.dibbla.com` is a Dibbla-hosted app, not GitHub Pages. It serves the
+two bootstrap scripts **and** the release archives, `checksums.txt` and a
+`latest.json` version endpoint, so installing the CLI touches no host but our
+own — which is what makes the CLI installable inside AI coding-agent sandboxes
+(Claude Cowork, Claude Code on the web), where GitHub returns 403. The app
+source is `installer-site/`; see its README. Proposal P-0020.
+
+Three things about it that are easy to get wrong:
+
+- **The mirror serves the latest release only**, on the platform's 50 MB upload
+  limit. `.deb`/`.rpm` and every historical version stay on GitHub Releases,
+  which remains the archive of record. This is why a pinned
+  `dibbla update --version <tag>` still resolves against the GitHub API while
+  an unpinned one does not.
+- **`installer-site/public/` is generated, never committed.** Both CI and a
+  hand-run cutover go through `installer-site/stage.sh <tag> [base-url]`, and
+  the Dockerfile fails the build if it was not staged.
+- **A prerelease publishes nothing here**, same `!contains(github.ref_name, '-')`
+  guard as `homebrew`: `latest.json` and `/latest/` must move together or not
+  at all, and moving `latest` to an rc would hand every new install a release
+  candidate.
+
+Also note the circularity, which is fine but surprising: the `mirror` job
+installs the CLI *from the mirror it is about to republish*. GitHub Actions
+runners can reach GitHub, so even a broken mirror leaves that step working via
+the previous release — and it means the job exercises the installer it ships.
 
 ### Go version is pinned in go.mod, not in the workflows
 
@@ -164,6 +200,19 @@ binary with checksum verification. The install script at
 `docs/install.sh` delegates to `dibbla update` when an existing binary
 on `PATH` recognizes the `update` subcommand. See `internal/cmd/update/`
 for the implementation.
+
+Since P-0020 the bootstrap scripts verify SHA-256 themselves, so the
+delegation is no longer about verification — it is about install-method
+detection, i.e. refusing to clobber a brew/apt install. The comments in
+both installers used to say verification was something a bootstrap script
+"can't do on its own"; that was true only while `checksums.txt` lived
+behind the same GitHub 403 as the archive. Don't restore the old claim.
+
+Resolution is asymmetric on purpose: an unpinned update reads
+`install.dibbla.com/latest.json`, a pinned `--version <tag>` still reads
+the GitHub API, because the mirror is latest-only. `internal/update`
+holds two overridable base URLs (`mirrorBaseURL`, `githubAPIBaseURL`) for
+exactly this reason.
 
 ## `dibbla init` first-run wizard
 
