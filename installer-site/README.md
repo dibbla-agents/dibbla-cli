@@ -70,6 +70,23 @@ DIBBLA_INSTALL_BASE_URL=http://localhost:8080 sh public/install.sh
 The `docker build` fails if `public/` was not staged — better a loud build error
 than a deployed site that 404s every install.
 
+## Verifying a deploy
+
+`dibbla deploy --update` is a rolling replace: it returns when the platform has
+accepted the new revision, not when the old pod has stopped answering. Asserting
+immediately after it returns races the restart and gets a 502 from the edge —
+which is exactly what failed `mirror-redeploy.yml`'s first run while the deploy
+itself was fine.
+
+So both workflows gate on `./wait-ready.sh <base-url> <tag>` before asserting
+anything. It waits for **three consecutive** reads of `latest.json` serving the
+expected tag, cache-busted, because a single 200 can come from a pod that is
+about to be replaced. Use it by hand too:
+
+```bash
+./wait-ready.sh https://install.dibbla.com v1.2.54
+```
+
 ## Deploying by hand
 
 Normally CI does this. For a cutover or a fix:

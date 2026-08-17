@@ -371,6 +371,9 @@ jobs:
             --update \
             -m "P-0020 mirror: $GITHUB_REF_NAME"
 
+      - name: Wait for the app to serve the new tag
+        run: ./installer-site/wait-ready.sh https://install.dibbla.com "$GITHUB_REF_NAME"
+
       - name: Verify the published bytes
         run: |
           set -euo pipefail
