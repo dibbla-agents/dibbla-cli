@@ -47,6 +47,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Db         | `db list`, `db create`, `db delete`, `db dump`, `db restore`, `db connect` |
 | Secrets    | `secrets list`, `secrets set`, `secrets get`, `secrets delete`, `secrets import <file> [-e KEY=VAL] [--dry-run]` (bulk-load a `.env` file, no redeploy) — all scoped global, `-d <alias>` for deployment-wide, or `-d <alias> --service <name>` for per-service |
 | Admin      | `admin reconcile` — force one orphan-resource sweep on the deploy-api instance (gated by `DIBBLA_ADMIN_TOKEN`) |
+| MCP        | `mcp community [--client claude\|codex\|gemini]` — print ready-to-paste MCP client config for the hosted community toolset (`mcp.dibbla.com/community`, Dibbla community over MCP acting as you; staff-oriented). Output references `$DIBBLA_API_TOKEN`, never the literal token. Reads need one prior sign-in at community.dibbla.com; posting needs write-group membership |
 | Workflows  | `workflows list`, `get`, `create`, `update`, `delete`, `validate`, `execute [--async\|--follow]`, `url`, `api-docs`, `logs <runId> [-f]` |
 | Runs       | `wf runs list [--workflow <name>] [--limit <N>]`, `wf runs output <runId>` — list past runs and fetch the api_response payload of a finished run |
 | Nodes      | `nodes add <wf>`, `nodes remove <wf> <id>` |
