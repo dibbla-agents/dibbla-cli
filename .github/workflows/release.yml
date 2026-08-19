@@ -500,7 +500,12 @@ jobs:
 
           irm https://install.dibbla.com/checksums.txt -OutFile (Join-Path $root 'checksums.txt')
           irm https://install.dibbla.com/install.ps1  -OutFile (Join-Path $root 'install.ps1')
-          Set-Content -Path (Join-Path $root 'latest\' + $name) -Value 'not a zip' -NoNewline
+          # One string, not `Join-Path $root 'latest\' + $name`: inside the
+          # parentheses PowerShell parses in argument mode, so the `+` is a
+          # positional argument rather than an operator. Join-Path takes it as
+          # -AdditionalChildPath and builds `...\latest\+\<name>`, whose parent
+          # does not exist — the step then dies here, before testing anything.
+          Set-Content -Path (Join-Path $root "latest\$name") -Value 'not a zip' -NoNewline
           Set-Content -Path (Join-Path $root 'latest.json') -Value ('{"tag_name":"' + $tag + '","assets":[]}')
 
           $job = Start-Job -ScriptBlock {
