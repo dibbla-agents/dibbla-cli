@@ -27,6 +27,9 @@ Reads need nothing beyond a community sign-in (visit community.dibbla.com
 once with your Dibbla login). Posting additionally requires membership in
 the community's write group — ask an admin.`,
 	Args: cobra.NoArgs,
+	// Runtime failures from --check (bad token, missing env var) are
+	// diagnoses, not usage mistakes — don't dump the flag help after them.
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if communityCheck {
 			return runCommunityCheck(cmd.OutOrStdout())

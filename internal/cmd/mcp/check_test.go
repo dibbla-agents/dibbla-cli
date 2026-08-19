@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
 // stubMCP fakes the community endpoint: happy path answers initialize and
@@ -45,7 +50,7 @@ func TestCommunityCheck(t *testing.T) {
 			t.Fatalf("check failed: %v\n%s", err, buf.String())
 		}
 		out := buf.String()
-		for _, want := range []string{"dibbla-community 1.0.0", "Acting as **erik**", "Token:    present"} {
+		for _, want := range []string{"dibbla-community 1.0.0", "Acting as **erik**", "from the DIBBLA_API_TOKEN environment variable"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output missing %q:\n%s", want, out)
 			}
@@ -89,6 +94,51 @@ func TestCommunityCheck(t *testing.T) {
 			t.Errorf("want a login hint (no token) or an unreachable-endpoint error (token found locally), got: %v", err)
 		}
 	})
+}
+
+func TestCheckFailsWithoutExportedEnvVar(t *testing.T) {
+	// The A1 scenario from the 2026-08-19 review: the token resolves via a
+	// local store, the server chain verifies, but DIBBLA_API_TOKEN is not in
+	// the environment — the state where every emitted client config yields
+	// 401. The check must fail loudly, naming the env var.
+	if runtime.GOOS != "linux" || platform.IsCI() {
+		// os.UserConfigDir honors XDG_CONFIG_HOME only on Linux, and
+		// config.Load skips local stores entirely on CI.
+		t.Skip("needs Linux outside CI (XDG_CONFIG_HOME-based credentials file)")
+	}
+	srv := stubMCP(0)
+	defer srv.Close()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "dibbla"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "dibbla", "credentials.env"),
+		[]byte("DIBBLA_API_TOKEN=ak_test\nDIBBLA_API_URL=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv("DIBBLA_MCP_URL", srv.URL)
+	t.Setenv("DIBBLA_API_TOKEN", "")
+
+	var buf bytes.Buffer
+	err := runCommunityCheck(&buf)
+	if err == nil {
+		t.Fatalf("check must fail when the env var is not exported; output:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "${DIBBLA_API_TOKEN}") {
+		t.Errorf("the error must name the env var, got: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "from the credentials file") {
+		t.Errorf("the token source must be named, got:\n%s", out)
+	}
+	if !strings.Contains(out, "NOT exported") {
+		t.Errorf("the warning must be visible in the output, got:\n%s", out)
+	}
+	// The chain itself still verified — identity must have printed.
+	if !strings.Contains(out, "Acting as **erik**") {
+		t.Errorf("the server chain should verify before the env failure, got:\n%s", out)
+	}
 }
 
 func TestClaudeOneLinerQuoting(t *testing.T) {

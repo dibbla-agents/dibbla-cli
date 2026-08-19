@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 )
 
 // runCommunityCheck verifies the whole connection chain end to end, the way an
@@ -27,11 +29,20 @@ func runCommunityCheck(w io.Writer) error {
 	endpoint := r.URL + "/community"
 	fmt.Fprintf(w, "Endpoint: %s  (%s)\n", endpoint, r.Source)
 
+	// The source matters as much as the presence: every client config this
+	// command emits references ${DIBBLA_API_TOKEN}, so a token that resolves
+	// only via the keyring or the credentials file means the check can pass
+	// while an MCP client started from this same shell gets 401 — exactly the
+	// failure the 2026-08-19 review's finding A1 hit. Read the env var here
+	// (the CLI has already folded any ./.env into the environment at dispatch,
+	// which counts: a client started from this directory-agnostic shell still
+	// needs the export).
+	envTok := strings.TrimSpace(os.Getenv("DIBBLA_API_TOKEN"))
 	cfg := config.Load()
 	if cfg.APIToken == "" {
 		return fmt.Errorf("no Dibbla token found (tried DIBBLA_API_TOKEN, the OS keyring, and the credentials file) — run `dibbla login`, or export DIBBLA_API_TOKEN")
 	}
-	fmt.Fprintf(w, "Token:    present (%d chars)\n", len(cfg.APIToken))
+	fmt.Fprintf(w, "Token:    present (%d chars, from %s)\n", len(cfg.APIToken), tokenSource(envTok, cfg.APIToken))
 
 	client := &http.Client{Timeout: 15 * time.Second}
 
@@ -73,7 +84,24 @@ func runCommunityCheck(w io.Writer) error {
 		return fmt.Errorf("community_whoami failed: %s", text)
 	}
 	fmt.Fprintf(w, "Identity: ✅\n\n%s", text)
+
+	if envTok == "" {
+		fmt.Fprintf(w, "\n⚠️  The server chain works, but DIBBLA_API_TOKEN is NOT exported in this shell.\n")
+		return fmt.Errorf("every client config `dibbla mcp community` emits references ${DIBBLA_API_TOKEN}, so an MCP client started from this environment gets 401 — export the token where the client starts (see the keychain snippet in your shell init), then re-run --check")
+	}
 	return nil
+}
+
+// tokenSource names where the resolved token came from, mirroring
+// config.Load's precedence (env → OS keyring → credentials file).
+func tokenSource(envTok, resolved string) string {
+	if envTok != "" {
+		return "the DIBBLA_API_TOKEN environment variable"
+	}
+	if kt, _, err := credential.GetCredentials(); err == nil && kt != "" && kt == resolved {
+		return "the OS keyring"
+	}
+	return "the credentials file"
 }
 
 // rpcCall posts one JSON-RPC request and decodes the response, unwrapping SSE
