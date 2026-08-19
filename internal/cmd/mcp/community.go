@@ -8,7 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var communityClient string
+var (
+	communityClient string
+	communityCheck  bool
+)
 
 var communityCmd = &cobra.Command{
 	Use:   "community",
@@ -25,6 +28,9 @@ once with your Dibbla login). Posting additionally requires membership in
 the community's write group — ask an admin.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if communityCheck {
+			return runCommunityCheck(cmd.OutOrStdout())
+		}
 		return runCommunity(cmd.OutOrStdout(), communityClient)
 	},
 }
@@ -32,6 +38,8 @@ the community's write group — ask an admin.`,
 func init() {
 	communityCmd.Flags().StringVar(&communityClient, "client", "",
 		"emit config for one client: claude, codex, or gemini (default: all three)")
+	communityCmd.Flags().BoolVar(&communityCheck, "check", false,
+		"verify the connection end to end: resolve the token, initialize, and call community_whoami")
 }
 
 func runCommunity(w io.Writer, client string) error {
@@ -64,9 +72,15 @@ func runCommunity(w io.Writer, client string) error {
 }
 
 func printClaude(w io.Writer, endpoint string) {
+	// Single quotes around the header are load-bearing: with double quotes the
+	// shell expands ${DIBBLA_API_TOKEN} before `claude mcp add` sees it, which
+	// either bakes the real token into ~/.claude.json in cleartext or — when
+	// the variable is unset — silently writes an empty "Bearer " header. The
+	// placeholder must survive verbatim so Claude Code expands it at connect
+	// time (review 2026-08-19, finding A2).
 	fmt.Fprintf(w, `# One-liner:
 #   claude mcp add --transport http dibbla-community %s \
-#     --header "Authorization: Bearer ${DIBBLA_API_TOKEN}"
+#     --header 'Authorization: Bearer ${DIBBLA_API_TOKEN}'
 # Or as .mcp.json / settings JSON:
 {
   "mcpServers": {
