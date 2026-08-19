@@ -42,7 +42,7 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 
 ## org
 
-Show and switch the organization the CLI acts as. Requires CLI ≥ v1.2.51.
+Show and switch the organization the CLI acts as. Requires CLI ≥ v1.2.55.
 
 Your API token belongs to your **user**, not to one organization, so switching
 needs no new login and no new token — the selected organization travels with
