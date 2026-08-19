@@ -175,6 +175,16 @@ func runLogin(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Drop any organization selected under the previous credentials. The
+	// login may be for a different account entirely, and a stale pin would
+	// make every subsequent command fail its membership check with a message
+	// about organizations — while the user believes they just fixed their
+	// login.
+	if !loginNoKeychain {
+		_ = credential.DeleteOrg()
+		_ = credential.DeleteOrgFile()
+	}
+
 	if loginWriteEnv {
 		if err := writeEnvAndGitignore(token, baseURL); err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)

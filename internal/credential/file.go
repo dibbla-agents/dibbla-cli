@@ -19,9 +19,11 @@ import (
 // behavior of `--write-env`.
 
 const (
-	fileTokenKey  = "DIBBLA_API_TOKEN"
-	fileAPIURLKey = "DIBBLA_API_URL"
-	credFileName  = "credentials.env"
+	fileTokenKey   = "DIBBLA_API_TOKEN"
+	fileAPIURLKey  = "DIBBLA_API_URL"
+	fileOrgIDKey   = "DIBBLA_ORG_ID"
+	fileOrgNameKey = "DIBBLA_ORG_NAME"
+	credFileName   = "credentials.env"
 )
 
 // tokenFilePath resolves the credentials file path. Overridable in
@@ -72,23 +74,84 @@ func SetTokenFile(token, apiURL string) error {
 // file. Returns ("", "", nil) if the file doesn't exist — callers
 // should treat this as "no stored credentials" rather than an error.
 func GetTokenFile() (token, apiURL string, err error) {
-	path := tokenFilePath()
-	if path == "" {
-		return "", "", nil
-	}
-	f, ferr := os.Open(path)
-	if ferr != nil {
-		if os.IsNotExist(ferr) {
-			return "", "", nil
-		}
-		return "", "", ferr
-	}
-	defer f.Close()
-	vars, perr := godotenv.Parse(f)
-	if perr != nil {
-		return "", "", perr
+	vars, err := readCredFile()
+	if err != nil {
+		return "", "", err
 	}
 	return vars[fileTokenKey], vars[fileAPIURLKey], nil
+}
+
+// readCredFile parses the credentials file into a key/value map. A missing
+// file yields an empty map and no error — callers treat that as "nothing
+// stored" rather than a failure.
+func readCredFile() (map[string]string, error) {
+	path := tokenFilePath()
+	if path == "" {
+		return map[string]string{}, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+	vars, err := godotenv.Parse(f)
+	if err != nil {
+		return nil, err
+	}
+	return vars, nil
+}
+
+// SetOrgFile writes the pinned organization into the user-level credentials
+// file, leaving the token and API URL entries untouched. Kept separate from
+// SetTokenFile because pinning an org is not a login: the two are written at
+// different times and clobbering the token here would be a way to lose it.
+func SetOrgFile(orgID, orgName string) error {
+	path := tokenFilePath()
+	if path == "" {
+		return errors.New("could not resolve user config directory for credentials file")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+	updates := map[string]string{
+		fileOrgIDKey:   orgID,
+		fileOrgNameKey: orgName,
+	}
+	if _, err := env.MergeEnvFile(path, updates); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetOrgFile reads the pinned organization from the user-level credentials
+// file. Returns ("", "", nil) when the file doesn't exist or holds no pin.
+func GetOrgFile() (orgID, orgName string, err error) {
+	vars, err := readCredFile()
+	if err != nil {
+		return "", "", err
+	}
+	return vars[fileOrgIDKey], vars[fileOrgNameKey], nil
+}
+
+// DeleteOrgFile clears the pinned organization from the credentials file. The
+// keys are blanked rather than removed — MergeEnvFile has no delete mode, and
+// an empty value reads back as "no pin" everywhere it is consumed. No-op when
+// the file doesn't exist, so clearing a pin that was never set is not an error.
+func DeleteOrgFile() error {
+	path := tokenFilePath()
+	if path == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return SetOrgFile("", "")
 }
 
 // DeleteTokenFile removes the user-level credentials file. No-op if it

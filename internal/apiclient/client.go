@@ -50,6 +50,11 @@ func (c *Client) Get(path string) (*Response, error) {
 	return c.do("GET", path, nil)
 }
 
+// GetWithHeaders is Get with extra request headers.
+func (c *Client) GetWithHeaders(path string, headers map[string]string) (*Response, error) {
+	return c.doWithHeaders("GET", path, nil, headers)
+}
+
 func (c *Client) Post(path string, body interface{}) (*Response, error) {
 	return c.do("POST", path, body)
 }

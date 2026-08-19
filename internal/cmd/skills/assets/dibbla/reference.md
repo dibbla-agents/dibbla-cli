@@ -36,7 +36,57 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla logout` |
-| **Output** | Removes stored token + api_url from the OS credential store |
+| **Output** | Removes stored token + api_url from the OS credential store, and clears any organization selected with `org use` |
+
+---
+
+## org
+
+Show and switch the organization the CLI acts as. Requires CLI ≥ v1.2.51.
+
+Your API token belongs to your **user**, not to one organization, so switching
+needs no new login and no new token — the selected organization travels with
+each request as an `X-Org-ID` header, and the API verifies your membership
+before honoring it. With nothing selected, the API uses your account's default
+organization: the one the console opens on.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla org` or `dibbla org list` — list the organizations you belong to, marking the active one |
+| | `dibbla org use <name\|slug\|id>` — act as that organization from now on |
+| | `dibbla org clear` — go back to your account's default |
+| **Flags** | `--json` (on `list`) — emit machine-readable JSON; each entry carries `active` |
+| | `--org <id>` — global flag on *every* command; applies to that one invocation only |
+| **Resolution order** | `--org` > `DIBBLA_ORG_ID` > stored selection (keyring, then `~/.config/dibbla/credentials.env`) > account default |
+| **Storage** | `org use` writes to the OS keyring, falling back to the user-level credentials file on hosts without one — the same two-tier scheme `login` uses. The selection is machine-wide and survives `cd`. |
+| **Matching** | `use` accepts a name, slug, or id, case-insensitively. Ids and slugs are unique so they resolve directly; a **name** shared by two organizations is reported as ambiguous rather than guessed at — pass the slug or id in that case. |
+| **Exit codes** | `3` — not logged in. `4` — no organization matched what you typed. |
+
+**Examples:**
+
+```bash
+dibbla org                              # list; → marks the active one
+dibbla org use acme                     # by slug
+dibbla org use "Acme Corp"              # by name
+dibbla org clear                        # back to the account default
+
+dibbla --org <id> apps list             # one invocation only, nothing stored
+DIBBLA_ORG_ID=<id> dibbla deploy .      # this shell only
+
+dibbla org list --json | jq -r '.[] | select(.active) | .slug'
+```
+
+**Errors:** acting as an organization you are not a member of fails every
+command with `FORBIDDEN: Not a member of this organization`. If that appears
+after someone removed you from an org you had selected, `dibbla org list` still
+works — it deliberately ignores the selection so it can show you what to
+switch to — and flags the stale selection in its output.
+
+**Agent guidance:** for a user in more than one organization, confirm which one
+before deploying or deleting anything — `dibbla status` prints the active
+organization, and `dibbla org list` shows the alternatives. Prefer `--org <id>`
+over `org use` when acting on one organization as a one-off: it leaves the
+user's stored selection alone.
 
 ---
 
@@ -50,7 +100,7 @@ Print the CLI version, the API server this CLI will talk to, and whether a valid
 | **Flags** | `--json` — emit a machine-readable JSON report instead of human text |
 | | `--no-validate` — skip the live token validation request (report only what's stored locally) |
 | **Validation** | When a token is configured, `status` calls `POST /api/auth/v1/tokens/validate` against the resolved API URL so "logged in" reflects the *live* state of the token (revoked / expired tokens show as not logged in). Skip with `--no-validate` for offline use. |
-| **Resolution order** | API URL: `DIBBLA_API_URL` > `DIBBLA_AUTH_SERVICE_URL` > keyring > credentials file > default (`https://api.dibbla.com`). Token: `DIBBLA_API_TOKEN` > keyring > credentials file > none. The `source` annotation in the output identifies which won. |
+| **Resolution order** | API URL: `DIBBLA_API_URL` > `DIBBLA_AUTH_SERVICE_URL` > keyring > credentials file > default (`https://api.dibbla.com`). Token: `DIBBLA_API_TOKEN` > keyring > credentials file > none. Org: `--org` > `DIBBLA_ORG_ID` > keyring > credentials file > account default. The `source` annotation in the output identifies which won. |
 | **Exit codes** | `0` — logged in, or `--no-validate` and a token is configured. `3` — not logged in / token rejected. `1` — unexpected error (network, malformed response). |
 
 **Human output:**
@@ -59,8 +109,12 @@ Print the CLI version, the API server this CLI will talk to, and whether a valid
 Dibbla CLI 1.2.24
 API:     https://api.dibbla.com  (default)
 Token:   configured  (source: keyring)
+Org:     Acme (a1b2c3d4-...) (keyring, source: keyring)
 Status:  ✅ logged in
 ```
+
+The `Org` line reads `account default (none selected)` when no organization has
+been selected — see [org](#org).
 
 **JSON shape:**
 
@@ -71,12 +125,19 @@ Status:  ✅ logged in
   "api_url_source": "default",
   "token_configured": true,
   "token_source": "keyring",
+  "org_id": "a1b2c3d4-...",
+  "org_name": "Acme",
+  "org_source": "keyring",
   "validated": true,
   "logged_in": true
 }
 ```
 
 `validation_error` is added when a token was rejected; omitted otherwise.
+`org_id` / `org_name` are omitted when no organization is selected, in which
+case `org_source` reads `none (account default)`. `org_name` is also absent
+when the organization came from `--org` or `DIBBLA_ORG_ID`, which carry an id
+but no name.
 
 **Examples:**
 
@@ -1085,6 +1146,10 @@ Alias: `fn`.
 | Auth | `dibbla login --browser` | Non-TTY browser OAuth (Claude Code, agent shells) |
 | Auth | `dibbla login --api-key <token>` | Headless token login (CI, scripted) |
 | Auth | `dibbla logout` | Clear stored credentials |
+| Auth | `dibbla org list` | List the organizations you belong to |
+| Auth | `dibbla org use <name>` | Act as that organization from now on |
+| Auth | `dibbla org clear` | Back to your account's default organization |
+| Auth | `dibbla --org <id> <cmd>` | Act as that organization for one invocation |
 | Run | `dibbla run [path\|url]` | Execute a dibbla-task.yaml pipeline locally |
 | Run | `dibbla run --preview <arg>` | Parse + print execution plan (no execution) |
 | Template | `dibbla template list` | List available templates from the hosted manifest |

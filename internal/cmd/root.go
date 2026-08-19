@@ -18,6 +18,8 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/uninstall"
 	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
+	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/orgctx"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -55,9 +57,17 @@ Get started:
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("dibbla version %s\n", Version))
 	rootCmd.Flags().BoolVar(&skillPrompt, "skill-prompt", false, "Show detailed instructions for LLM-based tools")
+	// Bound straight to the config package rather than routed through a
+	// PersistentPreRun: `wf` sets its own PersistentPreRunE, and cobra runs
+	// only the nearest hook in the chain, so a root hook would silently not
+	// run for `dibbla wf ...`. Cobra parses flags before any Run, so every
+	// consumer of config.FlagOrgID reads it after it has been populated.
+	rootCmd.PersistentFlags().StringVar(&config.FlagOrgID, "org", "",
+		"Organization id to act as for this command; overrides DIBBLA_ORG_ID and the stored selection")
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(orgCmd)
 	rootCmd.AddCommand(feedbackCmd)
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
@@ -85,6 +95,10 @@ func init() {
 // having each command remember to call godotenv.Load() individually.
 func Execute() error {
 	_ = godotenv.Load()
+	// Must come after godotenv.Load, since the org may be set via
+	// DIBBLA_ORG_ID in ./.env. Resolution inside the transport is lazy, so
+	// installing it here costs nothing for commands that never call the API.
+	orgctx.Install()
 	ch := checkInBackground(Version)
 	err := rootCmd.Execute()
 	if ch != nil {
