@@ -37,10 +37,22 @@ Store your API token securely in the OS credential store. The token is validated
 
 ### `logout`
 
-Remove the API token and optional API URL stored by `dibbla login` from the OS credential store.
+Remove the API token and optional API URL stored by `dibbla login` from the OS credential store. Also clears the organization selected with `dibbla org use`.
 
 -   **Usage:** `dibbla logout`
 -   **Example:** `dibbla logout`
+
+### `org`
+
+Show and switch the organization the CLI acts as. Your API token belongs to your user rather than to one organization, so switching needs no new login — the selection travels with each request and the API verifies your membership before honoring it. With nothing selected, your account's default organization is used.
+
+-   **Usage:** `dibbla org list` — `dibbla org use <name|slug|id>` — `dibbla org clear`
+-   **Flags:**
+    -   `--json` (on `list`): machine-readable output; each entry carries `active`.
+    -   `--org <id>`: global flag available on *every* command, applying to that one invocation.
+-   **Precedence:** `--org` > `DIBBLA_ORG_ID` > the stored selection > your account's default.
+-   **Matching:** `use` takes a name, slug, or id, case-insensitively. A name shared by two organizations is reported as ambiguous rather than guessed at — pass the slug or id instead.
+-   **Example:** `dibbla org use acme` — `dibbla --org <id> apps list` — `dibbla org clear`
 
 ### `create`
 

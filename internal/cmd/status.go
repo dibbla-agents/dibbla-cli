@@ -34,6 +34,7 @@ The "source" annotations show where each value came from. Resolution order
 matches the rest of the CLI:
   API URL: DIBBLA_API_URL > DIBBLA_AUTH_SERVICE_URL > keyring > credentials file > default
   Token:   DIBBLA_API_TOKEN > keyring > credentials file > none
+  Org:     --org > DIBBLA_ORG_ID > keyring > credentials file > account default
 
 Exit codes:
   0  logged in (or --no-validate and a token is configured)
@@ -54,6 +55,9 @@ type statusReport struct {
 	APIURLSource    string `json:"api_url_source"`
 	TokenConfigured bool   `json:"token_configured"`
 	TokenSource     string `json:"token_source"`
+	OrgID           string `json:"org_id,omitempty"`
+	OrgName         string `json:"org_name,omitempty"`
+	OrgSource       string `json:"org_source"`
 	Validated       bool   `json:"validated"`
 	LoggedIn        bool   `json:"logged_in"`
 	ValidationError string `json:"validation_error,omitempty"`
@@ -87,6 +91,7 @@ func runStatus(cmd *cobra.Command, args []string) {
 func buildStatusReport(noValidate bool) statusReport {
 	apiURL, apiURLSource := resolveAPIURLWithSource()
 	token, tokenSource := resolveTokenWithSource()
+	orgID, orgName, orgSource := resolveOrgWithSource()
 
 	r := statusReport{
 		Version:         Version,
@@ -94,6 +99,9 @@ func buildStatusReport(noValidate bool) statusReport {
 		APIURLSource:    apiURLSource,
 		TokenConfigured: token != "",
 		TokenSource:     tokenSource,
+		OrgID:           orgID,
+		OrgName:         orgName,
+		OrgSource:       orgSource,
 	}
 
 	if !r.TokenConfigured || noValidate {
@@ -154,6 +162,32 @@ func resolveTokenWithSource() (token, source string) {
 	return "", "none"
 }
 
+// resolveOrgWithSource mirrors config.Load's org precedence and reports where
+// the value came from. An empty id is not a missing value: it means no
+// organization was selected and the API will use the account's default.
+//
+// Unlike the token, the org is read from the keyring even when DIBBLA_API_TOKEN
+// is set or we are in CI — config.Load's env-only short-circuit skips the
+// keyring for credentials, and this mirrors it, so the same "none" is reported.
+func resolveOrgWithSource() (orgID, orgName, source string) {
+	if v := strings.TrimSpace(config.FlagOrgID); v != "" {
+		return v, "", "flag (--org)"
+	}
+	if v := strings.TrimSpace(os.Getenv("DIBBLA_ORG_ID")); v != "" {
+		return v, "", "env (DIBBLA_ORG_ID)"
+	}
+	if os.Getenv("DIBBLA_API_TOKEN") != "" || platform.IsCI() {
+		return "", "", "none (account default)"
+	}
+	if id, name, err := credential.GetOrg(); err == nil && id != "" {
+		return id, name, "keyring"
+	}
+	if id, name, err := credential.GetOrgFile(); err == nil && id != "" {
+		return id, name, "credentials file"
+	}
+	return "", "", "none (account default)"
+}
+
 func normalizeURL(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -176,6 +210,14 @@ func printStatusHuman(r statusReport) {
 		fmt.Printf("Token:   configured  (source: %s)\n", r.TokenSource)
 	} else {
 		fmt.Printf("Token:   not configured\n")
+	}
+	switch {
+	case r.OrgID == "":
+		fmt.Printf("Org:     account default (none selected)\n")
+	case r.OrgName != "":
+		fmt.Printf("Org:     %s  (%s, source: %s)\n", r.OrgName, r.OrgID, r.OrgSource)
+	default:
+		fmt.Printf("Org:     %s  (source: %s)\n", r.OrgID, r.OrgSource)
 	}
 
 	switch {

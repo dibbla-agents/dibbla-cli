@@ -14,7 +14,9 @@ var logoutCmd = &cobra.Command{
 	Short: "Remove stored API credentials",
 	Long: `Removes the API token and optional API URL stored by "dibbla login" from
 the OS credential store and from the user-level credentials file
-(used as a fallback on hosts where no keyring service is available).`,
+(used as a fallback on hosts where no keyring service is available).
+
+Also clears the organization selected with "dibbla org use".`,
 	Run: runLogout,
 }
 
@@ -28,6 +30,9 @@ func runLogout(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	_ = credential.DeleteAPIURL()
+	// The org selection is scoped to the credentials it was made with;
+	// leaving it behind would silently apply to whoever logs in next.
+	_ = credential.DeleteOrg()
 	// Always remove the user-level file too — it's where credentials
 	// land on hosts without a keyring, and keeping it would leave the
 	// user "logged in" by virtue of the fallback read path in config.Load.

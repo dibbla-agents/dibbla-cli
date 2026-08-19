@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/orgctx"
 )
 
 // CallbackGracePeriod is how long the local OAuth callback server stays
@@ -229,6 +231,10 @@ func ExchangeJWTForAPIToken(apiBaseURL, jwt string) (string, error) {
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	// Any organization pinned right now belongs to the session being
+	// replaced. Sending it here would fail the membership check and report
+	// the login as an organization error.
+	req.Header.Set(orgctx.SkipHeader, "1")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
