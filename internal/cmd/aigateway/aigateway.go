@@ -14,7 +14,6 @@ package aigateway
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
@@ -89,33 +88,10 @@ func resolveGatewayURL() resolveResult {
 	}
 }
 
-// deriveFromAPIURL implements the api.X → ai.X host-label rewrite. Path,
-// query, and fragment are stripped; scheme and (optional) port are kept.
-//
-// This is a one-line substitution by design — the platform convention is
-// that the gateway lives next to the API on the same parent domain.
-// Anything that doesn't match is rejected so the caller can show a clear
-// "set DIBBLA_AI_GATEWAY_URL" hint instead of silently producing a wrong URL.
+// deriveFromAPIURL implements the api.X → ai.X host-label rewrite. The rule
+// itself lives in config.SubdomainURL, shared with the org-header transport
+// so the set of hosts the CLI treats as "ours" cannot drift from the set it
+// actually talks to.
 func deriveFromAPIURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("empty")
-	}
-	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-		raw = "https://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", fmt.Errorf("not a URL: %w", err)
-	}
-	host := u.Hostname()
-	port := u.Port()
-	if !strings.HasPrefix(host, "api.") {
-		return "", fmt.Errorf("host %q does not start with \"api.\"", host)
-	}
-	newHost := "ai." + strings.TrimPrefix(host, "api.")
-	if port != "" {
-		newHost = newHost + ":" + port
-	}
-	return u.Scheme + "://" + newHost, nil
+	return config.SubdomainURL(raw, "ai")
 }

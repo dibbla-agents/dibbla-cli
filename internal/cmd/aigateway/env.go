@@ -31,10 +31,18 @@ Variables emitted:
   ANTHROPIC_API_KEY=<your dibbla token>
   OPENAI_BASE_URL=<gateway>/openai/v1
   OPENAI_API_KEY=<your dibbla token>
+  ANTHROPIC_CUSTOM_HEADERS=X-Org-ID: <org>   (only when an org is selected)
 
 Both base URLs use the SAME Dibbla token. The gateway swaps it for the
 platform-managed provider key on the way out, so neither you nor the tool
 ever sees the upstream key.
+
+A base-URL swap carries no headers of its own, so without that last line
+every call an assistant makes is filed under your account's default
+organization. It is emitted whenever --org, DIBBLA_ORG_ID, or "dibbla org
+use" has selected one; Claude Code reads it, and other tools have their own
+custom-header setting to paste it into. The OpenAI SDKs have no equivalent
+env var -- for those, set the header in the client config.
 
 Use --no-token to print only the base URLs (handy if you want to keep your
 token in a different env file).`,
@@ -75,6 +83,11 @@ func runEnv(cmd *cobra.Command, args []string) {
 			[2]string{"OPENAI_API_KEY", token},
 		)
 	}
+	// Without this the gateway sees no org and files the call under the
+	// account default, which is wrong for anyone who has selected another one.
+	if cfg.OrgID != "" {
+		pairs = append(pairs, [2]string{"ANTHROPIC_CUSTOM_HEADERS", "X-Org-ID: " + cfg.OrgID})
+	}
 
 	switch envFormat {
 	case "shell", "":
@@ -91,6 +104,7 @@ func runEnv(cmd *cobra.Command, args []string) {
 	// Comment trailer with the source — visible if the user runs the
 	// command interactively but harmless when eval'd.
 	fmt.Printf("# gateway: %s\n", r.Source)
+	fmt.Printf("# usage attributed to: %s\n", attributionNote(cfg))
 }
 
 func printShell(pairs [][2]string, withExport bool) {
@@ -121,4 +135,17 @@ func printDotenv(pairs [][2]string) {
 // shouldn't be able to break out of the assignment.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// attributionNote describes, in one line, which organization the gateway will
+// file this traffic under. Worth stating rather than leaving implicit: the
+// difference only shows up later, on someone else's usage page.
+func attributionNote(cfg *config.Config) string {
+	if cfg.OrgID == "" {
+		return "your account's default organization (select one with 'dibbla org use <name>')"
+	}
+	if cfg.OrgName != "" {
+		return fmt.Sprintf("%s (%s)", cfg.OrgName, cfg.OrgID)
+	}
+	return cfg.OrgID
 }
