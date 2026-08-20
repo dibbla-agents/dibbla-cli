@@ -58,7 +58,7 @@ function Get-LatestVersion {
 # more GitHub asset behind the same 403; now that it is served from the same
 # origin as the archive, it is four lines.
 #
-# Fail-closed with no opt-out, matching install.sh — a skippable checksum is
+# Fail-closed with no opt-out, matching install.sh -- a skippable checksum is
 # decoration. Get-FileHash ships with PowerShell 4+, so there is no
 # missing-tool branch to worry about on this side.
 function Assert-Checksum($archivePath, $archiveName) {
@@ -66,7 +66,7 @@ function Assert-Checksum($archivePath, $archiveName) {
         $sums = Invoke-RestMethod -Uri "$BaseUrl/checksums.txt" -Headers @{ "User-Agent" = "dibbla-installer" }
     }
     catch {
-        Write-Err "  Failed to fetch $BaseUrl/checksums.txt — refusing to install unverified: $_"
+        Write-Err "  Failed to fetch $BaseUrl/checksums.txt -- refusing to install unverified: $_"
         exit 1
     }
 
@@ -81,7 +81,7 @@ function Assert-Checksum($archivePath, $archiveName) {
         }
     }
     if (-not $expected) {
-        Write-Err "  checksums.txt has no entry for $archiveName — refusing to install unverified."
+        Write-Err "  checksums.txt has no entry for $archiveName -- refusing to install unverified."
         exit 1
     }
 
@@ -144,7 +144,7 @@ function Install-Dibbla {
 
             # Broadcast WM_SETTINGCHANGE so Explorer and other running apps pick
             # up the new user PATH without requiring a logout. Best-effort:
-            # swallow any failure — the PATH update itself already succeeded.
+            # swallow any failure -- the PATH update itself already succeeded.
             try {
                 if (-not ('Win32.NativeMethods' -as [Type])) {
                     Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @"
@@ -186,7 +186,7 @@ public static extern System.IntPtr SendMessageTimeout(
 $MinUpdateVersion = [version]"1.2.10"
 
 # Parse the X.Y.Z triple from `dibbla --version` (prints "dibbla version
-# X.Y.Z" to stdout only — no stderr, so it can't trip the $ErrorAction-
+# X.Y.Z" to stdout only -- no stderr, so it can't trip the $ErrorAction-
 # Preference='Stop' native-command trap the way an unknown subcommand does).
 # Returns $null for a dev/unparseable build, which the caller treats as
 # "reinstall from scratch".
@@ -205,7 +205,7 @@ function Get-ExistingVersion($exe) {
 
 # If a working dibbla is already on PATH and is new enough to know the
 # `update` subcommand (v1.2.10+), delegate to it. That path does the
-# running-exe rename dance and the install-method detection — still the
+# running-exe rename dance and the install-method detection -- still the
 # things this bootstrap script can't do on its own. (SHA-256 verification
 # used to be on that list too; since P-0020 mirrored checksums.txt onto the
 # same origin as the archive, Assert-Checksum above does it here as well.)
@@ -213,7 +213,7 @@ function Get-ExistingVersion($exe) {
 # parsed `--version` number rather than probing `update --help`: the probe
 # made an old binary write to stderr, which under $ErrorActionPreference =
 # "Stop" became a terminating error that aborted the installer instead of
-# falling through. A version gate is also strictly conservative — a dev or
+# falling through. A version gate is also strictly conservative -- a dev or
 # unparseable build simply reinstalls.
 #
 # Set $env:DIBBLA_INSTALLER_FORCE=1 to skip delegation (useful when an
@@ -228,7 +228,7 @@ function Invoke-MaybeDelegateToUpdate {
     if ($null -eq $ver -or $ver -lt $MinUpdateVersion) { return }
 
     Write-Host ""
-    Write-Info "  Found existing dibbla $ver at $($existing.Source) — delegating to 'dibbla update'."
+    Write-Info "  Found existing dibbla $ver at $($existing.Source) -- delegating to 'dibbla update'."
     Write-Info "  (set `$env:DIBBLA_INSTALLER_FORCE=1 to reinstall from scratch instead.)"
     Write-Host ""
     & $existing.Source update --yes
