@@ -51,6 +51,23 @@ jobs:
           fi
           echo "✓ gofmt clean"
 
+      - name: install.ps1 must be pure ASCII
+        run: |
+          set -euo pipefail
+          # Windows PowerShell 5.1 reads a BOM-less .ps1 *file* as Windows-1252
+          # rather than UTF-8, so one non-ASCII byte corrupts the string around
+          # it and the script stops parsing partway down. install.dibbla.com
+          # serves the file without a BOM and adding one would change the bytes
+          # the mirror publishes, so the file stays ASCII instead.
+          #
+          # This is cheap to assert and easy to reintroduce: an em dash typed
+          # into a comment is invisible in review. See DIB-324.
+          if LC_ALL=C grep -nP '[^\x00-\x7F]' docs/install.ps1; then
+            echo "::error file=docs/install.ps1::non-ASCII characters break parsing under Windows PowerShell 5.1; use plain ASCII (e.g. '--' rather than an em dash)"
+            exit 1
+          fi
+          echo "install.ps1 is ASCII-only"
+
       - name: Build
         run: go build ./...
 
