@@ -519,11 +519,22 @@ jobs:
             $env:DIBBLA_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'corrupt-target'
 
             $ErrorActionPreference = 'Continue'
-            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'install.ps1')
+            $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'install.ps1') 2>&1 | Out-String
             $rc = $LASTEXITCODE
             $ErrorActionPreference = 'Stop'
 
+            Write-Host $out
+
             if ($rc -eq 0) { throw "installer exited 0 on a corrupted archive" }
+
+            # A non-zero exit on its own is not evidence of a refusal. For three
+            # releases this assertion passed while the installer was merely
+            # failing to parse under PowerShell 5.1 (DIB-324) and never reached
+            # the checksum at all. Require the refusal it exists to test.
+            if ($out -notmatch 'Checksum mismatch') {
+              throw "installer exited $rc without reporting a checksum mismatch, so the refusal was not what was tested"
+            }
+
             $left = Join-Path $env:DIBBLA_INSTALL_DIR 'dibbla.exe'
             if (Test-Path $left) { throw "installer left a binary behind after a checksum failure" }
             Write-Host "refused correctly (exit $rc), nothing written"
@@ -532,6 +543,14 @@ jobs:
             Stop-Job $job -ErrorAction SilentlyContinue
             Remove-Job $job -Force -ErrorAction SilentlyContinue
           }
+
+          # The assertions above decide this step. Without an explicit success
+          # the inner installer's $LASTEXITCODE - deliberately non-zero, since
+          # refusing is the pass condition - leaks out as the step's exit code,
+          # which is what has been failing every release since v1.2.55. An
+          # assertion that throws still fails the step: the throw terminates
+          # the script before this line is reached.
+          exit 0
 
   homebrew:
     name: Update Homebrew tap
