@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -404,5 +405,64 @@ services:
 	}
 	if len(m.Services["broker"].Routes) != 2 {
 		t.Errorf("expected 2 routes, got %d", len(m.Services["broker"].Routes))
+	}
+}
+
+func TestParseAcceptsSupportBlock(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  web:
+    build: .
+    port: 3000
+support:
+  enabled: true
+  assignees: [erik@example.com]
+  visibility: own
+  attachments: true
+`)
+	m, err := ParseAndValidate(p)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if m.Support == nil || !m.Support.Enabled || m.Support.Visibility != "own" {
+		t.Fatalf("support block not parsed: %+v", m.Support)
+	}
+}
+
+func TestParseRejectsBadSupportVisibility(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  web:
+    build: .
+    port: 3000
+support:
+  enabled: true
+  visibility: everyone
+`)
+	_, err := ParseAndValidate(p)
+	if err == nil || !strings.Contains(err.Error(), "support.visibility") {
+		t.Fatalf("want support.visibility error, got %v", err)
+	}
+}
+
+func TestParseRejectsBadSupportAssignee(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  web:
+    build: .
+    port: 3000
+support:
+  enabled: true
+  assignees: [not-an-email]
+`)
+	_, err := ParseAndValidate(p)
+	if err == nil || !strings.Contains(err.Error(), "support.assignees") {
+		t.Fatalf("want support.assignees error, got %v", err)
 	}
 }

@@ -129,6 +129,13 @@ func runPreview(stdout, stderr io.Writer, args []string) int {
 	if resp.PublicService != "" {
 		fmt.Fprintf(stdout, "  public: %s\n", resp.PublicService)
 	}
+	if resp.Support != nil {
+		state := "disabled"
+		if resp.Support.Enabled {
+			state = "enabled, visibility=" + resp.Support.Visibility
+		}
+		fmt.Fprintf(stdout, "  support: %s\n", state)
+	}
 	if len(resp.ActiveServices) > 0 {
 		fmt.Fprintf(stdout, "  active services (%d):\n", len(resp.ActiveServices))
 		for _, s := range resp.ActiveServices {

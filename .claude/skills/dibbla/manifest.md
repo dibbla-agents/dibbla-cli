@@ -63,9 +63,26 @@ jobs:                            # optional; cron-style scheduled jobs
     schedule: "0 2 * * *"
     image: alpine:3.20
     command: [sh, -c, "echo cleanup"]
+support:                         # optional; per-app end-user tickets (P-0024)
+  enabled: true
+  visibility: app                # app (default: every user of the app sees all its tickets) | own
+  assignees: [erik@example.com]  # optional; default = all owner/admin/developer
 ```
 
 Reserved top-level keys (rejected today, kept for future versions): `volumes:`, `networks:`, `secrets:`, `cron:`, `init:`. Use the per-service equivalents instead.
+
+### `support:` — per-app end-user tickets
+
+Opting in gives the app's end users a platform-served ticket flow with **no
+code in the app**: one `<script src="/_platform/support.js"></script>` tag
+renders a Support button on the app's own origin (sign-in affordance included);
+tickets are read and answered in the console's per-app **Tickets** tab, and the
+app's users track threads at `app.<domain>/apps/<alias>/support` in the portal.
+Who can see tickets follows who can see the app (the platform access policy) —
+on a public app that is every signed-in user, so set `visibility: own` there if
+tickets may carry private detail. `visibility` is captured per ticket at
+creation; changing it later does not re-expose old tickets. `dibbla preview`
+shows the resolved setting (`support: enabled, visibility=app`).
 
 ---
 
