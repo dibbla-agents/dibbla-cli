@@ -148,6 +148,17 @@ Mandatory for every deploy. The platform renders a user-facing handbook inside `
 
 ---
 
+## Check 8: Support reachability (P-0024)
+
+Run when `dibbla.yaml` sets `support.enabled: true`. Skip otherwise.
+
+| What to check | Severity | Examples |
+|----------------|----------|----------|
+| The app gives users a visible way to reach support | WARNING | `support.enabled: true` but no `<script src="/_platform/support.js"></script>` tag anywhere in the app's HTML and no link to `app.<domain>/apps/<alias>/support` — the org opted into tickets its users cannot file. Suggest adding the one-line widget tag to the app's layout. Deliberately a warning, never a blocker: the handbook gate is already blocking, and two blocking UX gates would be too coercive. |
+| `visibility` matches the app's audience | INFO | A public app (`require_login: false` / policy open) with default `visibility: app` means every signed-in user can read every ticket — fine for a community tool, wrong if tickets may carry private detail. Mention `visibility: own`. |
+
+---
+
 ## Interactive workflow
 
 ### Step 1: Run all applicable checks

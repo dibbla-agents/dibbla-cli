@@ -51,6 +51,18 @@ func (e *Error) Error() string {
 type Manifest struct {
 	Version  int                 `yaml:"version"`
 	Services map[string]*Service `yaml:"services"`
+	Support  *Support            `yaml:"support,omitempty"`
+}
+
+// Support is the per-app ticket block (P-0024): opting the app into the
+// platform's end-user support flow. Older CLIs ignore the key entirely (the
+// parser is lenient and the manifest travels to the server as raw YAML inside
+// the archive), so presence here only adds local value validation.
+type Support struct {
+	Enabled     bool     `yaml:"enabled"`
+	Assignees   []string `yaml:"assignees,omitempty"`  // default: all owner/admin/developer
+	Visibility  string   `yaml:"visibility,omitempty"` // app (default) | own
+	Attachments bool     `yaml:"attachments,omitempty"`
 }
 
 // Service holds the per-service fields the CLI cares about for local
@@ -175,7 +187,30 @@ func ParseAndValidateBytes(data []byte) (*Manifest, error) {
 			return nil, err
 		}
 	}
+	if err := validateSupport(m.Support); err != nil {
+		return nil, err
+	}
 	return &m, nil
+}
+
+// validateSupport checks the values of an optional support: block (P-0024).
+func validateSupport(s *Support) error {
+	if s == nil {
+		return nil
+	}
+	switch s.Visibility {
+	case "", "app", "own":
+	default:
+		return &Error{Code: ErrCodeManifestInvalid, Path: "support.visibility",
+			Detail: fmt.Sprintf("visibility %q must be \"app\" (every user of the app sees all its tickets) or \"own\" (users see only their own)", s.Visibility)}
+	}
+	for _, a := range s.Assignees {
+		if !strings.Contains(a, "@") {
+			return &Error{Code: ErrCodeManifestInvalid, Path: "support.assignees",
+				Detail: fmt.Sprintf("assignee %q is not an email address", a)}
+		}
+	}
+	return nil
 }
 
 func validateServiceName(name string) error {

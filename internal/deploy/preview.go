@@ -41,6 +41,12 @@ type PreviewError struct {
 }
 
 // PreviewResponse mirrors deploy-api PreviewResponse.
+// PreviewSupport is the server-resolved support: block (P-0024).
+type PreviewSupport struct {
+	Enabled    bool   `json:"enabled"`
+	Visibility string `json:"visibility"`
+}
+
 type PreviewResponse struct {
 	Valid           bool                `json:"valid"`
 	Alias           string              `json:"alias"`
@@ -50,6 +56,7 @@ type PreviewResponse struct {
 	PublicService   string              `json:"public_service,omitempty"`
 	Warnings        []string            `json:"warnings,omitempty"`
 	Errors          []PreviewError      `json:"errors,omitempty"`
+	Support         *PreviewSupport     `json:"support,omitempty"` // P-0024, server-resolved
 }
 
 // PreviewOptions selects what to preview.
