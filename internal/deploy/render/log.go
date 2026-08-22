@@ -179,6 +179,9 @@ type structuredFailureEvent struct {
 	RequestID  string             `json:"request_id,omitempty"`
 	DeployID   string             `json:"deploy_id,omitempty"`
 	APIErrCode string             `json:"api_error_code,omitempty"`
+	// Documentation is the server-attached docs URL for the error, when any
+	// (first producer: the plan-limit errors, P-0027).
+	Documentation string `json:"documentation,omitempty"`
 }
 
 func structuredFailure(e *DeployError) structuredFailureEvent {
@@ -203,6 +206,7 @@ func structuredFailure(e *DeployError) structuredFailureEvent {
 		out.DeployID = e.APIError.DeploymentID
 		out.Reason = strings.ToLower(e.APIError.Code)
 		out.Message = e.APIError.Message
+		out.Documentation = e.APIError.Documentation
 	}
 	return out
 }

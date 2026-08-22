@@ -127,6 +127,9 @@ type APIError struct {
 	RequestID    string `json:"request_id,omitempty"`
 	DeploymentID string `json:"deployment_id,omitempty"`
 	Logs         string `json:"logs,omitempty"`
+	// Documentation is an optional docs URL the server attaches to the error
+	// (first real producer: the plan-limit errors, P-0027).
+	Documentation string `json:"documentation,omitempty"`
 }
 
 type ParsedBuildError struct {

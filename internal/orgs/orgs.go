@@ -22,6 +22,10 @@ type Org struct {
 	Slug    string `json:"slug"`
 	OrgType string `json:"org_type"`
 	Role    string `json:"role"`
+	// Plan is the org's plan name (P-0027); empty on installs without billing
+	// and on orgs with no plan recorded — omitted from --json then, so
+	// pre-plan scripting contracts are unchanged.
+	Plan string `json:"plan,omitempty"`
 }
 
 // listResponse mirrors auth-service's ListOrgs body: the membership row is the
@@ -34,6 +38,7 @@ type listResponse struct {
 			Name    string `json:"name"`
 			Slug    string `json:"slug"`
 			OrgType string `json:"org_type"`
+			Plan    string `json:"plan"`
 		} `json:"organization"`
 		Role string `json:"role"`
 	} `json:"organizations"`
@@ -67,6 +72,7 @@ func List(apiURL, token string, verbose bool) ([]Org, error) {
 			Slug:    entry.Organization.Slug,
 			OrgType: entry.Organization.OrgType,
 			Role:    entry.Role,
+			Plan:    entry.Organization.Plan,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

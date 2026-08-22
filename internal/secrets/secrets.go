@@ -95,6 +95,9 @@ func parseError(body []byte, statusCode int) error {
 				msg += "\n"
 			}
 		}
+		if errResp.Error.Documentation != "" {
+			msg = strings.TrimSuffix(msg, "\n") + "\nDocs: " + errResp.Error.Documentation
+		}
 		return fmt.Errorf("%s", strings.TrimSuffix(msg, "\n"))
 	}
 	return fmt.Errorf("API request failed with status %d: %s", statusCode, string(body))

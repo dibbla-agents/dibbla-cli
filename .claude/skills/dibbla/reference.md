@@ -55,7 +55,7 @@ organization: the one the console opens on.
 | **Usage** | `dibbla org` or `dibbla org list` — list the organizations you belong to, marking the active one |
 | | `dibbla org use <name\|slug\|id>` — act as that organization from now on |
 | | `dibbla org clear` — go back to your account's default |
-| **Flags** | `--json` (on `list`) — emit machine-readable JSON; each entry carries `active` |
+| **Flags** | `--json` (on `list`) — emit machine-readable JSON; each entry carries `active`, and `plan` when the org has one (installs without billing omit it) |
 | | `--org <id>` — global flag on *every* command; applies to that one invocation only |
 | **Resolution order** | `--org` > `DIBBLA_ORG_ID` > stored selection (keyring, then `~/.config/dibbla/credentials.env`) > account default |
 | **Storage** | `org use` writes to the OS keyring, falling back to the user-level credentials file on hosts without one — the same two-tier scheme `login` uses. The selection is machine-wide and survives `cd`. |
@@ -110,8 +110,13 @@ Dibbla CLI 1.2.24
 API:     https://api.dibbla.com  (default)
 Token:   configured  (source: keyring)
 Org:     Acme (a1b2c3d4-...) (keyring, source: keyring)
+Plan:    standard
 Status:  ✅ logged in
 ```
+
+The `Plan` line appears only when the validated organization has a plan
+(P-0027); trials read `Plan:    trial (ends 2026-09-21T00:00:00Z)`. Under
+`--no-validate` no network call is made, so no plan is shown.
 
 The `Org` line reads `account default (none selected)` when no organization has
 been selected — see [org](#org).
@@ -129,11 +134,14 @@ been selected — see [org](#org).
   "org_name": "Acme",
   "org_source": "keyring",
   "validated": true,
-  "logged_in": true
+  "logged_in": true,
+  "plan": "standard"
 }
 ```
 
 `validation_error` is added when a token was rejected; omitted otherwise.
+`plan` and `trial_ends_at` are present only when validation ran and the
+organization has a plan.
 `org_id` / `org_name` are omitted when no organization is selected, in which
 case `org_source` reads `none (account default)`. `org_name` is also absent
 when the organization came from `--org` or `DIBBLA_ORG_ID`, which carry an id

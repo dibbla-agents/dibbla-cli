@@ -128,9 +128,9 @@ func runOrgList(cmd *cobra.Command, args []string) {
 		if strings.EqualFold(o.ID, cfg.OrgID) {
 			marker = platform.Icon("→", "*")
 		}
-		rows = append(rows, []string{marker, o.Name, o.Slug, o.Role, o.ID})
+		rows = append(rows, []string{marker, o.Name, o.Slug, o.Role, o.Plan, o.ID})
 	}
-	output.PrintTable([]string{"", "NAME", "SLUG", "ROLE", "ID"}, rows)
+	output.PrintTable([]string{"", "NAME", "SLUG", "ROLE", "PLAN", "ID"}, rows)
 
 	fmt.Println()
 	if cfg.OrgID == "" {

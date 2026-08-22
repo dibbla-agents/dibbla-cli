@@ -212,6 +212,21 @@ func TestFormatAPIError_WithLogs(t *testing.T) {
 	}
 }
 
+func TestFormatAPIError_WithDocumentation(t *testing.T) {
+	resp := &ErrorResponse{
+		Status: "error",
+		Error: ErrorDetail{
+			Code:          "PLAN_LIMIT_EXCEEDED",
+			Message:       "your plan includes 3 apps and this org has 3",
+			Documentation: "https://docs.dibbla.com/reference/plans",
+		},
+	}
+	errMsg := formatAPIError(resp).Error()
+	if !strings.Contains(errMsg, "Docs: https://docs.dibbla.com/reference/plans") {
+		t.Errorf("error should end with the Docs line, got: %s", errMsg)
+	}
+}
+
 func TestFormatAPIError_WithoutLogs(t *testing.T) {
 	resp := &ErrorResponse{
 		Status: "error",
@@ -226,6 +241,9 @@ func TestFormatAPIError_WithoutLogs(t *testing.T) {
 
 	if strings.Contains(errMsg, "Build logs:") {
 		t.Errorf("error should not contain build logs section when no logs, got: %s", errMsg)
+	}
+	if strings.Contains(errMsg, "Docs:") {
+		t.Errorf("error should not contain a Docs line when documentation is empty, got: %s", errMsg)
 	}
 }
 

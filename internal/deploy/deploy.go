@@ -690,10 +690,11 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 			Type: "error",
 			Error: &render.DeployError{
 				APIError: &render.APIError{
-					Code:      errResp.Error.Code,
-					Message:   errResp.Error.Message,
-					RequestID: errResp.Error.RequestID,
-					Logs:      errResp.Error.Logs,
+					Code:          errResp.Error.Code,
+					Message:       errResp.Error.Message,
+					RequestID:     errResp.Error.RequestID,
+					Logs:          errResp.Error.Logs,
+					Documentation: errResp.Error.Documentation,
 				},
 				StatusCode: resp.StatusCode,
 			},
@@ -778,6 +779,10 @@ func formatAPIError(errResp *ErrorResponse) error {
 
 	if errResp.Error.Logs != "" {
 		msg += "\n\nBuild logs:\n" + errResp.Error.Logs
+	}
+
+	if errResp.Error.Documentation != "" {
+		msg += "\n\nDocs: " + errResp.Error.Documentation
 	}
 
 	return fmt.Errorf("%s", msg)

@@ -95,6 +95,13 @@ func TestBuildStatusReport_JSONShape(t *testing.T) {
 	if strings.Contains(string(out), `"validation_error"`) {
 		t.Errorf("JSON should omit validation_error when empty: %s", out)
 	}
+	// Same omitempty discipline for the plan fields (P-0027): --no-validate
+	// makes no network call, so no plan can have been fetched.
+	for _, absent := range []string{`"plan"`, `"trial_ends_at"`} {
+		if strings.Contains(string(out), absent) {
+			t.Errorf("JSON should omit %s under --no-validate: %s", absent, out)
+		}
+	}
 }
 
 // TestStatusFlag_JSONExists guards against accidental flag removal.
