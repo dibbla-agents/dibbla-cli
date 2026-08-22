@@ -41,10 +41,13 @@ type PreviewError struct {
 }
 
 // PreviewResponse mirrors deploy-api PreviewResponse.
-// PreviewSupport is the server-resolved support: block (P-0024).
+// PreviewSupport is the server-resolved EFFECTIVE support state (P-0024):
+// the manifest's block when it speaks, else the console override (Part J).
+// Source says which; empty on servers that predate Part J.
 type PreviewSupport struct {
 	Enabled    bool   `json:"enabled"`
 	Visibility string `json:"visibility"`
+	Source     string `json:"source,omitempty"` // "manifest" | "console"
 }
 
 type PreviewResponse struct {

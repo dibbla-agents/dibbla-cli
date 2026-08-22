@@ -40,6 +40,9 @@ func (l *Log) OnEvent(ev DeployEvent) {
 		if l.result != nil {
 			l.line("info", "deploy", fmt.Sprintf("status=ok url=%s alias=%s elapsed=%s",
 				l.result.Deployment.URL, l.result.Deployment.Alias, l.elapsed()))
+			if l.result.SupportNotice != "" {
+				l.line("warn", "support", l.result.SupportNotice)
+			}
 		}
 	case "error":
 		l.errEv = ev.Error

@@ -82,7 +82,20 @@ Who can see tickets follows who can see the app (the platform access policy) —
 on a public app that is every signed-in user, so set `visibility: own` there if
 tickets may carry private detail. `visibility` is captured per ticket at
 creation; changing it later does not re-expose old tickets. `dibbla preview`
-shows the resolved setting (`support: enabled, visibility=app`).
+shows the effective setting with its source
+(`support: enabled, visibility=app (from dibbla.yaml)`).
+
+**Precedence with the console switch (P-0024 Part J).** Support can also be
+turned on from the console's per-app Tickets tab, without touching YAML and
+without a redeploy. The rule, block-level: **an explicit `support:` block in
+dibbla.yaml always wins — the whole console override is inert while the block
+exists** (a block with `enabled: false` is still "speaking" and still wins);
+with no block, the console setting wins and **survives redeploys** from
+manifests that never mention support; absent both, support is off. When a
+deploy's manifest contradicts a live console override, the deploy output says
+so (`support_notice` in the response; a `support ·` line in the CLI). The
+users' cross-app inbox is `app.<domain>/support` (Part K); the per-app page
+above remains for deep links.
 
 ---
 

@@ -314,6 +314,10 @@ func (t *TTY) finalize() {
 		t.prop("revision", t.paint(t.result.VCSCommit, colorMagenta+colorBold))
 	}
 	t.printServicesTable()
+	if t.result.SupportNotice != "" {
+		fmt.Fprintln(t.w)
+		fmt.Fprintf(t.w, "  %s %s\n", t.paint("support ·", colorDim), t.result.SupportNotice)
+	}
 	fmt.Fprintln(t.w)
 	fmt.Fprintf(t.w, "  %s %s\n",
 		t.paint("follow logs ·", colorDim),
