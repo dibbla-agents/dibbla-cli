@@ -183,6 +183,10 @@ services:
   redis:
     image: redis:7
     port: 6379
+
+support:                                  # optional: per-app end-user tickets
+  enabled: true
+  visibility: app                         # app (default) | own
 ```
 
 ```bash
@@ -191,7 +195,7 @@ dibbla deploy --alias myapp --target-env staging --profile mailcatcher -m "deplo
 dibbla deploy --alias daily --no-public -m "feat: cron-only deploy"
 ```
 
-The whole graph is built and applied atomically (rollback-on-failure). For env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, multiple public services, per-service auth, build-time secrets, shell variable substitution, and the runtime contract for service discovery + NetworkPolicy, see [`.claude/skills/dibbla/manifest.md`](.claude/skills/dibbla/manifest.md).
+The whole graph is built and applied atomically (rollback-on-failure). For env-aware fields, profiles, init containers, healthchecks, custom domains, cron jobs, multiple public services, per-service auth, build-time secrets, per-app support tickets (`support:`), shell variable substitution, and the runtime contract for service discovery + NetworkPolicy, see [`.claude/skills/dibbla/manifest.md`](.claude/skills/dibbla/manifest.md).
 
 **Multiple public URLs.** Two services with `public: true` get one URL each — the lex-first one at `https://<alias>.dibbla.com` (bare alias for backcompat); subsequent ones at `https://<alias>-<service>.dibbla.com`. Per-service auth (`auth.require_login`, `auth.access_policy`) is env-aware so `pgadmin` can be open in dev and locked down in prod with one manifest.
 
@@ -206,7 +210,7 @@ dibbla preview --target-env prod                # server-authoritative dry run
 dibbla preview --profile mailcatcher --json     # raw PreviewResponse for jq
 ```
 
-`manifest validate` covers parse + schema only. `preview` resolves env-aware fields, applies profiles, and runs the org quota check — server-side, no build, no apply.
+`manifest validate` covers parse + schema only. `preview` resolves env-aware fields, applies profiles, and runs the org quota check — server-side, no build, no apply. It also prints the *effective* support setting and where it came from (`support: enabled, visibility=app (from dibbla.yaml)` vs `(set in the console — dibbla.yaml is silent)`): support can be switched on from the console too, and an explicit `support:` block always wins while it is present.
 
 #### Operate a multi-service app
 
