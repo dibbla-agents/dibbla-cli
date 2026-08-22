@@ -41,6 +41,10 @@ type DeployResult struct {
 	Status     string           `json:"status"`
 	Deployment ResultDeployment `json:"deployment"`
 	VCSCommit  string           `json:"vcs_commit,omitempty"`
+	// SupportNotice is set when the manifest's support: block overrode a
+	// live console-set support setting (P-0024 Part J) — rendered so the
+	// console switch never appears to have silently stopped working.
+	SupportNotice string `json:"support_notice,omitempty"`
 }
 
 type ResultDeployment struct {

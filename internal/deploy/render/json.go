@@ -41,7 +41,7 @@ func (j *JSONRenderer) OnDone() int {
 		}
 		return 1
 	case j.result != nil:
-		_ = enc.Encode(map[string]any{
+		out := map[string]any{
 			"ok":         true,
 			"alias":      j.result.Deployment.Alias,
 			"url":        j.result.Deployment.URL,
@@ -49,7 +49,11 @@ func (j *JSONRenderer) OnDone() int {
 			"deploy_id":  j.result.Deployment.ID,
 			"vcs_commit": j.result.VCSCommit,
 			"elapsed_ms": time.Since(j.startedAt).Milliseconds(),
-		})
+		}
+		if j.result.SupportNotice != "" {
+			out["support_notice"] = j.result.SupportNotice
+		}
+		_ = enc.Encode(out)
 	}
 	return 0
 }

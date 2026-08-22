@@ -134,6 +134,15 @@ func runPreview(stdout, stderr io.Writer, args []string) int {
 		if resp.Support.Enabled {
 			state = "enabled, visibility=" + resp.Support.Visibility
 		}
+		// Part J: name the source so "why is this on/off" is never a
+		// mystery — an explicit dibbla.yaml support: block always wins;
+		// the console switch governs only in its absence.
+		switch resp.Support.Source {
+		case "manifest":
+			state += " (from dibbla.yaml)"
+		case "console":
+			state += " (set in the console — dibbla.yaml is silent)"
+		}
 		fmt.Fprintf(stdout, "  support: %s\n", state)
 	}
 	if len(resp.ActiveServices) > 0 {
