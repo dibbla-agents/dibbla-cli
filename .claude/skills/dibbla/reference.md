@@ -417,6 +417,8 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `INVALID_HEALTHCHECK` / `MISSING_HEALTHCHECK` | Healthcheck declaration violates the schema (multiple probes / missing required fields) | See manifest.md § 12 |
 | `HEALTHCHECK_FAILED` / `HEALTHCHECK_TIMEOUT` | Probe didn't pass at deploy time | Check pod logs; relax `failure_threshold` / `initial_delay_seconds` for slow boots |
 | `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars | Shorten the alias or service name |
+| `PLAN_LIMIT_EXCEEDED` | The org's plan is at its app or database limit (checked BEFORE any upload/build) — an at-limit org can always still redeploy its existing apps | Upgrade in the console (Org settings → Plan) or remove an app/database; the error's `Docs:` line links https://docs.dibbla.com/reference/plans |
+| `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Upgrade in the console (Org settings → Plan) — the gate lifts immediately on payment |
 
 ---
 
