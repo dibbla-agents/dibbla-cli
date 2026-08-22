@@ -59,10 +59,15 @@ type Manifest struct {
 // parser is lenient and the manifest travels to the server as raw YAML inside
 // the archive), so presence here only adds local value validation.
 type Support struct {
-	Enabled     bool     `yaml:"enabled"`
-	Assignees   []string `yaml:"assignees,omitempty"`  // default: all owner/admin/developer
-	Visibility  string   `yaml:"visibility,omitempty"` // app (default) | own
-	Attachments bool     `yaml:"attachments,omitempty"`
+	Enabled    bool     `yaml:"enabled"`
+	Assignees  []string `yaml:"assignees,omitempty"`  // default: all owner/admin/developer
+	Visibility string   `yaml:"visibility,omitempty"` // app (default) | own
+	// Attachments is DEPRECATED and has no effect: attachments follow
+	// support.enabled (P-0024 Part H). It still parses, so manifests that
+	// already carry it keep working; `dibbla preview` reports the server's
+	// deprecation warning, which is where a manifest question gets its
+	// authoritative answer.
+	Attachments bool `yaml:"attachments,omitempty"`
 }
 
 // Service holds the per-service fields the CLI cares about for local
