@@ -696,6 +696,81 @@ DATABASE_URL="${DATABASE_URL_MY_DB}"
 
 ---
 
+## storage
+
+Managed S3-compatible object storage — buckets provisioned and operated like
+databases. Alias: `dibbla buckets`. Creating a bucket provisions credentials
+**scoped to exactly that bucket** (they cannot read or list any other bucket)
+plus a **hard quota**, and injects four secrets automatically:
+`STORAGE_<NAME>_ENDPOINT`, `STORAGE_<NAME>_BUCKET`,
+`STORAGE_<NAME>_ACCESS_KEY_ID`, `STORAGE_<NAME>_SECRET_ACCESS_KEY` — where
+`<NAME>` is the bucket name uppercased with hyphens turned into underscores
+(bucket `my-uploads` → `STORAGE_MY_UPLOADS_*`). App code reads those env vars
+and speaks plain S3 (any SDK; path-style, region `us-east-1`).
+
+On an instance without managed storage configured, every command fails with
+`STORAGE_NOT_CONFIGURED` (503) — that's the server saying the feature is off,
+not a CLI bug.
+
+### storage list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage list [--quiet | -q]` |
+| **Flags** | `--quiet`, `-q` — names only, one per line (scripting) |
+
+### storage create
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage create [name]` or `dibbla storage create --name <name>` |
+| **Arguments** | `name` (optional as position) — bucket name |
+| **Flags** | `--name` — bucket name (alternative to argument) |
+| | `--deployment <alias>` — scope the bucket and its `STORAGE_*` secrets to a specific deployment (omit for org-global) |
+| | `--size <quota>` — hard quota, e.g. `5Gi`, `500Mi` (default 5Gi; server-side ceiling applies) |
+| | `--expire-days <n>` — auto-delete objects older than n days (0 = never) |
+| **Name rules** | 3–48 chars, lowercase letters, digits and hyphens; must start **and** end alphanumeric. Pattern: `^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$`. Underscores and uppercase are rejected. Reserved names (`workflows`, `files`, `cnpg-backups`, `workflow-artifacts`) are refused. |
+| **Quota** | The quota is **hard** — uploads beyond it fail with an S3 error. Choose `--size` for real usage. |
+
+### storage delete
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage delete <name>` |
+| **Arguments** | `name` (required) |
+| **Flags** | `--yes`, `-y` — skip confirmation |
+| | `--force` — delete even if the bucket still holds objects (irreversible) |
+| | `--quiet`, `-q` — errors only (scripting) |
+| **Behaviour** | Deletes the bucket, its scoped credentials **and** the four injected secrets. A non-empty bucket is refused without `--force`. |
+
+### storage rotate
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage rotate <name> [--no-restart]` |
+| **Arguments** | `name` (required) |
+| **Flags** | `--no-restart` — skip restarting the bound deployment's services |
+| **Behaviour** | Re-mints the scoped credentials and re-syncs the injected secrets. **Rotation is restart-coupled**: pods read secrets via env at start, so the bound deployment's services are restarted automatically to pick up the new key. With `--no-restart`, running pods keep the old — now invalid — key until you restart them yourself (`dibbla apps restart`). |
+
+### storage info
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage info` |
+| **Output** | Table of every bucket: size, object count, quota. Size figures come from the store's usage accounting and can lag by a scan cycle. |
+
+### storage credentials
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla storage credentials <name> [--deployment <alias>] [--quiet | -q]` |
+| **Arguments** | `name` (required) — bucket name |
+| **Flags** | `--quiet`, `-q` — print only the export lines (for `eval`) |
+| | `--deployment <alias>` — where the bucket's secrets are scoped (omit for org-global) |
+| **Output** | Shell `export` lines (`AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `DIBBLA_BUCKET`) read from the injected secrets, for human use with `aws`/`mc`/`rclone`: `eval "$(dibbla storage credentials mybucket -q)"`. There is no `storage connect` — S3 has no psql analog to wrap. |
+
+---
+
 ## secrets
 
 Secrets have three scopes:

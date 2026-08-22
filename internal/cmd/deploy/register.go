@@ -15,6 +15,7 @@ func Register(root *cobra.Command) {
 	root.AddCommand(appsCmd)
 	root.AddCommand(deployCmd)
 	root.AddCommand(dbCmd)
+	root.AddCommand(storageCmd)
 	root.AddCommand(secretsCmd)
 }
 
