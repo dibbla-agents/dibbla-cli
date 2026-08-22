@@ -45,4 +45,7 @@ func TestJSON_Failure(t *testing.T) {
 	if ev.Step != "go-build" {
 		t.Errorf("step = %q, want go-build", ev.Step)
 	}
+	if ev.Documentation != "https://docs.dibbla.com/reference/plans" {
+		t.Errorf("documentation = %q — the server-attached docs URL must survive into --json", ev.Documentation)
+	}
 }

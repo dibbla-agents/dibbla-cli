@@ -431,6 +431,12 @@ func (t *TTY) printFailure() {
 			t.paint(":", colorDim),
 			t.paint(t.errEv.APIError.Message, colorWhite),
 		)
+		if t.errEv.APIError.Documentation != "" {
+			fmt.Fprintf(t.w, "  %s %s\n",
+				t.paint("Docs:", colorDim),
+				t.paint(t.errEv.APIError.Documentation, colorBright),
+			)
+		}
 	}
 	if t.errEv.RetryCmd != "" {
 		fmt.Fprintln(t.w)

@@ -105,7 +105,7 @@ func TestResolve_EmptyQuery(t *testing.T) {
 const listBody = `{
   "organizations": [
     {"organization": {"id": "id-zeta", "name": "Zeta", "slug": "zeta", "org_type": "business"}, "role": "viewer"},
-    {"organization": {"id": "id-acme", "name": "Acme", "slug": "acme", "org_type": "personal"}, "role": "owner"}
+    {"organization": {"id": "id-acme", "name": "Acme", "slug": "acme", "org_type": "personal", "plan": "standard"}, "role": "owner"}
   ],
   "count": 2
 }`
@@ -136,6 +136,14 @@ func TestList_ParsesNestedShapeAndSortsByName(t *testing.T) {
 	}
 	if got[0].OrgType != "personal" {
 		t.Errorf("org_type = %q, want personal", got[0].OrgType)
+	}
+	// Plan (P-0027) decodes when present and stays empty when the server
+	// omits it (pre-plan installs).
+	if got[0].Plan != "standard" {
+		t.Errorf("plan = %q, want standard", got[0].Plan)
+	}
+	if got[1].Plan != "" {
+		t.Errorf("plan = %q, want empty for an org without one", got[1].Plan)
 	}
 }
 

@@ -37,7 +37,7 @@ func scriptedFailure(r Renderer) {
 	r.OnEvent(DeployEvent{
 		Type: "error",
 		Error: &DeployError{
-			APIError:   &APIError{Code: "BUILD_FAILED", Message: "go build returned exit code 2"},
+			APIError:   &APIError{Code: "BUILD_FAILED", Message: "go build returned exit code 2", Documentation: "https://docs.dibbla.com/reference/plans"},
 			StatusCode: 422,
 			FailedStep: "go-build",
 			StepIndex:  1,
@@ -85,6 +85,7 @@ func TestTTY_Failure(t *testing.T) {
 		"go-build",
 		"undefined: store.NewPostgres",
 		"BUILD_FAILED",
+		"Docs: https://docs.dibbla.com/reference/plans",
 		"re-run · dibbla deploy --update -a analytics-api",
 	} {
 		if !strings.Contains(out, want) {

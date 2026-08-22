@@ -171,25 +171,50 @@ const validateTokenPath = "/api/auth/v1/tokens/validate"
 // ValidateToken calls the token validation endpoint and returns an error if the token is invalid.
 // baseURL should be the API base (e.g. https://api.dibbla.com) without trailing slash.
 func ValidateToken(baseURL, token string) error {
+	_, err := ValidateTokenDetailed(baseURL, token, "")
+	return err
+}
+
+// ValidateInfo is the subset of the validate response the CLI displays
+// (P-0027): the org's plan name and RFC3339 trial end, both empty on installs
+// without billing and on orgs with no plan.
+type ValidateInfo struct {
+	OrgPlan        string `json:"org_plan"`
+	OrgTrialEndsAt string `json:"org_trial_ends_at"`
+}
+
+// ValidateTokenDetailed validates like ValidateToken and returns the parsed
+// response body. A non-empty orgID is sent as the X-Org-ID override so the
+// answer (including membership and plan) is about that org — the one the CLI
+// is actually pinned to — rather than the token's default org.
+func ValidateTokenDetailed(baseURL, token, orgID string) (*ValidateInfo, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := baseURL + validateTokenPath
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
+	if orgID != "" {
+		req.Header.Set("X-Org-ID", orgID)
+	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
+		info := &ValidateInfo{}
+		if body, err := io.ReadAll(resp.Body); err == nil {
+			// Best-effort: an unparsable body still means "valid token".
+			_ = json.Unmarshal(body, info)
+		}
+		return info, nil
 	}
 	body, _ := io.ReadAll(resp.Body)
 	msg := strings.TrimSpace(string(body))
@@ -208,5 +233,5 @@ func ValidateToken(baseURL, token string) error {
 			msg = msg + "\n  " + hint
 		}
 	}
-	return &APIError{StatusCode: resp.StatusCode, Message: msg}
+	return nil, &APIError{StatusCode: resp.StatusCode, Message: msg}
 }

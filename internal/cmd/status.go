@@ -61,6 +61,10 @@ type statusReport struct {
 	Validated       bool   `json:"validated"`
 	LoggedIn        bool   `json:"logged_in"`
 	ValidationError string `json:"validation_error,omitempty"`
+	// Plan fields (P-0027) come from the same validate call — absent under
+	// --no-validate (no network) and on orgs/installs without a plan.
+	Plan        string `json:"plan,omitempty"`
+	TrialEndsAt string `json:"trial_ends_at,omitempty"`
 }
 
 func runStatus(cmd *cobra.Command, args []string) {
@@ -109,10 +113,17 @@ func buildStatusReport(noValidate bool) statusReport {
 	}
 
 	r.Validated = true
-	if err := apiclient.ValidateToken(apiURL, token); err != nil {
+	// The pinned org rides along as the override so the validated answer —
+	// including the plan — is about the org shown on the Org: line.
+	info, err := apiclient.ValidateTokenDetailed(apiURL, token, orgID)
+	if err != nil {
 		r.LoggedIn = false
 		r.ValidationError = err.Error()
 		return r
+	}
+	if info != nil {
+		r.Plan = info.OrgPlan
+		r.TrialEndsAt = info.OrgTrialEndsAt
 	}
 	r.LoggedIn = true
 	return r
@@ -218,6 +229,14 @@ func printStatusHuman(r statusReport) {
 		fmt.Printf("Org:     %s  (%s, source: %s)\n", r.OrgName, r.OrgID, r.OrgSource)
 	default:
 		fmt.Printf("Org:     %s  (source: %s)\n", r.OrgID, r.OrgSource)
+	}
+
+	if r.Plan != "" {
+		if r.Plan == "trial" && r.TrialEndsAt != "" {
+			fmt.Printf("Plan:    %s (ends %s)\n", r.Plan, r.TrialEndsAt)
+		} else {
+			fmt.Printf("Plan:    %s\n", r.Plan)
+		}
 	}
 
 	switch {
