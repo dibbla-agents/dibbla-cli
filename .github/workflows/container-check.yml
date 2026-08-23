@@ -1,0 +1,109 @@
+name: Container image
+
+# The CI image is published by the `container` job in release.yml, which only
+# runs on a v* tag. Without this gate a broken Dockerfile — a base digest that
+# no longer resolves, a renamed staging path, a COPY that stops matching — would
+# surface mid-release, in a job sitting downstream of signing and checksums.
+# That is the shape of failure CLAUDE.md records for v1.2.47–v1.2.51: something
+# late in the release chain breaking and taking the release with it.
+#
+# This is its own workflow rather than a job in ci.yml because GitHub Actions
+# supports `paths` only at workflow level, and this does not need to run on
+# every PR. Same reasoning as skill-sync-check.yml.
+
+# The two path lists are duplicated rather than shared with a YAML anchor:
+# GitHub Actions' workflow parser does not resolve anchors or aliases. Keep them
+# in step if you edit one.
+on:
+  pull_request:
+    paths:
+      - ".github/docker/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/container-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/docker/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/container-check.yml"
+
+concurrency:
+  group: container-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Image builds for both platforms
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # Same source of truth as every other workflow here — go.mod.
+          go-version-file: go.mod
+
+      - name: Stage the linux binaries
+        run: |
+          set -euo pipefail
+
+          # release.yml assembles the image from the *published* archives, so
+          # the shipped image carries the same bytes as the release. There is no
+          # release on a PR, so build the two linux binaries here instead.
+          #
+          # This gate therefore checks that the Dockerfile assembles and runs —
+          # not that the bytes match a release. That property only exists at tag
+          # time and is release.yml's to keep.
+          for arch in amd64 arm64; do
+            mkdir -p "oci-context/stage/linux_${arch}"
+            GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build \
+              -ldflags "-s -w -X github.com/dibbla-agents/dibbla-cli/internal/cmd.Version=0.0.0-ci" \
+              -o "oci-context/stage/linux_${arch}/dibbla" ./cmd/dibbla
+          done
+          chmod 0755 oci-context/stage/linux_amd64/dibbla oci-context/stage/linux_arm64/dibbla
+          ls -l oci-context/stage/linux_amd64/dibbla oci-context/stage/linux_arm64/dibbla
+
+      - name: Both platforms assemble
+        run: |
+          set -euo pipefail
+
+          # A manifest list needs the docker-container driver; the default
+          # docker driver cannot emit one. Created inline to keep this
+          # workflow's third-party action surface where it is.
+          docker buildx create --use --driver docker-container --name dibbla-cli-check
+
+          # No --push. This proves the Dockerfile assembles on both platforms
+          # and that the pinned base digest still resolves — which is the part
+          # that rots quietly, since a pinned digest stays fixed while upstream
+          # moves on. Publishing stays in release.yml.
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file .github/docker/Dockerfile \
+            --build-arg VERSION=0.0.0-ci \
+            --tag dibbla-cli:ci \
+            oci-context
+
+      - name: The image runs
+        run: |
+          set -euo pipefail
+
+          # Load the runner-native platform and execute it — the same assertion
+          # release.yml makes after pushing, so the two cannot drift. Layers are
+          # already cached from the step above, so this is nearly free.
+          docker buildx build \
+            --platform linux/amd64 --load \
+            --file .github/docker/Dockerfile \
+            --build-arg VERSION=0.0.0-ci \
+            --tag dibbla-cli:ci \
+            oci-context
+
+          GOT="$(docker run --rm dibbla-cli:ci --version)"
+          echo "$GOT"
+          if [ "$GOT" != "dibbla version 0.0.0-ci" ]; then
+            echo "::error file=.github/docker/Dockerfile::image reports '${GOT}', expected 'dibbla version 0.0.0-ci'"
+            exit 1
+          fi
+          echo "✓ image builds for linux/amd64 + linux/arm64 and runs"

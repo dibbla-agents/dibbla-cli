@@ -663,9 +663,126 @@ jobs:
           git push origin HEAD
           echo "✓ Tap updated to v${VERSION} with signed checksums"
 
+  container:
+    name: Publish the container image
+    # Sibling of `mirror` and `homebrew`, and off `checksums` for the same
+    # reason (CLAUDE.md, "release.yml job order is load-bearing", rule 3): this
+    # job republishes an artifact, so it must copy the final bytes together with
+    # the checksums that match them. Building off `release` would bake a
+    # pre-signing tree into an image tagged as the release.
+    #
+    # Linux archives are not touched by either signing job today, so in practice
+    # the bytes are the same either way. Hanging off `checksums` regardless
+    # keeps the rule intact rather than resting on that staying true.
+    needs: checksums
+    # No prerelease guard, deliberately. Unlike `latest.json` and the Homebrew
+    # formula, an immutable `1.2.52-rc.1` image moves nothing that users track,
+    # and it lets a consuming pipeline rehearse against an rc — the property the
+    # homebrew job's comment describes for everything upstream of it. The one
+    # moving tag, `:latest`, is held back for stable releases in the push step.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Stage the published linux binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+
+          # Assemble the image from the published archives rather than building
+          # from source, so the binary in the image is byte-identical to the one
+          # on the release and on install.dibbla.com. A `go build` here would be
+          # a second, unverified binary wearing the same version number.
+          gh release download "$TAG" -D assets --clobber -R "$GITHUB_REPOSITORY" \
+            -p "dibbla_${VERSION}_linux_amd64.tar.gz" \
+            -p "dibbla_${VERSION}_linux_arm64.tar.gz" \
+            -p checksums.txt
+
+          # --ignore-missing: checksums.txt covers every published asset, and
+          # only the two linux archives were downloaded.
+          ( cd assets && sha256sum --check --ignore-missing checksums.txt )
+
+          # The Dockerfile COPYs stage/linux_$TARGETARCH/dibbla. Staging into a
+          # dedicated context directory keeps the build context to two binaries
+          # instead of shipping the whole worktree to the daemon.
+          for arch in amd64 arm64; do
+            mkdir -p "oci-context/stage/linux_${arch}"
+            tar -xzf "assets/dibbla_${VERSION}_linux_${arch}.tar.gz" \
+              -C "oci-context/stage/linux_${arch}" dibbla
+          done
+
+          chmod 0755 oci-context/stage/linux_amd64/dibbla oci-context/stage/linux_arm64/dibbla
+          ls -l oci-context/stage/linux_amd64/dibbla oci-context/stage/linux_arm64/dibbla
+
+      - name: Build and push
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/dibbla-cli"
+
+          # GITHUB_TOKEN with `packages: write` rather than a PAT. CLAUDE.md
+          # records HOMEBREW_TAP_GITHUB_TOKEN silently expiring and taking a
+          # release down with it; the built-in token cannot expire, so this
+          # publishing path has no credential to rotate.
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          # A multi-arch build needs the docker-container driver; the default
+          # docker driver cannot emit a manifest list. Created inline rather
+          # than via docker/setup-buildx-action to keep this workflow's
+          # third-party action surface where it is.
+          docker buildx create --use --driver docker-container --name dibbla-cli-builder
+
+          TAGS=(--tag "$IMAGE:$VERSION" --tag "$IMAGE:$TAG")
+
+          # SemVer prerelease identifiers always contain a hyphen, stable tags
+          # never do — the same test the homebrew job uses. `:latest` is the one
+          # tag here that moves, so it only ever moves to a stable release.
+          if [[ "$TAG" != *-* ]]; then
+            TAGS+=(--tag "$IMAGE:latest")
+          fi
+
+          # No QEMU setup: the Dockerfile has no RUN steps, so nothing executes
+          # in the target architecture and both platforms are pure COPY.
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file .github/docker/Dockerfile \
+            --build-arg VERSION="$VERSION" \
+            "${TAGS[@]}" \
+            --push \
+            oci-context
+
+      - name: Verify the pushed image
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/dibbla-cli"
+
+          # Runs the amd64 image natively. arm64 is not exercised here — it is
+          # the same COPY of a GoReleaser-built binary, and running it would
+          # mean installing QEMU purely to print a version string.
+          GOT="$(docker run --rm "$IMAGE:$VERSION" --version)"
+          echo "$GOT"
+          [ "$GOT" = "dibbla version ${VERSION}" ] || {
+            echo "image reports '${GOT}', expected 'dibbla version ${VERSION}'"
+            exit 1
+          }
+
+          echo "Pinnable digest for consumers:"
+          docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}'
+
   notify:
     name: Notify Slack
-    needs: [release, sign-macos, sign-windows, checksums, mirror, verify-windows-installer, homebrew]
+    needs: [release, sign-macos, sign-windows, checksums, mirror, verify-windows-installer, homebrew, container]
     if: always()
     runs-on: ubuntu-latest
     permissions:

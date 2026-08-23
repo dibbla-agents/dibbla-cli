@@ -13,6 +13,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
 	"github.com/dibbla-agents/dibbla-cli/internal/vcs"
 )
 
@@ -128,6 +129,10 @@ func splitOrgApp(s string) (org, app string) {
 // tradeoff vs. the URL-embedded alternative, which would also land in
 // .git/config permanently.
 func runGitClone(cloneURL, token, dest string) error {
+	if err := preflight.RequireTool("git"); err != nil {
+		return err
+	}
+
 	args := []string{
 		"-c", "http.extraHeader=Authorization: Bearer " + token,
 		"clone", "--quiet", cloneURL, dest,

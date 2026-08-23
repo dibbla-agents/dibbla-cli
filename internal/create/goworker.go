@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
 )
 
 const (
@@ -84,6 +85,10 @@ func GoWorker(config ProjectConfig) error {
 }
 
 func cloneTemplate(destDir string) error {
+	if err := preflight.RequireTool("git"); err != nil {
+		return err
+	}
+
 	cmd := exec.Command("git", "clone", "--depth", "1", templateRepo, destDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
