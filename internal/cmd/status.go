@@ -10,7 +10,6 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
-	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
@@ -32,9 +31,10 @@ state of the token (revoked / expired tokens show as not logged in). Use
 
 The "source" annotations show where each value came from. Resolution order
 matches the rest of the CLI:
-  API URL: DIBBLA_API_URL > DIBBLA_AUTH_SERVICE_URL > keyring > credentials file > default
-  Token:   DIBBLA_API_TOKEN > keyring > credentials file > none
-  Org:     --org > DIBBLA_ORG_ID > keyring > credentials file > account default
+  Context: --context > DIBBLA_CONTEXT > the context selected with "dibbla context use"
+  API URL: DIBBLA_API_URL > DIBBLA_AUTH_SERVICE_URL > the context's URL > default
+  Token:   DIBBLA_API_TOKEN > the context's token (keyring, then its credentials file) > none
+  Org:     --org > DIBBLA_ORG_ID > the context's org pin > account default
 
 Exit codes:
   0  logged in (or --no-validate and a token is configured)
@@ -58,6 +58,11 @@ type statusReport struct {
 	OrgID           string `json:"org_id,omitempty"`
 	OrgName         string `json:"org_name,omitempty"`
 	OrgSource       string `json:"org_source"`
+	// Context names which login target produced the values above, and
+	// ContextCount how many are configured — so `dibbla status --json` answers
+	// "which server am I on, and are there others" in one call.
+	Context         string `json:"context,omitempty"`
+	ContextCount    int    `json:"context_count"`
 	Validated       bool   `json:"validated"`
 	LoggedIn        bool   `json:"logged_in"`
 	ValidationError string `json:"validation_error,omitempty"`
@@ -107,6 +112,10 @@ func buildStatusReport(noValidate bool) statusReport {
 		OrgName:         orgName,
 		OrgSource:       orgSource,
 	}
+	if !envOnly() {
+		resolved := config.ResolveContext()
+		r.Context, r.ContextCount = resolved.Name, resolved.Count
+	}
 
 	if !r.TokenConfigured || noValidate {
 		return r
@@ -129,9 +138,23 @@ func buildStatusReport(noValidate bool) statusReport {
 	return r
 }
 
+// envOnly reports whether config.Load would take its env-only short-circuit and
+// return before reading any local store. Named once and used by all three
+// resolvers below, because getting this condition subtly different in one of
+// them is exactly how they drift.
+func envOnly() bool {
+	return os.Getenv("DIBBLA_API_TOKEN") != "" || platform.IsCI()
+}
+
 // resolveAPIURLWithSource mirrors config.Load's URL precedence and reports
-// where the chosen value came from. Kept inline rather than refactoring
-// config.Load so the precedence change blast radius stays in one file.
+// where the chosen value came from.
+//
+// These three resolvers duplicate Load()'s ladder rather than calling it,
+// because Load returns values without saying where they came from and the whole
+// job of `dibbla status` is to say. That duplication is a standing hazard —
+// after named contexts there are four ladders in this codebase that must agree
+// — so it is pinned by a test that drives status and Load through identical
+// environments and requires the same answer, rather than by this comment.
 func resolveAPIURLWithSource() (url, source string) {
 	if v := strings.TrimSpace(os.Getenv("DIBBLA_API_URL")); v != "" {
 		return normalizeURL(v), "env (DIBBLA_API_URL)"
@@ -140,15 +163,11 @@ func resolveAPIURLWithSource() (url, source string) {
 		return normalizeURL(v), "env (DIBBLA_AUTH_SERVICE_URL)"
 	}
 	// Honor the same env-only short-circuit as config.Load: when
-	// DIBBLA_API_TOKEN is set or we're in CI, the keyring/file are not
-	// consulted, so reporting their stored URLs would be misleading.
-	envToken := os.Getenv("DIBBLA_API_TOKEN")
-	if envToken == "" && !platform.IsCI() {
-		if storedToken, storedURL, err := credential.GetCredentials(); err == nil && storedToken != "" && storedURL != "" {
-			return normalizeURL(storedURL), "keyring"
-		}
-		if fileToken, fileURL, err := credential.GetTokenFile(); err == nil && fileToken != "" && fileURL != "" {
-			return normalizeURL(fileURL), "credentials file"
+	// DIBBLA_API_TOKEN is set or we're in CI, no local store is consulted, so
+	// reporting a stored URL would be misleading.
+	if !envOnly() {
+		if r := config.ResolveContext(); r.Err == nil && r.APIURL != "" {
+			return normalizeURL(r.APIURL), "context " + r.Name
 		}
 	}
 	return config.DefaultAPIURL, "default"
@@ -160,26 +179,25 @@ func resolveTokenWithSource() (token, source string) {
 	}
 	if platform.IsCI() {
 		// CI without DIBBLA_API_TOKEN: same short-circuit as config.Load
-		// — keyring is not consulted. Report nothing rather than silently
+		// — no local store is consulted. Report nothing rather than silently
 		// reading credentials that won't be used at runtime.
 		return "", "none"
 	}
-	if t, err := credential.GetToken(); err == nil && t != "" {
-		return t, "keyring"
+	r := config.ResolveContext()
+	if r.Err != nil || r.Token == "" {
+		return "", "none"
 	}
-	if t, _, err := credential.GetTokenFile(); err == nil && t != "" {
-		return t, "credentials file"
-	}
-	return "", "none"
+	return r.Token, fmt.Sprintf("%s (context %s)", r.TokenStore, r.Name)
 }
 
 // resolveOrgWithSource mirrors config.Load's org precedence and reports where
 // the value came from. An empty id is not a missing value: it means no
-// organization was selected and the API will use the account's default.
+// organization was selected and the API will use the account's default — and,
+// concretely, that no X-Org-ID header is sent at all.
 //
-// Unlike the token, the org is read from the keyring even when DIBBLA_API_TOKEN
-// is set or we are in CI — config.Load's env-only short-circuit skips the
-// keyring for credentials, and this mirrors it, so the same "none" is reported.
+// The pin is read from the ACTIVE CONTEXT rather than from a machine-wide slot
+// (P-0011 Part C): an organization id only means anything on the server that
+// issued it.
 func resolveOrgWithSource() (orgID, orgName, source string) {
 	if v := strings.TrimSpace(config.FlagOrgID); v != "" {
 		return v, "", "flag (--org)"
@@ -187,14 +205,11 @@ func resolveOrgWithSource() (orgID, orgName, source string) {
 	if v := strings.TrimSpace(os.Getenv("DIBBLA_ORG_ID")); v != "" {
 		return v, "", "env (DIBBLA_ORG_ID)"
 	}
-	if os.Getenv("DIBBLA_API_TOKEN") != "" || platform.IsCI() {
+	if envOnly() {
 		return "", "", "none (account default)"
 	}
-	if id, name, err := credential.GetOrg(); err == nil && id != "" {
-		return id, name, "keyring"
-	}
-	if id, name, err := credential.GetOrgFile(); err == nil && id != "" {
-		return id, name, "credentials file"
+	if r := config.ResolveContext(); r.Err == nil && r.OrgID != "" {
+		return r.OrgID, r.OrgName, "context " + r.Name
 	}
 	return "", "", "none (account default)"
 }
@@ -216,6 +231,14 @@ func printStatusHuman(r statusReport) {
 	warn := platform.Icon("⚠", "[!]")
 
 	fmt.Printf("Dibbla CLI %s\n", r.Version)
+	switch {
+	case r.Context != "" && r.ContextCount > 1:
+		fmt.Printf("Context: %s  (%d configured — `dibbla context list`)\n", r.Context, r.ContextCount)
+	case r.Context != "":
+		fmt.Printf("Context: %s\n", r.Context)
+	case r.ContextCount > 0:
+		fmt.Printf("Context: none selected  (%d configured — `dibbla context use <name>`)\n", r.ContextCount)
+	}
 	fmt.Printf("API:     %s  (%s)\n", r.APIURL, r.APIURLSource)
 	if r.TokenConfigured {
 		fmt.Printf("Token:   configured  (source: %s)\n", r.TokenSource)

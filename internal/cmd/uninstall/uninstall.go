@@ -11,11 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
 	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
+	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
@@ -49,7 +52,10 @@ What gets removed depends on how dibbla was installed:
     refuses to remove the binary; offers to clean config only.
 
 Config cleanup includes:
-  - Stored credentials in the OS keychain (token + API URL).
+  - Stored credentials in the OS keychain, for every named context and for
+    the legacy single slot.
+  - The context list (~/.config/dibbla/config.yaml) and every per-context
+    credentials file beside it.
   - Update-notifier state (~/.config/dibbla/state.yml).
   - Templates cache (~/.dibbla/templates-cache.json).
   - The skill-installs registry (~/.dibbla/skill-installs.json).
@@ -141,8 +147,25 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 	// 2. CLI-owned config / state.
 	if !flagKeepConfig {
 		steps = append(steps, step{
-			label: "stored credentials (OS keychain + user-level file)",
+			label: credentialsStepLabel(),
 			exec: func() error {
+				// Every named context, then the legacy single slot. Both the
+				// context list AND the config directory are enumerated: a
+				// credentials file can outlive its config.yaml entry — a
+				// hand-edited file, or a crash between the two writes — and
+				// leaving a bearer token on disk after "uninstall" reported
+				// success is the failure worth spending an extra readdir on.
+				for _, name := range contextNames() {
+					if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringUnavailable(err) {
+						return err
+					}
+					if err := credential.DeleteContextTokenFile(name); err != nil {
+						return err
+					}
+				}
+				if err := contextcfg.Remove(); err != nil {
+					return err
+				}
 				// Keyring-unavailable hosts: DeleteToken errors on
 				// the keyring lookup. Don't fail uninstall over it —
 				// nothing to delete there is the same outcome as
@@ -151,6 +174,7 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 					return err
 				}
 				_ = credential.DeleteAPIURL()
+				_ = credential.DeleteOrg()
 				return credential.DeleteTokenFile()
 			},
 		})
@@ -321,4 +345,41 @@ func joinErrs(errs []error) error {
 		msg += "; " + e.Error()
 	}
 	return fmt.Errorf("%s", msg)
+}
+
+// contextNames returns every context that has a token stored anywhere: the ones
+// config.yaml lists, plus any that only have a credentials file left. The union
+// is the point — enumerating either source alone can leave a token behind.
+func contextNames() []string {
+	seen := map[string]bool{}
+	var names []string
+	add := func(n string) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	if cfg, err := contextcfg.Load(); err == nil {
+		for _, n := range cfg.Names() {
+			add(n)
+		}
+	}
+	// A malformed config.yaml must not stop the cleanup: the files are still
+	// there and are exactly what needs removing.
+	for _, n := range credential.ListContextTokenFiles() {
+		add(n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// credentialsStepLabel names what will actually be removed, so --dry-run shows
+// the contexts rather than a generic line the user cannot check.
+func credentialsStepLabel() string {
+	names := contextNames()
+	if len(names) == 0 {
+		return "stored credentials (OS keychain + user-level file)"
+	}
+	return fmt.Sprintf("stored credentials for %d context(s): %s — plus the context list and the legacy credentials file",
+		len(names), strings.Join(names, ", "))
 }
