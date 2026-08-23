@@ -15,10 +15,11 @@ The `dibbla` CLI is used to scaffold new projects and manage applications, datab
 Most commands that interact with the Dibbla platform require an API token.
 
 - **Local use:** Run `dibbla login` to store the token securely in the OS credential store (macOS Keychain, Windows Credential Manager, etc.). Use `dibbla login [api_url]` to target a different API (e.g. `dibbla login api.your-domain.com`). Use `dibbla logout` to remove stored credentials.
-- **CI:** Set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`); the CLI uses env vars in CI and does not read the keychain.
+- **Several servers at once:** A login is stored as a named **context** — an API URL, its token, and the organization pinned on that server. Logging in to a second server therefore *adds* a context instead of replacing the first, and `dibbla context use <name>` switches between them. See `dibbla context`.
+- **CI:** Set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`); the CLI uses env vars in CI and reads neither the keychain nor the context list.
 - **Fallback:** The token can also be provided via the `DIBBLA_API_TOKEN` environment variable or a `.env` file.
 
-If the token is missing, the tool will prompt the user to run `dibbla login` or set `DIBBLA_API_TOKEN`. Get your token at `https://app.dibbla.com/api-keys`.
+If the token is missing, the tool will prompt the user to run `dibbla login` or set `DIBBLA_API_TOKEN`. Get your token at `https://app.dibbla.com/api-keys` — or, for a self-hosted or customer instance, at that instance's own portal (`app.<its-domain>/api-keys`). A token minted on the wrong instance will not work there.
 
 ## Commands
 
@@ -26,31 +27,54 @@ Here is a breakdown of the available commands and their usage:
 
 ### `login`
 
-Store your API token securely in the OS credential store. The token is validated against the API before storage.
+Store your API token securely as a named context. The token is validated against the API before storage.
 
 -   **Usage:** `dibbla login [api_url]`
 -   **Arguments:**
-    -   `api_url` (optional): API base host or URL (e.g. `api.your-domain.com` or `https://api.your-domain.com`). Default: `https://api.dibbla.com`.
+    -   `api_url` (optional): API base host or URL (e.g. `api.your-domain.com` or `https://api.your-domain.com`). If omitted, the API URL of the context you are currently on is used, and `https://api.dibbla.com` only when there is none — so a bare `dibbla login` while working against a customer instance re-authenticates there rather than silently re-targeting production.
 -   **Flags:**
     -   `--api-key`: API token. If omitted, the user is prompted to enter it.
--   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login api.your-domain.com`
+    -   `--context <name>`: name the context to create or refresh. Without it, the context is keyed on the API URL — the same URL refreshes, a new URL creates a new context.
+    -   `--no-switch`: store the login without making it the context in use.
+-   **Example:** `dibbla login` — `dibbla login --api-key ak_xxx` — `dibbla login --context lab --api-url https://api.your-domain.com --api-key ak_yyy`
 
 ### `logout`
 
-Remove the API token and optional API URL stored by `dibbla login` from the OS credential store. Also clears the organization selected with `dibbla org use`.
+Log out of the context in use: remove its token from the OS credential store and from its credentials file, and remove the context. Other contexts are untouched, so logging out of production does not log you out of a customer instance. Also clears the organization selected with `dibbla org use` for whatever is removed.
 
--   **Usage:** `dibbla logout`
--   **Example:** `dibbla logout`
+-   **Usage:** `dibbla logout [--context <name>] [--all]`
+-   **Flags:**
+    -   `--context <name>`: log out of that context instead of the one in use.
+    -   `--all`: log out of every context and delete the context list.
+-   **Example:** `dibbla logout` — `dibbla logout --context lab` — `dibbla logout --all`
+
+### `context`
+
+Show and switch the API server the CLI talks to. A context is a named login target — an API URL, its token, and the organization pinned on that server — so you can stay logged in to production, a customer instance and a development cluster at the same time.
+
+The list is a plain, editable file at `~/.config/dibbla/config.yaml` and holds no secrets; tokens stay in the OS keyring under per-context keys, falling back to a per-context credentials file on hosts without a keyring.
+
+-   **Usage:** `dibbla context list` — `dibbla context use <name>` — `dibbla context current` — `dibbla context rename <old> <new>` — `dibbla context rm <name>`
+-   **Flags:**
+    -   `--json` (on `list`): machine-readable output; each row carries `current` and `logged_in`.
+    -   `--force` (on `rm`): required to remove the context in use.
+    -   `--context <name>`: global flag available on *every* command, applying to that one invocation.
+-   **Precedence:** `DIBBLA_API_TOKEN`/`DIBBLA_API_URL` (shell or `.env`) > `--context` > `DIBBLA_CONTEXT` > the selected context > `https://api.dibbla.com`.
+-   **Upgrading:** an existing login is imported into a context automatically on first run, keeping its organization pin. No re-login is needed and there is nothing to do.
+-   **Not context-aware:** `dibbla update` and the installer are machine-wide by design.
+-   **Example:** `dibbla context list` — `dibbla apps list --context lab` — `dibbla context use lab`
 
 ### `org`
 
-Show and switch the organization the CLI acts as. Your API token belongs to your user rather than to one organization, so switching needs no new login — the selection travels with each request and the API verifies your membership before honoring it. With nothing selected, your account's default organization is used.
+Show and switch the organization the CLI acts as. On a given server your API token belongs to your user rather than to one organization, so switching needs no new login — the selection travels with each request and the API verifies your membership before honoring it. With nothing selected, your account's default organization is used and no organization header is sent at all.
+
+The selection is stored **on the active context**, and `org list` shows the organizations on **that context's server**, because an organization id only means anything on the server that issued it. Switching context switches organization with it.
 
 -   **Usage:** `dibbla org list` — `dibbla org use <name|slug|id>` — `dibbla org clear`
 -   **Flags:**
     -   `--json` (on `list`): machine-readable output; each entry carries `active`.
     -   `--org <id>`: global flag available on *every* command, applying to that one invocation.
--   **Precedence:** `--org` > `DIBBLA_ORG_ID` > the stored selection > your account's default.
+-   **Precedence:** `--org` > `DIBBLA_ORG_ID` > the active context's pin > your account's default.
 -   **Matching:** `use` takes a name, slug, or id, case-insensitively. A name shared by two organizations is reported as ambiguous rather than guessed at — pass the slug or id instead.
 -   **Example:** `dibbla org use acme` — `dibbla --org <id> apps list` — `dibbla org clear`
 

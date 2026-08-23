@@ -4,20 +4,63 @@ Complete usage, arguments, and flags for all commands.
 
 ---
 
+## context
+
+Named login targets, one per API server. Requires the CLI release carrying P-0011.
+
+A **context** is a `(name, API URL, token, organization)` tuple. Several exist at
+once, so logging in to a customer instance no longer destroys your production
+login — which is what a second `dibbla login` used to do.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla context` or `dibbla context list` (alias `ls`) — list the contexts, marking the one in use |
+| | `dibbla context use <name>` — talk to that server from now on |
+| | `dibbla context current` — print the name the next command would use |
+| | `dibbla context rename <old> <new>` — rename, re-keying the stored token |
+| | `dibbla context rm <name>` — remove the context and its token |
+| **Flags** | `--json` (on `list`) — machine-readable; each row carries `current` and `logged_in` |
+| | `--force` (on `rm`) — required to remove the context in use |
+| | `--context <name>` — global flag on *every* command; that invocation only, nothing stored |
+| **Resolution order** | `DIBBLA_API_TOKEN`/`DIBBLA_API_URL` (shell or `./.env`) > `--context` > `DIBBLA_CONTEXT` > the context selected with `context use` > `https://api.dibbla.com`. **With `DIBBLA_API_TOKEN` set, or in CI, no config file and no keyring is read at all** — env-driven and CI usage is unchanged by contexts. |
+| **Storage** | The list is a plain, editable YAML file at `~/.config/dibbla/config.yaml`, holding **no secrets**. Tokens stay in the OS keyring under per-context keys, falling back to a per-context `~/.config/dibbla/credentials.<name>.env` on hosts without a keyring. A file rather than keyring-only because no OS offers a portable "enumerate everything under this service" API, so `context list` could not otherwise be trusted. |
+| **Legacy compatibility** | The context in use is mirrored into the legacy single slot — `credentials.env` on a keyring-less host, the old keyring keys otherwise. A `dibbla` binary older than contexts, and any script that sources `credentials.env`, therefore follows `dibbla context use` instead of staying on the previous server. No host gains a plaintext token it did not already have. |
+| **Upgrading** | An existing login is imported into a context automatically on first run, keeping its organization pin. **No re-login, and nothing to do.** The derived name is `prod` for the default endpoint, otherwise the first label after `api.` (`api.haja.example.com` → `haja`). Names are renameable. |
+| **Not context-aware** | `dibbla update` and the installer are deliberately machine-wide, not per-server. |
+| **Errors** | A `--context` naming a context that does not exist is an error, and so is a `config.yaml` that will not parse — neither falls back to production silently. |
+
+**Examples:**
+
+```bash
+dibbla login --context prod --api-key=<t>                                  # first server
+dibbla login --context lab  --api-url https://api.your-domain.com --api-key=<t2>
+dibbla context list                                                        # both, one marked
+dibbla apps list --context prod                                            # one invocation
+DIBBLA_CONTEXT=lab dibbla apps list                                        # this shell
+dibbla context use lab                                                     # change the selection
+dibbla context list --json | jq -r '.[] | select(.current) | .api_url'
+```
+
+---
+
 ## login
 
-Authenticate with the Dibbla API and store the token in the OS credential store.
+Authenticate with a Dibbla API server and store the token as a named context.
 
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla login [api_url]` |
-| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.your-domain.com` or `https://api.your-domain.com`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → default `https://api.dibbla.com`. Both env names are read from `./.env` (CWD) as well as the shell environment. |
+| **Arguments** | `api_url` (optional) — API endpoint (e.g. `api.your-domain.com` or `https://api.your-domain.com`). If omitted, the URL resolves in this order: `$DIBBLA_API_URL` → `$DIBBLA_AUTH_SERVICE_URL` → **the API URL of the context you are currently on** → default `https://api.dibbla.com`. Both env names are read from `./.env` (CWD) as well as the shell environment. The context step means a bare `dibbla login` while working against a customer instance re-authenticates *there* rather than silently re-targeting production. |
 | **Flags** | `--browser` — skip the interactive menu; go directly to browser OAuth. Works in non-TTY contexts (Claude Code `!` prefix, agent shells) because the flow uses a localhost callback, not stdin. |
 |  | `--api-key <token>` — pass a pre-generated token; works in any context |
 |  | `--api-url <url>` — explicit API endpoint URL (alternative to the positional arg; **mutually exclusive** with it — specifying both is an error). Useful in long command lines like yaml steps where positional args are easy to miss. |
 |  | `--write-env` — after successful validation, write `DIBBLA_API_TOKEN` + `DIBBLA_API_URL` to `./.env` in the current working directory and ensure `.env` is listed in `./.gitignore`. Writes are atomic (tmp-file → rename) and merge in place — existing keys and comments are preserved; only the two DIBBLA keys are replaced. Unix file perms are 0600. Requires CLI ≥ v1.2.4. |
 |  | `--no-keychain` — skip *all* machine-wide persistence: neither the OS keyring nor the user-level credentials file (see below) is written. Token is validated only. Combine with `--write-env` to persist to `./.env` instead. From CLI ≥ v1.2.21, plain `dibbla login` already auto-falls back to the user-level file when the keyring is unavailable, so this flag is now mainly used to *opt out* of disk persistence entirely. Requires CLI ≥ v1.2.4. |
-|  | **Auto-fallback** (no flag) — from CLI ≥ v1.2.21, when the OS keyring is unavailable (e.g. Linux SSH host without libsecret), `dibbla login` writes credentials to a user-level file at `~/.config/dibbla/credentials.env` (mode 0600). The file is read by every subsequent `dibbla *` invocation regardless of cwd, mirroring keychain semantics. `dibbla logout` and `dibbla uninstall` clean it up. |
+|  | `--context <name>` — name the context to create or refresh. Without it, the context is keyed on the API URL: **the same URL refreshes the existing context, a new URL creates a new one**, so re-logging in never accumulates duplicates. **This flag shadows the global `--context`** — theirs names the context to *read*, this one names the context to *write*, so `dibbla login --context x` does not set a read override for that invocation. |
+|  | `--no-switch` — store the login without making it the context in use |
+|  | **Auto-fallback** (no flag) — when the OS keyring is unavailable (e.g. Linux SSH host without libsecret), `dibbla login` writes credentials to a per-context file at `~/.config/dibbla/credentials.<name>.env` (mode 0600), and mirrors the context in use to the legacy `~/.config/dibbla/credentials.env`. Both are read regardless of cwd, mirroring keychain semantics. `dibbla logout` and `dibbla uninstall` clean them up. |
+| **Organization** | Re-authenticating against the same server **keeps** that context's organization pin — a re-login is not a request to change which organization you act as. Pointing an existing context at a *different* server **drops** it, because an organization id only means anything on the server that issued it. |
+| **Token page** | The "create one at …" hint names the **instance you are logging in to** (`app.<its-domain>/api-keys`), not Dibbla's production portal. A token minted on the wrong instance would not work there. |
 | **Interactive** | Real TTY only: picker for "Log in with browser" or "Paste an API token" |
 | **Note** | In CI or sandbox sessions, set `DIBBLA_API_TOKEN` (and optionally `DIBBLA_API_URL`) in the shell environment or `./.env` — the CLI reads both, and `login` is not required. Use `DIBBLA_API_URL` as the canonical name; `DIBBLA_AUTH_SERVICE_URL` is an internal compat alias. |
 
@@ -35,8 +78,11 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla logout` |
-| **Output** | Removes stored token + api_url from the OS credential store, and clears any organization selected with `org use` |
+| **Usage** | `dibbla logout [--context <name>] [--all]` |
+| **Flags** | `--context <name>` — log out of that context instead of the one in use. **Shadows the global `--context`**, in the same way `login`'s does. |
+| | `--all` — log out of every context, remove every per-context credentials file, and delete `~/.config/dibbla/config.yaml` |
+| **Output** | Removes that context's token from the OS credential store and from its credentials file, removes the context, and reports which contexts you are still logged in to. Other contexts are untouched — logging out of production does not log you out of a customer instance. |
+| **Note** | With nothing configured this is a success, not an error: "log me out" on a machine that is already logged out has done its job. |
 
 ---
 
@@ -44,11 +90,18 @@ Authenticate with the Dibbla API and store the token in the OS credential store.
 
 Show and switch the organization the CLI acts as. Requires CLI ≥ v1.2.55.
 
-Your API token belongs to your **user**, not to one organization, so switching
-needs no new login and no new token — the selected organization travels with
-each request as an `X-Org-ID` header, and the API verifies your membership
-before honoring it. With nothing selected, the API uses your account's default
-organization: the one the console opens on.
+On a given server your API token belongs to your **user**, not to one
+organization, so switching needs no new login and no new token — the selected
+organization travels with each request as an `X-Org-ID` header, and the API
+verifies your membership before honoring it. With nothing selected, the API uses
+your account's default organization: the one the console opens on, and no
+`X-Org-ID` header is sent at all.
+
+That is true **per server and false across servers**. An organization id is
+issued by, and only means anything on, the server that issued it, so the
+selection is stored **on the active context** and `org list` shows the
+organizations on **that context's server**. Switching context switches
+organization with it.
 
 | Item | Details |
 |------|---------|
@@ -57,8 +110,8 @@ organization: the one the console opens on.
 | | `dibbla org clear` — go back to your account's default |
 | **Flags** | `--json` (on `list`) — emit machine-readable JSON; each entry carries `active`, and `plan` when the org has one (installs without billing omit it) |
 | | `--org <id>` — global flag on *every* command; applies to that one invocation only |
-| **Resolution order** | `--org` > `DIBBLA_ORG_ID` > stored selection (keyring, then `~/.config/dibbla/credentials.env`) > account default |
-| **Storage** | `org use` writes to the OS keyring, falling back to the user-level credentials file on hosts without one — the same two-tier scheme `login` uses. The selection is machine-wide and survives `cd`. |
+| **Resolution order** | `--org` > `DIBBLA_ORG_ID` > the **active context's** pin > account default |
+| **Storage** | `org use` writes the pin onto the active context in `~/.config/dibbla/config.yaml`, and mirrors it into the legacy machine-wide slot so an older binary follows. The selection survives `cd` and persists until changed — but it belongs to one context, not to the machine. On a machine with no context at all (nothing stored, env-driven usage), it falls back to the old machine-wide slot, which is what the next command would read. |
 | **Matching** | `use` accepts a name, slug, or id, case-insensitively. Ids and slugs are unique so they resolve directly; a **name** shared by two organizations is reported as ambiguous rather than guessed at — pass the slug or id in that case. |
 | **Exit codes** | `3` — not logged in. `4` — no organization matched what you typed. |
 
@@ -1288,9 +1341,15 @@ Alias: `fn`.
 | Auth | `dibbla login [api_url]` | Interactive browser/paste login (real TTY) |
 | Auth | `dibbla login --browser` | Non-TTY browser OAuth (Claude Code, agent shells) |
 | Auth | `dibbla login --api-key <token>` | Headless token login (CI, scripted) |
-| Auth | `dibbla logout` | Clear stored credentials |
-| Auth | `dibbla org list` | List the organizations you belong to |
-| Auth | `dibbla org use <name>` | Act as that organization from now on |
+| Auth | `dibbla login --context <name>` | Add a second server without replacing the first |
+| Auth | `dibbla logout` | Log out of the context in use (`--all` for every context) |
+| Auth | `dibbla context list` | List the API servers you are logged in to |
+| Auth | `dibbla context use <name>` | Talk to that server from now on |
+| Auth | `dibbla context current` | Print the context the next command would use |
+| Auth | `dibbla context rm <name>` | Remove a context and its stored token |
+| Auth | `dibbla --context <name> <cmd>` | Use that server for one invocation |
+| Auth | `dibbla org list` | Organizations you belong to on the active context's server |
+| Auth | `dibbla org use <name>` | Act as that organization on the active context |
 | Auth | `dibbla org clear` | Back to your account's default organization |
 | Auth | `dibbla --org <id> <cmd>` | Act as that organization for one invocation |
 | Run | `dibbla run [path\|url]` | Execute a dibbla-task.yaml pipeline locally |
