@@ -25,3 +25,9 @@ Thumbs.db
 # release job, or a hand-run cutover). ~27 MB of release archives per tag has no
 # business in git history; GitHub Releases is the archive of record.
 /installer-site/public/
+
+# Agent worktrees. Two implementations sharing this repo by disjoint path-scope
+# each need their own checkout — path-scoping a claim does not make one working
+# tree safe for two editors. The worktrees live here and are removed at
+# teardown; the gitlink they leave behind must never be committed.
+/.worktrees/
