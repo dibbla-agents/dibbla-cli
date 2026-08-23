@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/joho/godotenv"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/cfgdir"
 	"github.com/dibbla-agents/dibbla-cli/internal/env"
 )
 
@@ -26,16 +28,44 @@ const (
 	credFileName   = "credentials.env"
 )
 
-// tokenFilePath resolves the credentials file path. Overridable in
-// tests so they can isolate writes without setting XDG_CONFIG_HOME (on
-// macOS, os.UserConfigDir ignores it). Mirrors update.stateFilePath's
-// pattern.
-var tokenFilePath = func() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
+// tokenFilePath resolves the legacy credentials file path. Tests isolate it
+// through cfgdir.SetForTest rather than through XDG_CONFIG_HOME, which
+// os.UserConfigDir ignores on macOS.
+func tokenFilePath() string {
+	return cfgdir.Join(credFileName)
+}
+
+// contextFilePath resolves a context's own credentials file,
+// credentials.<name>.env. Returns "" when the config dir cannot be resolved or
+// the name is unusable as a filename.
+//
+// The name is validated here rather than trusted: config.yaml is a
+// hand-editable file, so a context name is user input, and a name containing a
+// path separator would otherwise write a credentials file — mode 0600, holding
+// a bearer token — at an arbitrary path outside the config directory. The
+// permitted set matches contextcfg.ValidName; it is duplicated rather than
+// imported because contextcfg sits above this package and importing it here
+// would invert the dependency.
+func contextFilePath(name string) string {
+	if !validContextFileName(name) {
 		return ""
 	}
-	return filepath.Join(dir, "dibbla", credFileName)
+	return cfgdir.Join("credentials." + name + ".env")
+}
+
+func validContextFileName(name string) bool {
+	if name == "" || len(name) > 64 || name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // TokenFilePath returns the absolute path of the user-level
@@ -81,11 +111,16 @@ func GetTokenFile() (token, apiURL string, err error) {
 	return vars[fileTokenKey], vars[fileAPIURLKey], nil
 }
 
-// readCredFile parses the credentials file into a key/value map. A missing
-// file yields an empty map and no error — callers treat that as "nothing
-// stored" rather than a failure.
+// readCredFile parses the legacy credentials file into a key/value map. A
+// missing file yields an empty map and no error — callers treat that as
+// "nothing stored" rather than a failure.
 func readCredFile() (map[string]string, error) {
-	path := tokenFilePath()
+	return readCredFileAt(tokenFilePath())
+}
+
+// readCredFileAt is readCredFile against an explicit path, so the per-context
+// files and the legacy one share one parser.
+func readCredFileAt(path string) (map[string]string, error) {
 	if path == "" {
 		return map[string]string{}, nil
 	}
@@ -192,4 +227,99 @@ func IsKeyringUnavailable(err error) bool {
 		}
 	}
 	return false
+}
+
+// --- Per-context credentials files (P-0011) ---------------------------------
+//
+// On hosts with no keyring service each context keeps its own
+// credentials.<name>.env, so logging in to a second server no longer destroys
+// the first. The legacy credentials.env is NOT retired: internal/config mirrors
+// the active context into it, which is what keeps a pre-context binary and
+// every shipped script that sources that file working unchanged. See
+// internal/config/context.go for that rule and why it is a mirror rather than a
+// migration.
+
+// SetContextTokenFile writes a context's token and API URL to its own
+// credentials file at 0600, creating the config directory at 0700 if needed.
+func SetContextTokenFile(name, token, apiURL string) error {
+	path := contextFilePath(name)
+	if path == "" {
+		return fmt.Errorf("cannot resolve a credentials file for context %q", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+	if _, err := env.MergeEnvFile(path, map[string]string{
+		fileTokenKey:  token,
+		fileAPIURLKey: apiURL,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetContextTokenFile reads a context's token and API URL from its own
+// credentials file. Returns ("", "", nil) when the file does not exist.
+func GetContextTokenFile(name string) (token, apiURL string, err error) {
+	vars, err := readCredFileAt(contextFilePath(name))
+	if err != nil {
+		return "", "", err
+	}
+	return vars[fileTokenKey], vars[fileAPIURLKey], nil
+}
+
+// DeleteContextTokenFile removes a context's credentials file. No-op when it
+// does not exist.
+func DeleteContextTokenFile(name string) error {
+	path := contextFilePath(name)
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// ContextTokenFilePath returns the path of a context's credentials file, for
+// messages and for the uninstall inventory. Empty when unresolvable.
+func ContextTokenFilePath(name string) string {
+	return contextFilePath(name)
+}
+
+// ListContextTokenFiles returns the context names that have a credentials file
+// on this host, sorted. `dibbla uninstall` uses it so a file left behind by a
+// context that was hand-deleted from config.yaml is still removed — enumerating
+// only what config.yaml lists would leave orphaned tokens on disk.
+func ListContextTokenFiles() []string {
+	dir := cfgdir.Dir()
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		// The affixes must not overlap. The legacy credentials.env matches both
+		// the prefix and the suffix while containing neither a name nor a
+		// separating dot, and a naive TrimPrefix+TrimSuffix turns it into a
+		// context called "env" — which `dibbla uninstall` would then walk. Two
+		// affixes that meet in the middle are not a match.
+		const pre, suf = "credentials.", ".env"
+		if len(n) <= len(pre)+len(suf) || !strings.HasPrefix(n, pre) || !strings.HasSuffix(n, suf) {
+			continue
+		}
+		name := n[len(pre) : len(n)-len(suf)]
+		if validContextFileName(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
