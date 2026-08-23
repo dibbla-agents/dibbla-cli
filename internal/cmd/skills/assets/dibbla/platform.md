@@ -92,19 +92,30 @@ The proxy uses standard Postgres TLS negotiation, so any driver works without Po
 
 ## 8. Upload boundary — what gets shipped, what gets stripped
 
-Two filtering layers sit between your working tree and the build:
+**The rule that survives the details:** the build context is your source tree **minus a set of regenerable directories**. Treat dependency and build-output directories as **absent** at `docker build` time, and produce them in a build step.
 
-1. **CLI-side exclusion list** strips, before the archive leaves your laptop:
-   - SSH keys: `id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`
+**Three** filtering layers sit between your working tree and the build. They are separate mechanisms with separate purposes, and only the third one changes what your Dockerfile can see:
+
+1. **CLI-side exclusion list** strips, before the archive leaves your laptop. Matched on the *basename* at any depth, so `web/node_modules/` goes too:
+   - VCS and dependency dirs: `.git`, `node_modules`
+   - SSH keys: `id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa` (exact names, not globs)
    - Service-account JSON: `credentials.json`, `service-account.json`
    - Production env files: `.env.production`, `.env.prod`
-   - Generic key/cert files: `*.pem`, `*.key`
-   - Native binaries: `.exe`, `.dll`, `.so`, `.dylib`, `.bat`, `.cmd`
-2. **Server-side denylist** additionally strips `.env`, `.env.*`, `node_modules/`, `dist/`, `.venv/`, `.git/` from the managed VCS history and surfaces each match as a warning in `DeployResponse.vcs_filtered`.
+   - By extension: `.pem`, `.key`, `.exe`, `.dll`, `.so`, `.dylib`, `.bat`, `.cmd`, `.com`, `.msi`, `.scr`, `.pif`
+2. **Server-side VCS denylist** additionally strips `.env`, `.env.*`, `node_modules/`, `dist/`, `.venv/`, `.git/`, `*.pem`, `*.key` from the managed VCS history and surfaces each match as a **warning** in `DeployResponse.vcs_filtered`. This layer decides what gets committed to Dibbla's managed version control; it does not touch the build context.
+3. **Build-context strip (server-side).** During archive extraction, `deploy-api` drops these directories entirely — they never reach `docker build`, and **nothing is reported when it happens**: `node_modules/`, `.git/`, `__pycache__/`, `.venv/`, `vendor/`, `.next/`, `dist/`, `.cache/`.
+
+   They are treated as regenerable and are excluded to fit the per-deploy file-count cap (1000 files by default), which a `vendor/` or `node_modules/` tree blows through on its own. **Do not write a Dockerfile that depends on any of these being present** — `COPY vendor/`, `COPY dist/`, `COPY .next/` all fail with `"/vendor": not found in build context` even though the directory is right there in your working tree. Regenerate them inside the build instead: `go mod download`, `npm ci && npm run build`, `pip install -r requirements.txt`.
+
+   **In practice `vendor/` and `dist/` are the ones that bite.** The CLI already drops `.git` and `node_modules` before upload (layer 1), so those never arrive either way and nobody is surprised by them. The other six are stripped **server-side only** — a vendored Go service, or a project that builds `dist/` locally and expects to `COPY dist/`, loses those files with no warning and no message.
+
+   A multi-stage `COPY --from=<stage>` is **not** affected: it copies from an earlier build stage, not from the upload archive, and is the pattern this guidance steers you towards.
+
+   Source of truth: `app-hosting-service/deploy-api/internal/extractor/extractor.go`, `skippedDirs` (list as of 2026-08-23; a test pins it, so it cannot change silently).
 
 The CLI enforces a **50 MB archive cap** before upload. Server-side per-file and per-commit size caps are hard rejections — exceeding them fails the deploy with `ErrCodeVCSFiltered`.
 
-Use `.dibblaignore` (gitignore syntax, at the deploy root) to silence server-side warnings on intentionally-excluded paths and to keep generated/large artifacts out of Dibbla's managed VCS history. Full syntax in `reference.md` (~line 178). Note: `.dibblaignore` does **not** change what the Docker build sees — it's a VCS filter, not a build-context filter. If you need to keep something out of the image, use a `.dockerignore` as well.
+Use `.dibblaignore` (gitignore syntax, at the deploy root) to silence layer-2 warnings on intentionally-excluded paths and to keep generated/large artifacts out of Dibbla's managed VCS history. Full syntax in `reference.md` (~line 178). Note: **`.dibblaignore` is a VCS filter only** — adding a path to it does not remove that path from the Docker build context, and leaving a path out of it does not guarantee the path reaches the build context either (layer 3 decides that, and `.dibblaignore` has no influence over it). If you need to keep something out of the image, use a `.dockerignore` as well.
 
 ---
 
