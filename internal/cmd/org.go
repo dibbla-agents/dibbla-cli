@@ -9,6 +9,7 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/orgs"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
@@ -23,9 +24,15 @@ var orgCmd = &cobra.Command{
 	Short:   "Show and switch the organization the CLI acts as",
 	Long: `Show and switch the organization the CLI acts as.
 
-Your API token is tied to your user, not to one organization, so switching
-needs no new login: the chosen organization is sent with each request as
-X-Org-ID and the API verifies your membership before honoring it.
+On a given server your API token is tied to your user rather than to one
+organization, so switching needs no new login: the chosen organization is sent
+with each request as X-Org-ID and the API verifies your membership before
+honoring it.
+
+That is true per server and false across servers. An organization id is issued
+by, and only means anything on, the server that issued it — so the selection is
+stored on the active context and lists the organizations on THAT server.
+Switching context switches organization with it. See ` + "`dibbla context`" + `.
 
 With no organization selected the API uses your account's default — the same
 one the console opens on.
@@ -33,8 +40,8 @@ one the console opens on.
 Precedence, highest first:
   --org <id>          just this invocation
   DIBBLA_ORG_ID       this shell
-  dibbla org use ...  stored, until you change it
-  (none)              your account's default organization`,
+  dibbla org use ...  stored on the active context, until you change it
+  (none)              your account's default organization on that server`,
 	Args: cobra.NoArgs,
 	Run:  runOrgList,
 }
@@ -51,16 +58,22 @@ var orgUseCmd = &cobra.Command{
 	Short: "Act as the given organization from now on",
 	Long: `Act as the given organization from now on.
 
-Accepts a name, a slug, or an id. The selection is stored next to your login
-credentials, so it persists across invocations and directories until you run
-"dibbla org clear" or log out.`,
+Accepts a name, a slug, or an id. The selection is stored on the ACTIVE CONTEXT
+— the server you are currently talking to — so it persists across invocations
+and directories until you run "dibbla org clear" or log out, and switching
+context switches organization with it.
+
+It is per-context rather than machine-wide because an organization id is only
+meaningful on the server that issued it. Sending one server's organization to
+another is a wrong-org read or write, which the API answers with a 403 at best
+and honors at worst.`,
 	Args: cobra.ExactArgs(1),
 	Run:  runOrgUse,
 }
 
 var orgClearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Go back to your account's default organization",
+	Short: "Go back to your account's default organization on this context",
 	Args:  cobra.NoArgs,
 	Run:   runOrgClear,
 }
@@ -169,19 +182,10 @@ func runOrgUse(cmd *cobra.Command, args []string) {
 		os.Exit(4)
 	}
 
-	// Same fallback shape as login: keyring first, user-level credentials
-	// file when this host has no keyring service.
-	stored := "keychain"
-	if err := credential.SetOrg(org.ID, org.Name); err != nil {
-		if !credential.IsKeyringUnavailable(err) {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if ferr := credential.SetOrgFile(org.ID, org.Name); ferr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", ferr)
-			os.Exit(1)
-		}
-		stored = credential.TokenFilePath()
+	stored, err := storeOrgPin(cfg, org.ID, org.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("%s Now acting as %s (%s) — role %s\n",
@@ -195,21 +199,79 @@ func runOrgUse(cmd *cobra.Command, args []string) {
 }
 
 func runOrgClear(cmd *cobra.Command, args []string) {
-	// Best-effort in both stores, mirroring logout: a host without a keyring
-	// still has the file, and neither having anything to clear is success.
-	if err := credential.DeleteOrg(); err != nil && !credential.IsKeyringUnavailable(err) {
+	cfg := config.Load()
+	if _, err := storeOrgPin(cfg, "", ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := credential.DeleteOrgFile(); err != nil {
-		fmt.Printf("%s Warning: failed to update %s: %v\n",
-			platform.Icon("⚠", "[!]"), credential.TokenFilePath(), err)
-	}
 
-	fmt.Printf("%s Organization cleared — using your account's default.\n", platform.Icon("✅", "[OK]"))
+	if cfg.Context != "" {
+		fmt.Printf("%s Organization cleared on context %s — using your account's default there.\n",
+			platform.Icon("✅", "[OK]"), cfg.Context)
+	} else {
+		fmt.Printf("%s Organization cleared — using your account's default.\n", platform.Icon("✅", "[OK]"))
+	}
 
 	if envOrg := strings.TrimSpace(os.Getenv("DIBBLA_ORG_ID")); envOrg != "" {
 		fmt.Printf("%s DIBBLA_ORG_ID is still set to %s in this shell; unset it to fall back to the default.\n",
 			platform.Icon("⚠", "[!]"), envOrg)
 	}
+}
+
+// storeOrgPin writes the organization pin onto the active context and returns a
+// human-readable description of where it landed. An empty id clears the pin.
+//
+// This is the heart of P-0011 Part C. Before named contexts the pin lived in a
+// single machine-wide slot, which was correct while there was exactly one
+// server. With per-context servers it stops being correct: switching from
+// production to a customer instance would keep sending the previous server's
+// X-Org-ID to a different API, because an organization id only means anything
+// on the server that issued it.
+//
+// The legacy machine-wide slot is still written, but as a MIRROR of the active
+// context rather than as the source of truth — see config.SyncLegacyMirror, and
+// the reasoning in config.Migrate. That is what keeps a dibbla binary older
+// than contexts pointed at the right organization.
+//
+// The fallback for a machine with no context at all (nothing stored, nothing
+// migrated, so the user is running against the default endpoint with an env
+// token) is the old behaviour: write the machine-wide slot directly. There is
+// nowhere else to put it, and it is what the next command will read.
+func storeOrgPin(cfg *config.Config, orgID, orgName string) (where string, err error) {
+	if cfg.Context == "" {
+		if orgID == "" {
+			if derr := credential.DeleteOrg(); derr != nil && !credential.IsKeyringUnavailable(derr) {
+				return "", derr
+			}
+			return "", credential.DeleteOrgFile()
+		}
+		if serr := credential.SetOrg(orgID, orgName); serr != nil {
+			if !credential.IsKeyringUnavailable(serr) {
+				return "", serr
+			}
+			if ferr := credential.SetOrgFile(orgID, orgName); ferr != nil {
+				return "", ferr
+			}
+			return credential.TokenFilePath(), nil
+		}
+		return "keychain", nil
+	}
+
+	store, err := contextcfg.Load()
+	if err != nil {
+		return "", err
+	}
+	ctx, ok := store.Get(cfg.Context)
+	if !ok {
+		return "", fmt.Errorf("no such context %q", cfg.Context)
+	}
+	ctx.Org, ctx.OrgName = orgID, orgName
+	store.Set(cfg.Context, ctx)
+	if serr := store.Save(); serr != nil {
+		return "", serr
+	}
+	// Keep the compatibility mirror in step, so an older binary does not keep
+	// sending the organization that was just changed.
+	config.SyncLegacyMirror()
+	return fmt.Sprintf("context %s (%s)", cfg.Context, contextcfg.Path()), nil
 }

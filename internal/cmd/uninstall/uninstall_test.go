@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
+	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
+	"github.com/dibbla-agents/dibbla-cli/internal/credential"
+	"github.com/dibbla-agents/dibbla-cli/internal/credential/credtest"
 	"github.com/dibbla-agents/dibbla-cli/internal/skillregistry"
 )
 
@@ -20,13 +23,21 @@ func resetFlags() {
 	flagSkillOnly = false
 }
 
-// isolateRegistry points the skill-installs registry at a temp file so
-// tests don't read or mutate the user's real registry.
-func isolateRegistry(t *testing.T) {
+// isolateRegistry points the skill-installs registry at a temp file, and the
+// CLI config directory and credential store at fresh temporaries, so tests
+// neither read nor mutate the developer's real state.
+//
+// The config-dir half became necessary when uninstall started enumerating
+// named contexts: buildPlan now READS ~/.config/dibbla to name what it will
+// remove, so an unisolated test's plan depends on whoever is running it. It
+// failed on the first machine it met for exactly that reason.
+func isolateRegistry(t *testing.T) *credtest.Fake {
 	t.Helper()
 	dir := t.TempDir()
 	cleanup := skillregistry.SetPathForTest(filepath.Join(dir, "skill-installs.json"))
 	t.Cleanup(cleanup)
+	fake, _ := credtest.Install(t)
+	return fake
 }
 
 func labels(steps []step) []string {
@@ -265,5 +276,85 @@ func TestExecutePlan_ContinuesOnNonBinaryFailure(t *testing.T) {
 	}
 	if len(called) != 2 {
 		t.Errorf("expected both steps invoked, got %v", called)
+	}
+}
+
+func TestBuildPlan_NamesEveryContextItWillRemove(t *testing.T) {
+	// --dry-run is the user's chance to check what uninstall is about to do, so
+	// the plan has to name the contexts rather than print a generic line they
+	// cannot verify against.
+	resetFlags()
+	isolateRegistry(t)
+	cfg := &contextcfg.Config{Current: "prod", Contexts: map[string]contextcfg.Context{
+		"prod": {APIURL: "https://api.dibbla.com"},
+		"haja": {APIURL: "https://api.haja.fatshark.se"},
+	}}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := labels(buildPlan(updatecmd.MethodScript, "/usr/local/bin/dibbla"))
+	var credLabel string
+	for _, l := range got {
+		if strings.Contains(l, "stored credentials") {
+			credLabel = l
+		}
+	}
+	if !strings.Contains(credLabel, "haja") || !strings.Contains(credLabel, "prod") {
+		t.Errorf("the plan does not name the contexts it will remove: %q", credLabel)
+	}
+}
+
+func TestUninstall_RemovesEveryContextTokenAndTheContextList(t *testing.T) {
+	resetFlags()
+	fake := isolateRegistry(t)
+	cfg := &contextcfg.Config{Current: "prod", Contexts: map[string]contextcfg.Context{
+		"prod": {APIURL: "https://api.dibbla.com"},
+		"haja": {APIURL: "https://api.haja.fatshark.se"},
+	}}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	fake.Items[credtest.ContextToken("prod")] = "tok-prod"
+	fake.Items[credtest.ContextToken("haja")] = "tok-haja"
+	fake.Items["api_token"] = "legacy"
+	if err := credential.SetContextTokenFile("haja", "tok-haja", ""); err != nil {
+		t.Fatal(err)
+	}
+	// A credentials file with no config.yaml entry: a hand-edited file, or a
+	// crash between the two writes. Enumerating only the config would leave
+	// this bearer token on disk after uninstall reported success.
+	if err := credential.SetContextTokenFile("orphan", "tok-orphan", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	var found *step
+	for i := range buildPlan(updatecmd.MethodScript, "/usr/local/bin/dibbla") {
+		p := buildPlan(updatecmd.MethodScript, "/usr/local/bin/dibbla")[i]
+		if strings.Contains(p.label, "stored credentials") {
+			found = &p
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("no credentials step in the plan")
+	}
+	if err := found.exec(); err != nil {
+		t.Fatalf("credentials step: %v", err)
+	}
+
+	for _, name := range []string{"prod", "haja"} {
+		if tok, _ := credential.GetContextToken(name); tok != "" {
+			t.Errorf("context %s still has a stored token: %q", name, tok)
+		}
+	}
+	if tok, _ := credential.GetToken(); tok != "" {
+		t.Errorf("the legacy token survived uninstall: %q", tok)
+	}
+	if contextcfg.Exists() {
+		t.Error("config.yaml survived uninstall")
+	}
+	if left := credential.ListContextTokenFiles(); len(left) != 0 {
+		t.Errorf("credentials files left behind: %v — including any with no config.yaml entry", left)
 	}
 }

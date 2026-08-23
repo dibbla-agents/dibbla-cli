@@ -1,13 +1,26 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
-	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/joho/godotenv"
 )
+
+// contextFailure is what Load() does when the context layer cannot answer.
+//
+// Load() has 41 call sites and returns no error, so the alternatives were to
+// widen its signature everywhere or to swallow the failure. Swallowing it is
+// the one thing this proposal must not do — an unreadable config or a
+// mistyped --context would silently resolve to the production endpoint. The
+// exit is behind a func var so tests can observe the failure instead of dying
+// on it.
+var contextFailure = func(err error) {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	os.Exit(1)
+}
 
 const (
 	// DefaultAPIURL is the default Dibbla API endpoint
@@ -36,6 +49,11 @@ type Config struct {
 	// cosmetic — never sent to the API, and empty when the org came from
 	// --org or DIBBLA_ORG_ID, where only an id is available.
 	OrgName string
+
+	// Context is the name of the named context these values came from, empty
+	// when none was in play (env-driven usage, CI, or a machine with no
+	// contexts configured yet).
+	Context string
 }
 
 // Load reads configuration from environment variables, .env file, and OS credential store.
@@ -48,9 +66,16 @@ type Config struct {
 // the stored credential-store URL, then to DefaultAPIURL.
 //
 // The organization follows the same shape: --org, then DIBBLA_ORG_ID, then the
-// org pinned by "dibbla org use". Unlike the token it has no default — an
-// empty OrgID means the request carries no X-Org-ID and the API falls back to
-// the account's own default org.
+// org pinned by "dibbla org use" on the active context. Unlike the token it has
+// no default — an empty OrgID means the request carries no X-Org-ID and the API
+// falls back to the account's own default org.
+//
+// Named contexts (P-0011) sit strictly BELOW the environment. The env/CI
+// short-circuit below returns before the context layer is reached at all, so a
+// DIBBLA_API_TOKEN-driven or CI run reads no config file and no keyring — the
+// behaviour is byte-for-byte what it was before contexts existed, and there is
+// a test that proves it by pointing such a run at a config file that would
+// error if it were parsed.
 func Load() *Config {
 	// Load .env file if it exists (ignores error if file doesn't exist)
 	_ = godotenv.Load()
@@ -73,47 +98,52 @@ func Load() *Config {
 	}
 
 	if envToken != "" || platform.IsCI() {
-		// Use env only; do not read keychain
+		// Use env only; do not read the keyring, the credentials file or the
+		// context list.
 		if envURL != "" {
 			cfg.APIURL = envURL
 		}
 		return cfg
 	}
 
-	// Read order: keyring first (single read to avoid multiple OS
-	// prompts), then user-level credentials file as a fallback. The
-	// file is written by `dibbla login` on hosts where the OS keyring
-	// is unavailable (typical for Linux SSH/cloud-VM/Docker without
-	// libsecret/gnome-keyring). It mirrors keychain semantics —
-	// machine-wide, persists across `cd` — rather than the cwd-bound
-	// `--write-env` behavior.
-	storedToken, storedURL, err := credential.GetCredentials()
-	if err != nil || storedToken == "" {
-		if fileToken, fileURL, ferr := credential.GetTokenFile(); ferr == nil && fileToken != "" {
-			storedToken, storedURL = fileToken, fileURL
-		}
+	// The active context supplies the URL, the token and the org pin. A
+	// legacy single-slot login is imported into a context on first run, so an
+	// existing user keeps working with no re-login; see Migrate.
+	//
+	// The token is read from the keyring under a per-context key, falling back
+	// to that context's own credentials file on hosts with no keyring service
+	// (typical for Linux SSH/cloud-VM/Docker without libsecret). Same
+	// semantics as the single slot it replaces — machine-wide, persists across
+	// `cd`, unlike the cwd-bound `--write-env` — now one per context.
+	resolved := ResolveContext()
+	if resolved.Err != nil {
+		// A malformed config.yaml, or a context named with --context /
+		// DIBBLA_CONTEXT that does not exist. Reporting this is the whole
+		// point: absorbing it would drop the user onto the production default
+		// while they believe they are pointed somewhere else.
+		contextFailure(resolved.Err)
+		return cfg
 	}
-	if storedToken != "" {
-		cfg.APIToken = storedToken
-		if storedURL != "" {
-			cfg.APIURL = storedURL
+	cfg.Context = resolved.Name
+	if resolved.Token != "" {
+		cfg.APIToken = resolved.Token
+		if resolved.APIURL != "" {
+			cfg.APIURL = resolved.APIURL
 		}
+	} else if resolved.APIURL != "" {
+		// A context with no token still says which server it points at, so
+		// "not logged in" names the right instance.
+		cfg.APIURL = resolved.APIURL
 	}
 	if envURL != "" {
 		cfg.APIURL = envURL
 	}
 
 	// An explicit --org / DIBBLA_ORG_ID wins over the pinned org; only read
-	// the stored pin when neither was given.
+	// the context's pin when neither was given.
 	if cfg.OrgID == "" {
-		storedOrgID, storedOrgName, oerr := credential.GetOrg()
-		if oerr != nil || storedOrgID == "" {
-			if fileOrgID, fileOrgName, ferr := credential.GetOrgFile(); ferr == nil && fileOrgID != "" {
-				storedOrgID, storedOrgName = fileOrgID, fileOrgName
-			}
-		}
-		cfg.OrgID = storedOrgID
-		cfg.OrgName = storedOrgName
+		cfg.OrgID = resolved.OrgID
+		cfg.OrgName = resolved.OrgName
 	}
 
 	// Normalize: strip trailing slashes and null bytes that some OS credential

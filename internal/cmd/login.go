@@ -15,6 +15,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/auth"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/env"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
@@ -26,14 +27,45 @@ var (
 	loginAPIURL     string
 	loginWriteEnv   bool
 	loginNoKeychain bool
+	loginContext    string
+	loginNoSwitch   bool
 )
 
-// apiKeysURL is the page in the dibbla web app where users mint API
-// tokens. Displayed in error/help messages whenever we direct the user
-// to use --api-key. The route is "/api-keys" (defined in
-// auth-ui/src/App.tsx) — earlier copies of this CLI pointed at
-// /settings/api-tokens, which has never existed.
-const apiKeysURL = "https://app.dibbla.com/api-keys"
+// apiKeysPath is the page in the dibbla web app where users mint API tokens,
+// relative to that instance's app URL. Displayed whenever we direct the user to
+// --api-key. The route is "/api-keys" (defined in auth-ui/src/App.tsx) —
+// earlier copies of this CLI pointed at /settings/api-tokens, which has never
+// existed.
+const apiKeysPath = "/api-keys"
+
+// apiKeysURLFor returns the token page on the instance being logged in to,
+// rather than always Dibbla's production portal.
+//
+// Telling someone logging in to api.haja.fatshark.se to mint their token at
+// app.dibbla.com is not a cosmetic wrong link: it sends them to a different
+// company's product to create a credential that would not work. auth.DeriveAppURL
+// is the same api.->app. rewrite the browser flow already uses, so the two
+// cannot disagree about where an instance's UI lives.
+func apiKeysURLFor(apiBaseURL string) string {
+	if apiBaseURL == "" || apiBaseURL == config.DefaultAPIURL {
+		return config.DefaultAppURL + apiKeysPath
+	}
+	if derived, err := auth.DeriveAppURL(apiBaseURL); err == nil && derived != "" {
+		return derived + apiKeysPath
+	}
+	// An instance whose app URL cannot be derived gets no guess: a wrong URL
+	// is worse than none, and the surrounding messages still name --api-key.
+	return ""
+}
+
+// mintTokenAt renders "create one at <url>" only when there is a URL worth
+// naming, so a non-derivable instance does not print a dangling sentence.
+func mintTokenAt(apiBaseURL string) string {
+	if u := apiKeysURLFor(apiBaseURL); u != "" {
+		return "create one at " + u
+	}
+	return "create one in that instance's web UI, under API keys"
+}
 
 var loginCmd = &cobra.Command{
 	Use:   "login [api_url]",
@@ -77,6 +109,12 @@ func init() {
 	loginCmd.Flags().StringVar(&loginAPIURL, "api-url", "", "API endpoint URL (alternative to the positional arg; mutually exclusive with it)")
 	loginCmd.Flags().BoolVar(&loginWriteEnv, "write-env", false, "After validation, write DIBBLA_API_TOKEN + DIBBLA_API_URL to ./.env and ensure .env is in ./.gitignore")
 	loginCmd.Flags().BoolVar(&loginNoKeychain, "no-keychain", false, "Do not persist credentials to the OS keyring — useful on cloud VMs / SSH where keyring services are not installed")
+	// NOTE: this shadows the root persistent --context flag, deliberately.
+	// Theirs names the context to READ; this one names the context to WRITE.
+	// So `dibbla login --context x` adds or refreshes context x — it does not
+	// set a read override for this invocation.
+	loginCmd.Flags().StringVar(&loginContext, "context", "", "Name the context to create or refresh (default: derived from the API URL, or the existing context with that URL)")
+	loginCmd.Flags().BoolVar(&loginNoSwitch, "no-switch", false, "Store the login without making it the context in use")
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
@@ -100,9 +138,9 @@ func runLogin(cmd *cobra.Command, args []string) {
 			fmt.Printf("%s --browser cannot complete login over SSH.\n"+
 				"  The OAuth callback uses a localhost server on this host,\n"+
 				"  which your laptop's browser cannot reach. Use either:\n\n"+
-				"    dibbla login --api-key <token>      (create one at %s)\n"+
+				"    dibbla login --api-key <token>      (%s)\n"+
 				"    DIBBLA_API_TOKEN=<token> dibbla ... (any subsequent dibbla command)\n",
-				platform.Icon("❌", "[X]"), apiKeysURL)
+				platform.Icon("❌", "[X]"), mintTokenAt(baseURL))
 			os.Exit(1)
 		}
 		// Skip the interactive survey menu — go directly to browser OAuth.
@@ -139,50 +177,20 @@ func runLogin(cmd *cobra.Command, args []string) {
 	}
 
 	usedFileFallback := false
+	ctxName := ""
+	switched := false
 	if !loginNoKeychain {
-		err := credential.SetToken(token)
-		switch {
-		case err == nil:
-			// Keychain succeeded — manage the URL through the keyring as before.
-			if baseURL != config.DefaultAPIURL {
-				if err := credential.SetAPIURL(baseURL); err != nil {
-					fmt.Printf("%s Error: Token stored but failed to store API URL: %v\n", platform.Icon("❌", "[X]"), err)
-					os.Exit(1)
-				}
-			} else {
-				_ = credential.DeleteAPIURL() // clear any previously stored custom URL
-			}
-		case credential.IsKeyringUnavailable(err):
-			// Linux SSH / cloud VM / Docker host without libsecret etc.
-			// Fall back to a user-level credentials file. Mirrors
-			// keychain semantics (machine-wide, not cwd-bound).
-			fileURL := ""
-			if baseURL != config.DefaultAPIURL {
-				fileURL = baseURL
-			}
-			if ferr := credential.SetTokenFile(token, fileURL); ferr != nil {
-				fmt.Printf("%s Error: OS keyring unavailable on this host AND file fallback failed: %v\n",
-					platform.Icon("❌", "[X]"), ferr)
-				os.Exit(1)
-			}
-			usedFileFallback = true
-			fmt.Printf("%s OS keyring unavailable on this host (no org.freedesktop.secrets).\n"+
-				"  Stored credentials in %s instead.\n",
-				platform.Icon("⚠", "[!]"), credential.TokenFilePath())
-		default:
-			fmt.Printf("%s Error: Token validated but failed to store credentials: %v\n", platform.Icon("❌", "[X]"), err)
+		var err error
+		ctxName, usedFileFallback, switched, err = storeLoginAsContext(baseURL, token)
+		if err != nil {
+			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
 		}
-	}
-
-	// Drop any organization selected under the previous credentials. The
-	// login may be for a different account entirely, and a stale pin would
-	// make every subsequent command fail its membership check with a message
-	// about organizations — while the user believes they just fixed their
-	// login.
-	if !loginNoKeychain {
-		_ = credential.DeleteOrg()
-		_ = credential.DeleteOrgFile()
+		if usedFileFallback {
+			fmt.Printf("%s OS keyring unavailable on this host (no org.freedesktop.secrets).\n"+
+				"  Stored credentials in %s instead.\n",
+				platform.Icon("⚠", "[!]"), credential.ContextTokenFilePath(ctxName))
+		}
 	}
 
 	if loginWriteEnv {
@@ -198,15 +206,20 @@ func runLogin(cmd *cobra.Command, args []string) {
 	case loginNoKeychain:
 		fmt.Printf("%s Validated %s (keychain skipped — re-run with --write-env to persist, or re-run without --no-keychain)\n", platform.Icon("✅", "[OK]"), baseURL)
 	case usedFileFallback && loginWriteEnv:
-		fmt.Printf("%s Logged in to %s (credentials in %s and .env)\n",
-			platform.Icon("✅", "[OK]"), baseURL, credential.TokenFilePath())
+		fmt.Printf("%s Logged in to %s as context %s (credentials in %s and .env)\n",
+			platform.Icon("✅", "[OK]"), baseURL, ctxName, credential.ContextTokenFilePath(ctxName))
 	case usedFileFallback:
-		fmt.Printf("%s Logged in to %s (credentials in %s)\n",
-			platform.Icon("✅", "[OK]"), baseURL, credential.TokenFilePath())
+		fmt.Printf("%s Logged in to %s as context %s (credentials in %s)\n",
+			platform.Icon("✅", "[OK]"), baseURL, ctxName, credential.ContextTokenFilePath(ctxName))
 	case loginWriteEnv:
-		fmt.Printf("%s Logged in to %s (credentials also written to .env)\n", platform.Icon("✅", "[OK]"), baseURL)
+		fmt.Printf("%s Logged in to %s as context %s (credentials also written to .env)\n",
+			platform.Icon("✅", "[OK]"), baseURL, ctxName)
 	default:
-		fmt.Printf("%s Logged in to %s\n", platform.Icon("✅", "[OK]"), baseURL)
+		fmt.Printf("%s Logged in to %s as context %s\n", platform.Icon("✅", "[OK]"), baseURL, ctxName)
+	}
+	if ctxName != "" && !switched {
+		fmt.Printf("%s Left in place: the context in use is unchanged. Switch with `dibbla context use %s`.\n",
+			platform.Icon("ℹ", "[i]"), ctxName)
 	}
 
 	// If env vars are shadowing the just-saved credentials (the classic
@@ -265,13 +278,13 @@ func acquireToken(baseURL string) (string, error) {
 		// into a 5-minute timeout.
 		if auth.IsSSHSession() {
 			return "", fmt.Errorf("non-interactive SSH session detected. Use one of:\n"+
-				"  --api-key TOK     pass a token (create one at %s)\n"+
-				"  env DIBBLA_API_TOKEN=...   for headless CI", apiKeysURL)
+				"  --api-key TOK     pass a token (%s)\n"+
+				"  env DIBBLA_API_TOKEN=...   for headless CI", mintTokenAt(baseURL))
 		}
 		return "", fmt.Errorf("non-interactive terminal detected. Use one of:\n"+
 			"  --browser         opens your browser (works in Claude Code, agentic shells, CI with a browser)\n"+
-			"  --api-key TOK     pass a token (create one at %s)\n"+
-			"  env DIBBLA_API_TOKEN=...   for headless CI", apiKeysURL)
+			"  --api-key TOK     pass a token (%s)\n"+
+			"  env DIBBLA_API_TOKEN=...   for headless CI", mintTokenAt(baseURL))
 	}
 
 	// Over SSH, browser login can't complete (localhost callback can't
@@ -282,9 +295,9 @@ func acquireToken(baseURL string) (string, error) {
 		fmt.Printf("%s SSH session detected — browser login isn't viable here.\n"+
 			"  The OAuth callback uses a localhost server on this host,\n"+
 			"  which your laptop's browser can't reach. Paste an API\n"+
-			"  token instead (create one at %s).\n\n",
-			platform.Icon("ℹ", "[i]"), apiKeysURL)
-		return promptAPIToken()
+			"  token instead (%s).\n\n",
+			platform.Icon("ℹ", "[i]"), mintTokenAt(baseURL))
+		return promptAPIToken(baseURL)
 	}
 
 	const (
@@ -305,7 +318,7 @@ func acquireToken(baseURL string) (string, error) {
 	case optBrowser:
 		return browserLogin(baseURL)
 	default:
-		return promptAPIToken()
+		return promptAPIToken(baseURL)
 	}
 }
 
@@ -394,10 +407,19 @@ func browserLogin(apiBaseURL string) (string, error) {
 //     steprunner when injecting env into subprocesses — ensures `dibbla
 //     login` invoked from inside a task file targets the same service
 //     the parent CLI is logged into).
-//  4. config.DefaultAPIURL.
+//  4. the ACTIVE CONTEXT's API URL, when there is one.
+//  5. config.DefaultAPIURL.
 //
-// The keyring URL is intentionally NOT consulted here — a login command's
-// purpose is to set that value, so reading it back would be circular.
+// Step 4 is new with named contexts and fixes a sharp edge that predates them:
+// a bare `dibbla login` while working against a customer instance used to fall
+// straight through to production, silently re-targeting the user mid-session
+// and — before contexts — destroying the credential they were using. Preferring
+// the context they are actually on is what a re-login means.
+//
+// This is not circular the way reading back the token would be. --api-url and
+// the positional argument still win, so setting a new target is unaffected;
+// this only decides what "no target given" means, and "the one I am on" is a
+// better answer than "production".
 func resolveLoginBaseURL(args []string) (string, error) {
 	flagURL := strings.TrimSpace(loginAPIURL)
 	var posURL string
@@ -419,6 +441,9 @@ func resolveLoginBaseURL(args []string) (string, error) {
 	if u := strings.TrimSpace(os.Getenv("DIBBLA_AUTH_SERVICE_URL")); u != "" {
 		return normalizeAPIURL(u), nil
 	}
+	if r := config.ResolveContext(); r.Err == nil && r.APIURL != "" {
+		return normalizeAPIURL(r.APIURL), nil
+	}
 	return config.DefaultAPIURL, nil
 }
 
@@ -434,12 +459,93 @@ func normalizeAPIURL(input string) string {
 	return strings.TrimSuffix(input, "/")
 }
 
-func promptAPIToken() (string, error) {
+func promptAPIToken(apiBaseURL string) (string, error) {
 	var token string
+	help := "Get your token in that instance's web UI, under API keys"
+	if u := apiKeysURLFor(apiBaseURL); u != "" {
+		help = "Get your token at " + u
+	}
 	prompt := &survey.Password{
 		Message: "API token:",
-		Help:    "Get your token at " + apiKeysURL,
+		Help:    help,
 	}
 	err := survey.AskOne(prompt, &token)
 	return token, err
+}
+
+// storeLoginAsContext persists a successful login as a named context instead of
+// overwriting the CLI's single credential slot. This is the change P-0011
+// exists to make: logging in to a second server no longer destroys the first.
+//
+// Naming, in order:
+//   - --context <name>, when given. The name is validated, because it becomes
+//     both a keyring key and a filename.
+//   - the existing context with this API URL, if there is one. Keying on URL is
+//     what makes a re-login a refresh rather than a second entry for the same
+//     server.
+//   - a name derived from the host (api.haja.fatshark.se -> "haja", the default
+//     endpoint -> "prod"), disambiguated if taken. Names are renameable, so a
+//     slightly ugly derived name is never a trap.
+//
+// Returns the context name, whether the keyring-less file fallback was used,
+// and whether this login became the context in use.
+func storeLoginAsContext(baseURL, token string) (name string, usedFile, switched bool, err error) {
+	store, err := contextcfg.Load()
+	if err != nil {
+		return "", false, false, err
+	}
+
+	switch {
+	case strings.TrimSpace(loginContext) != "":
+		name = strings.TrimSpace(loginContext)
+		if !contextcfg.ValidName(name) {
+			return "", false, false, fmt.Errorf("%q is not a usable context name: use letters, digits, dot, dash or underscore (it becomes a filename and a keyring key)", name)
+		}
+	case store.FindByURL(baseURL) != "":
+		name = store.FindByURL(baseURL)
+	default:
+		name = contextcfg.UniqueName(contextcfg.DeriveName(baseURL, config.DefaultAPIURL), store.Contexts)
+	}
+
+	// The token first, so config.yaml never names a context whose credential
+	// has not landed.
+	if serr := credential.SetContextToken(name, token); serr != nil {
+		if !credential.IsKeyringUnavailable(serr) {
+			return name, false, false, fmt.Errorf("token validated but could not be stored: %w", serr)
+		}
+		// Linux SSH / cloud VM / Docker without libsecret. Fall back to this
+		// context's own credentials file, which mirrors keychain semantics
+		// (machine-wide, persists across `cd`) rather than the cwd-bound
+		// --write-env behaviour.
+		if ferr := credential.SetContextTokenFile(name, token, baseURL); ferr != nil {
+			return name, false, false, fmt.Errorf("OS keyring unavailable on this host AND the file fallback failed: %w", ferr)
+		}
+		usedFile = true
+	}
+
+	existing, existed := store.Get(name)
+	ctx := contextcfg.Context{APIURL: baseURL}
+	if existed && strings.TrimSuffix(existing.APIURL, "/") == strings.TrimSuffix(baseURL, "/") {
+		// A refresh of the same server keeps that context's organization pin:
+		// re-authenticating is not a request to change which org you act as.
+		ctx.Org, ctx.OrgName = existing.Org, existing.OrgName
+	}
+	// A context being re-pointed at a DIFFERENT server drops its pin, because
+	// an organization id from the old server means nothing on the new one.
+	store.Set(name, ctx)
+
+	if !loginNoSwitch {
+		store.Current = name
+		switched = true
+	}
+	if serr := store.Save(); serr != nil {
+		return name, usedFile, switched, serr
+	}
+	if switched {
+		// Repoint the legacy single-slot storage, so a dibbla binary older than
+		// contexts — and every script that sources credentials.env — follows
+		// this login rather than staying on the previous server.
+		config.SyncLegacyMirror()
+	}
+	return name, usedFile, switched, nil
 }

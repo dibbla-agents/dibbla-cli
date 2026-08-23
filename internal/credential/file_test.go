@@ -8,21 +8,22 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/cfgdir"
 )
 
-// withTempCredFile redirects tokenFilePath to a fresh temp dir for the
-// duration of the test, so the test never reads or writes the real
-// user's credentials file.
+// withTempCredFile points the CLI's config directory at a fresh temp dir for
+// the duration of the test, so the test never reads or writes the real user's
+// credentials file. The seam moved from an unexported tokenFilePath var to
+// cfgdir.SetForTest when named contexts arrived, because the config directory
+// now holds three kinds of artefact read by three packages, and a test that
+// isolates only one of them writes into the developer's real config dir with
+// the other two.
 func withTempCredFile(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dibbla", credFileName)
-
-	orig := tokenFilePath
-	tokenFilePath = func() string { return path }
-	t.Cleanup(func() { tokenFilePath = orig })
-
-	return path
+	dir := filepath.Join(t.TempDir(), "dibbla")
+	t.Cleanup(cfgdir.SetForTest(dir))
+	return filepath.Join(dir, credFileName)
 }
 
 func TestSetTokenFile_RoundTrip(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/admincmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/aigateway"
+	contextcmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/context"
 	deploycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/initcmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
@@ -64,10 +65,21 @@ func init() {
 	// consumer of config.FlagOrgID reads it after it has been populated.
 	rootCmd.PersistentFlags().StringVar(&config.FlagOrgID, "org", "",
 		"Organization id to act as for this command; overrides DIBBLA_ORG_ID and the stored selection")
+	// Same binding for the same reason (see above): a root PersistentPreRun
+	// would not run for `dibbla wf ...`.
+	//
+	// Note that `login` and `logout` each define their own local --context
+	// flag, which shadows this one. That is deliberate — theirs names the
+	// context to WRITE, this one names the context to READ — but it means
+	// `dibbla login --context x` does not set a read override. Documented
+	// rather than left to be discovered.
+	rootCmd.PersistentFlags().StringVar(&config.ContextOverride, "context", "",
+		"Context to use for this command; overrides DIBBLA_CONTEXT and the selected context")
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(orgCmd)
+	contextcmd.Register(rootCmd)
 	rootCmd.AddCommand(feedbackCmd)
 	deploycmd.Register(rootCmd)
 	wf.Register(rootCmd)
