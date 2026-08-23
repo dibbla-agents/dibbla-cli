@@ -163,7 +163,7 @@ Run when `dibbla.yaml` sets `support.enabled: true`. Skip otherwise.
 
 Runs on **every** deploy that has a `Dockerfile` — which is every deploy.
 
-`deploy-api` silently strips eight regenerable directories out of the uploaded archive **before** it becomes the Docker build context. A `COPY` of one of them builds fine on the developer's machine and fails on the platform, with a message (`"/vendor": not found in build context`) that points at a directory the user can see sitting in their working tree. Catch it here, before the deploy is attempted.
+`deploy-api` silently strips eight regenerable directories out of the uploaded archive **before** it becomes the Docker build context. A `COPY` of one of them builds fine on the developer's machine and fails on the platform with `BUILD_FAILED` on the `copy-source` step, ending `"/vendor": not found` — pointing at a directory the user can see sitting in their working tree. Catch it here, before the deploy is attempted.
 
 The eight: `node_modules/` · `.git/` · `__pycache__/` · `.venv/` · `vendor/` · `.next/` · `dist/` · `.cache/`
 (Source: `app-hosting-service/deploy-api/internal/extractor/extractor.go`, `skippedDirs`, as of 2026-08-23. Full rationale in `reference.md` → deploy → "Build-context strip (`skippedDirs`)".)

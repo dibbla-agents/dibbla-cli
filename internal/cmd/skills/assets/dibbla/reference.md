@@ -375,7 +375,7 @@ While extracting the uploaded archive, `deploy-api` drops these eight directorie
 | Item | Details |
 |------|---------|
 | **When it happens** | During archive extraction, before the build context is handed to Docker — and before the file is even counted against the deploy's file budget. |
-| **What you see** | **Nothing.** The strip is silent. There is no warning, no `vcs_filtered` entry, no line in the build log. The first sign is the build failing on a `COPY` that works locally. |
+| **What you see** | **Nothing, until the build breaks.** The strip itself is silent: no warning, no `vcs_filtered` entry, no line in the build log. The first sign is `BUILD_FAILED` on the `copy-source` step, with a buildkit message ending `"/vendor": not found`. |
 | **Why it exists** | The extractor enforces hard budget caps — 50 MB archive, 200 MB extracted, **1000 files**, 10 path levels. A Go `vendor/` or JS `node_modules/` tree routinely holds thousands of files and would trip `ErrTooManyFiles` before your real source was counted. Skipping them is what keeps ordinary projects under the cap. |
 | **Matching** | Prefix match on path components: a directory at the archive root or nested at any depth (`svc/vendor/…`) is stripped. Near-misses are safe — `vendored/`, `mydist/`, `distribution/`, `src/dist.go` and `vendor.json` all survive. One sharp edge: a **regular file** named exactly `dist` or `vendor` (no extension) is also stripped, because the match is on the name, not on the entry type. |
 | **Scope** | Global and constant. It does not vary by org, by plan or by instance — plan entitlements bound only app and database counts. There is no opt-out, no `.dibblakeep`, and `.dibblaignore` has no influence over it. |
@@ -385,7 +385,7 @@ While extracting the uploaded archive, `deploy-api` drops these eight directorie
 
 ```dockerfile
 # ✗ FAILS on the platform, builds fine locally.
-#   "/vendor": not found in build context
+#   BUILD_FAILED on step copy-source, ending: "/vendor": not found
 COPY vendor/ ./vendor/
 RUN go build -mod=vendor -o /app ./cmd/server
 
