@@ -1,8 +1,8 @@
 # Dibbla CLI — Pre-deploy guardrails
 
-Before calling `dibbla deploy`, you **MUST** complete all nine checks below and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
+Before calling `dibbla deploy`, you **MUST** complete every check below that applies, and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
 
-Checks 1–4, Check 7 and Check 9 are mandatory for every deploy. Check 5 only fires when running task files from URLs (`dibbla run <url>` / `dibbla template install`). Check 6 only fires when a `dibbla.yaml` is present at the deploy root. Check 8 only fires when a `dibbla.yaml` sets `support.enabled: true`.
+Most checks are mandatory on every deploy. The exceptions are the three that state their own trigger in their heading line — read each check's opening sentence rather than a list here, because a list here is a second inventory that can disagree with the file. Today those three are Check 5 (running task files from URLs), Check 6 (a `dibbla.yaml` at the deploy root) and Check 8 (that manifest setting `support.enabled: true`).
 
 > **Enforced by the CLI.** `dibbla deploy` refuses to upload when `REVIEW.md` is missing at the deploy root, when no user handbook (`docs/index.md` or `APP.md`) is present, or when that handbook's `subtitle:` frontmatter is missing, empty, still a placeholder (`TBD`/`TODO`/`{{…}}`/`<one short…>`), or over the 140-byte hard cap. The only way past the gate is `--skip-review`, which is reserved for humans making one-line fixes — agents must run this checklist and write `REVIEW.md` (see Step 3.5) rather than passing the flag.
 
@@ -17,7 +17,7 @@ Checks 1–4, Check 7 and Check 9 are mandatory for every deploy. Check 5 only f
 
 ## Check 1: Security (OWASP Top 10)
 
-Scan all application source files for:
+Mandatory for every deploy. Scan all application source files for:
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|
@@ -36,7 +36,7 @@ Scan all application source files for:
 
 ## Check 2: Database usage
 
-Scan all database-related code for:
+Mandatory for every deploy. Scan all database-related code for:
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|
@@ -50,7 +50,7 @@ Scan all database-related code for:
 
 ## Check 3: REST / API call patterns
 
-Scan all outbound HTTP/API call code for:
+Mandatory for every deploy. Scan all outbound HTTP/API call code for:
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|
@@ -65,7 +65,7 @@ Scan all outbound HTTP/API call code for:
 
 ## Check 4: External system write safety
 
-Scan code that writes to external systems (APIs, queues, email, SMS, webhooks, third-party services):
+Mandatory for every deploy. Scan code that writes to external systems (APIs, queues, email, SMS, webhooks, third-party services):
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|
@@ -193,7 +193,7 @@ Reference fixtures for this check live in `testdata/guardrail-fixtures/` — one
 
 ### Step 1: Run all applicable checks
 
-Review the application source code against every applicable check above (1–4, 7 and 9 always; 5 if running task files from URLs; 6 if a `dibbla.yaml` is at the deploy root; 8 if that manifest sets `support.enabled: true`). Note each finding with its file path and line number.
+Review the application source code against every check above, skipping only those whose own opening line says they do not apply to this deploy. Note each finding with its file path and line number.
 
 ### Step 2: Present the report
 
