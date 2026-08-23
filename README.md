@@ -45,6 +45,55 @@ which remains the archive of record — it is also where the `.deb`/`.rpm`
 packages and every historical version live. `install.dibbla.com` mirrors the
 **latest** release only.
 
+### CI/CD (container image)
+
+In a pipeline, use the published image rather than installing the CLI at build
+time. Woodpecker, GitLab CI and most other runners execute every step inside a
+container, so an image is the native shape there — and it means a step holding
+your deploy token no longer pipes a remote install script into a shell.
+
+```yaml
+# Woodpecker
+steps:
+  deploy:
+    image: ghcr.io/dibbla-agents/dibbla-cli:1.2.61
+    environment:
+      DIBBLA_API_TOKEN:
+        from_secret: dibbla_api_token
+    commands:
+      - dibbla deploy . --port 80 --update
+```
+
+On GitHub Actions, run it as a container from a step rather than as the job's
+`container:` — the image ships no Node.js, which a job container needs in order
+to run JavaScript actions such as `actions/checkout`:
+
+```yaml
+- uses: actions/checkout@v7
+- name: Deploy
+  env:
+    DIBBLA_API_TOKEN: ${{ secrets.DIBBLA_API_TOKEN }}
+  run: |
+    docker run --rm -v "$PWD:/w" -w /w -e DIBBLA_API_TOKEN \
+      ghcr.io/dibbla-agents/dibbla-cli:1.2.61 deploy . --port 80 --update
+```
+
+**Tags.** `X.Y.Z` is published for every release, prereleases included.
+`latest` only ever moves to a stable release. In CI, pin by digest — a tag is
+mutable by definition, and a deploy step holds a credential:
+
+```bash
+docker buildx imagetools inspect ghcr.io/dibbla-agents/dibbla-cli:1.2.61 \
+  --format '{{.Manifest.Digest}}'
+# then pin: ghcr.io/dibbla-agents/dibbla-cli@sha256:...
+```
+
+**What is in it.** The CLI and its CA certificates — no shell and no package
+manager. That covers the API-backed commands (`deploy`, `apps`, `secrets`,
+`db`), which is what a pipeline needs. `clone`, `create` and the preflight
+checks shell out to git, go and npm, so they do not work in the image; they say
+so explicitly rather than failing with a confusing PATH error.
+
 ## Usage
 
 ### First-time setup
