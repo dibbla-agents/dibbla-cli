@@ -61,5 +61,9 @@ func ValidateToken(token string) bool {
 	if token == "" {
 		return true // Empty is allowed (with warning)
 	}
-	return strings.HasPrefix(token, "ak_")
+	// Two credential shapes are legitimate here: ak_ is a user API token minted
+	// in the web UI (and what CI passes via DIBBLA_API_TOKEN), ds_ is a CLI
+	// session issued by `dibbla login` (DIB-415). Accepting only ak_ would
+	// reject a pasted session as malformed, which is a confusing way to fail.
+	return strings.HasPrefix(token, "ak_") || strings.HasPrefix(token, "ds_")
 }

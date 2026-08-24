@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/auth"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
@@ -14,6 +16,7 @@ import (
 var (
 	logoutContext string
 	logoutAll     bool
+	logoutLocal   bool
 )
 
 var logoutCmd = &cobra.Command{
@@ -39,6 +42,7 @@ func init() {
 	// NOTE: this shadows the root persistent --context flag, deliberately, in
 	// the same way login's does. Theirs names the context to READ; this one
 	// names the context to LOG OUT OF.
+	logoutCmd.Flags().BoolVar(&logoutLocal, "local-only", false, "Forget the credential here without ending the session on the server")
 	logoutCmd.Flags().StringVar(&logoutContext, "context", "", "Log out of this context instead of the one in use")
 	logoutCmd.Flags().BoolVar(&logoutAll, "all", false, "Log out of every context and remove the context list")
 }
@@ -71,6 +75,8 @@ func runLogout(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no such context %q — `dibbla context list` shows the configured ones", name)
 	}
 
+	endSessionFor(out, store, name)
+
 	if err := forgetContextCredentials(name); err != nil {
 		return err
 	}
@@ -94,6 +100,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 func logoutEverything(out io.Writer, store *contextcfg.Config) error {
 	names := store.Names()
 	for _, name := range names {
+		endSessionFor(out, store, name)
 		if err := forgetContextCredentials(name); err != nil {
 			return err
 		}
@@ -131,4 +138,48 @@ func forgetContextCredentials(name string) error {
 		return fmt.Errorf("remove the credentials file for %s: %w", name, err)
 	}
 	return nil
+}
+
+// endSessionFor ends a context's server-side CLI session, so logging out means
+// the credential stops working rather than merely being forgotten here.
+//
+// Before DIB-416 logout only dropped the local copy and the token stayed live
+// for the rest of its life, which is most of how accounts filled up with
+// credentials nobody could account for.
+//
+// Deliberately best-effort, and deliberately not returning an error. Three
+// things can go wrong and none of them should stop a logout:
+//
+//   - the context has no session id (created by --api-key, or by a CLI older
+//     than this) — there is nothing on the server that this owns;
+//   - the server is unreachable, or older than the endpoint;
+//   - the session is already gone.
+//
+// A logout that refuses to finish would leave the machine still holding a
+// usable credential, which is worse than a session that lingers until it
+// expires on its own. What it must not do is fail silently: an unended session
+// is reported so it can be dealt with in the web UI.
+func endSessionFor(out io.Writer, store *contextcfg.Config, name string) {
+	if logoutLocal {
+		return
+	}
+	ctx, ok := store.Get(name)
+	if !ok || ctx.SessionID == "" {
+		return
+	}
+
+	tok, err := credential.GetContextToken(name)
+	if err != nil || strings.TrimSpace(tok) == "" {
+		tok, _, err = credential.GetContextTokenFile(name)
+		if err != nil || strings.TrimSpace(tok) == "" {
+			return
+		}
+	}
+
+	if err := auth.RevokeCLISession(ctx.APIURL, strings.TrimSpace(tok), ctx.SessionID); err != nil {
+		fmt.Fprintf(out, "%s Could not end the session for %s on the server: %v\n"+
+			"   The local credential is being removed anyway. If that session should not\n"+
+			"   outlive this logout, end it from the web UI.\n",
+			platform.Icon("⚠", "[!]"), name, err)
+	}
 }

@@ -218,15 +218,31 @@ func CopyToClipboard(text string) error {
 	return cmd.Run()
 }
 
-// ExchangeJWTForAPIToken uses a short-lived JWT to create a long-lived API token.
-// It calls POST /api/auth/v1/tokens with the JWT as a Bearer token.
-func ExchangeJWTForAPIToken(apiBaseURL, jwt string) (string, error) {
+// CLISession is what a browser login now yields: a system-issued session rather
+// than a user API token. ID is not secret and is stored in config.yaml so
+// logout can end the session; Token is, and goes to the keyring.
+type CLISession struct {
+	ID    string
+	Token string
+}
+
+// ExchangeJWTForCLISession uses the short-lived browser JWT to open a CLI
+// session. It calls POST /api/auth/v1/cli-sessions with the JWT as a Bearer
+// token.
+//
+// This used to POST /api/auth/v1/tokens and mint a user API token — the same
+// kind of credential a person creates by hand in the web UI. Every login left
+// another one behind, indistinguishable from the deliberate ones and never
+// cleaned up, because logout only forgot the local copy. Sessions are a
+// separate table server-side, expire on their own, and can actually be ended.
+// See DIB-415.
+func ExchangeJWTForCLISession(apiBaseURL, jwt string) (*CLISession, error) {
 	apiBaseURL = strings.TrimSuffix(apiBaseURL, "/")
-	reqURL := apiBaseURL + "/api/auth/v1/tokens"
+	reqURL := apiBaseURL + "/api/auth/v1/cli-sessions"
 
 	req, err := http.NewRequest("POST", reqURL, strings.NewReader("{}"))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	req.Header.Set("Content-Type", "application/json")
@@ -238,32 +254,76 @@ func ExchangeJWTForAPIToken(apiBaseURL, jwt string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		// The endpoint landed in auth-service before this CLI shipped, so a 404
+		// means the server is older than the client. Say so, rather than
+		// reporting a bare 404 from a URL the user never typed.
+		return nil, fmt.Errorf("this server does not support CLI sessions yet (it predates DIB-415); upgrade it, or log in with --api-key using a token from the web UI")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("token creation failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("session creation failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var result struct {
-		APIToken struct {
+		CLISession struct {
+			ID    string `json:"id"`
 			Token string `json:"token"`
-		} `json:"api_token"`
+		} `json:"cli_session"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if result.APIToken.Token == "" {
-		return "", fmt.Errorf("server returned empty API token")
+	if result.CLISession.Token == "" {
+		return nil, fmt.Errorf("server returned an empty CLI session token")
 	}
 
-	return result.APIToken.Token, nil
+	return &CLISession{ID: result.CLISession.ID, Token: result.CLISession.Token}, nil
+}
+
+// RevokeCLISession ends a session server-side. Called by `dibbla logout`, which
+// before DIB-416 could only drop its local copy and leave the credential live
+// for the rest of its life.
+//
+// Best-effort by design: the caller forgets the credential locally whether or
+// not this succeeds, because a logout that fails to complete must not leave the
+// machine still holding a usable token.
+func RevokeCLISession(apiBaseURL, token, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("no session id recorded for this context")
+	}
+	apiBaseURL = strings.TrimSuffix(apiBaseURL, "/")
+	reqURL := apiBaseURL + "/api/auth/v1/cli-sessions/" + url.PathEscape(sessionID)
+
+	req, err := http.NewRequest("DELETE", reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	// The org pin is irrelevant to ending a session, and sending one the
+	// session is not a member of would fail the request for the wrong reason.
+	req.Header.Set(orgctx.SkipHeader, "1")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("could not end the session (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 // DeriveAppURL attempts to derive the app URL from an API URL by replacing "api." with "app.".

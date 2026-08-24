@@ -52,3 +52,21 @@ func TestRequireToolMissingOutsideContainerStaysPlain(t *testing.T) {
 		t.Errorf("error mentions the image outside it: %v", err)
 	}
 }
+
+// Both credential shapes are legitimate: ak_ is a user API token (what CI
+// passes via DIBBLA_API_TOKEN), ds_ is a CLI session from `dibbla login`
+// (DIB-415). Accepting only ak_ rejected a pasted session as malformed.
+func TestValidateTokenAcceptsBothCredentialShapes(t *testing.T) {
+	cases := map[string]bool{
+		"ak_deadbeef": true,
+		"ds_deadbeef": true,
+		"":            true, // empty is allowed, with a warning elsewhere
+		"nope":        false,
+		"sk_wrong":    false,
+	}
+	for token, want := range cases {
+		if got := ValidateToken(token); got != want {
+			t.Errorf("ValidateToken(%q) = %v, want %v", token, got, want)
+		}
+	}
+}
