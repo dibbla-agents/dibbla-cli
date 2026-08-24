@@ -50,6 +50,16 @@ type Context struct {
 	APIURL  string `yaml:"api_url"`
 	Org     string `yaml:"org,omitempty"`
 	OrgName string `yaml:"org_name,omitempty"`
+
+	// SessionID names the server-side CLI session this context's credential
+	// belongs to, so `dibbla logout` can end it rather than merely forgetting
+	// it (DIB-416). It is an identifier, not a secret — the server scopes every
+	// use of it to the authenticated caller — which is why it can live in this
+	// file alongside the API URL rather than in the keyring.
+	//
+	// Empty for contexts created by --api-key, and for any created before this
+	// existed: those hold a user API token, which has no session to end.
+	SessionID string `yaml:"session_id,omitempty"`
 }
 
 // Config is the on-disk shape of ~/.config/dibbla/config.yaml.

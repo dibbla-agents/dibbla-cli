@@ -21,6 +21,14 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
+// acquiredCredential is what a login attempt yields. SessionID is set only by
+// the browser flow — a pasted --api-key is a user API token, which has no
+// server-side session to record or later end.
+type acquiredCredential struct {
+	Token     string
+	SessionID string
+}
+
 var (
 	loginAPIKey     string
 	loginBrowser    bool
@@ -29,6 +37,7 @@ var (
 	loginNoKeychain bool
 	loginContext    string
 	loginNoSwitch   bool
+	loginNewToken   bool
 )
 
 // apiKeysPath is the page in the dibbla web app where users mint API tokens,
@@ -113,6 +122,7 @@ func init() {
 	// Theirs names the context to READ; this one names the context to WRITE.
 	// So `dibbla login --context x` adds or refreshes context x — it does not
 	// set a read override for this invocation.
+	loginCmd.Flags().BoolVar(&loginNewToken, "new-token", false, "Start a fresh session even if the stored one still works")
 	loginCmd.Flags().StringVar(&loginContext, "context", "", "Name the context to create or refresh (default: derived from the API URL, or the existing context with that URL)")
 	loginCmd.Flags().BoolVar(&loginNoSwitch, "no-switch", false, "Store the login without making it the context in use")
 }
@@ -128,7 +138,22 @@ func runLogin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	token := strings.TrimSpace(loginAPIKey)
+	cred := acquiredCredential{Token: strings.TrimSpace(loginAPIKey)}
+
+	// Reuse before minting. Re-running `dibbla login` against a context whose
+	// credential still works used to open another server-side session every
+	// time, and nothing ever closed the old ones — the accumulation DIB-416
+	// exists to stop. Someone who genuinely wants a fresh one asks for it.
+	if cred.Token == "" && canReuseExistingLogin() {
+		if name, ok := reusableContextCredential(baseURL); ok {
+			fmt.Printf("%s Already logged in to %s as context %s — the stored credential still works.\n"+
+				"  Nothing was created. Use --new-token to start a fresh session anyway.\n",
+				platform.Icon("✅", "[OK]"), baseURL, name)
+			return
+		}
+	}
+
+	token := cred.Token
 	if token == "" && loginBrowser {
 		// Over SSH the localhost-callback browser flow can't complete —
 		// the callback URL points at this host's loopback, not the
@@ -146,21 +171,22 @@ func runLogin(cmd *cobra.Command, args []string) {
 		// Skip the interactive survey menu — go directly to browser OAuth.
 		// Safe in non-TTY contexts because the browser flow uses a localhost
 		// callback server for token delivery, not stdin.
-		t, err := browserLogin(baseURL)
+		session, err := browserLogin(baseURL)
 		if err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
 		}
-		token = strings.TrimSpace(t)
+		cred = acquiredCredential{Token: strings.TrimSpace(session.Token), SessionID: session.ID}
+		token = cred.Token
 	}
 	if token == "" {
 		var err error
-		token, err = acquireToken(baseURL)
+		cred, err = acquireToken(baseURL)
 		if err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
 		}
-		token = strings.TrimSpace(token)
+		token = strings.TrimSpace(cred.Token)
 		if token == "" {
 			fmt.Printf("%s Error: API token is required\n", platform.Icon("❌", "[X]"))
 			os.Exit(1)
@@ -181,7 +207,7 @@ func runLogin(cmd *cobra.Command, args []string) {
 	switched := false
 	if !loginNoKeychain {
 		var err error
-		ctxName, usedFileFallback, switched, err = storeLoginAsContext(baseURL, token)
+		ctxName, usedFileFallback, switched, err = storeLoginAsContext(baseURL, token, cred.SessionID)
 		if err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
@@ -269,7 +295,7 @@ func writeEnvAndGitignore(token, baseURL string) error {
 }
 
 // acquireToken presents the user with a choice of login methods and returns an API token.
-func acquireToken(baseURL string) (string, error) {
+func acquireToken(baseURL string) (acquiredCredential, error) {
 	interactive := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
 	if !interactive {
 		// Tailor the recovery options to context. Over SSH, --browser
@@ -277,11 +303,11 @@ func acquireToken(baseURL string) (string, error) {
 		// user's laptop) — leave it out so we don't lead the user
 		// into a 5-minute timeout.
 		if auth.IsSSHSession() {
-			return "", fmt.Errorf("non-interactive SSH session detected. Use one of:\n"+
+			return acquiredCredential{}, fmt.Errorf("non-interactive SSH session detected. Use one of:\n"+
 				"  --api-key TOK     pass a token (%s)\n"+
 				"  env DIBBLA_API_TOKEN=...   for headless CI", mintTokenAt(baseURL))
 		}
-		return "", fmt.Errorf("non-interactive terminal detected. Use one of:\n"+
+		return acquiredCredential{}, fmt.Errorf("non-interactive terminal detected. Use one of:\n"+
 			"  --browser         opens your browser (works in Claude Code, agentic shells, CI with a browser)\n"+
 			"  --api-key TOK     pass a token (%s)\n"+
 			"  env DIBBLA_API_TOKEN=...   for headless CI", mintTokenAt(baseURL))
@@ -297,7 +323,7 @@ func acquireToken(baseURL string) (string, error) {
 			"  which your laptop's browser can't reach. Paste an API\n"+
 			"  token instead (%s).\n\n",
 			platform.Icon("ℹ", "[i]"), mintTokenAt(baseURL))
-		return promptAPIToken(baseURL)
+		return pastedCredential(baseURL)
 	}
 
 	const (
@@ -311,32 +337,101 @@ func acquireToken(baseURL string) (string, error) {
 		Options: []string{optBrowser, optAPIToken},
 	}
 	if err := survey.AskOne(prompt, &method); err != nil {
-		return "", err
+		return acquiredCredential{}, err
 	}
 
 	switch method {
 	case optBrowser:
-		return browserLogin(baseURL)
+		session, err := browserLogin(baseURL)
+		if err != nil {
+			return acquiredCredential{}, err
+		}
+		return acquiredCredential{Token: session.Token, SessionID: session.ID}, nil
 	default:
-		return promptAPIToken(baseURL)
+		return pastedCredential(baseURL)
 	}
 }
 
+// pastedCredential wraps promptAPIToken. A pasted token carries no session id:
+// it is a user API token the person minted themselves, and logout must not try
+// to revoke something it did not issue.
+func pastedCredential(baseURL string) (acquiredCredential, error) {
+	tok, err := promptAPIToken(baseURL)
+	if err != nil {
+		return acquiredCredential{}, err
+	}
+	return acquiredCredential{Token: tok}, nil
+}
+
+// canReuseExistingLogin reports whether reuse is even on the table.
+//
+// Reuse means this command does nothing, which is only the right answer when
+// the user asked for nothing beyond "log me in". Every flag below is a request
+// to perform work that a short-circuit would silently skip:
+//
+//   - --new-token is an explicit request for a fresh session;
+//   - --context names a context to create or refresh, which may not be the one
+//     already holding a credential for this URL;
+//   - --write-env has to write .env even when the credential is unchanged;
+//   - --no-keychain changes where the credential is stored.
+//
+// Getting this wrong would be quiet: the command would print success and not
+// do the thing that was asked.
+func canReuseExistingLogin() bool {
+	return !loginNewToken &&
+		strings.TrimSpace(loginContext) == "" &&
+		!loginWriteEnv &&
+		!loginNoKeychain
+}
+
+// reusableContextCredential reports whether this API URL already has a context
+// holding a credential the server still accepts.
+//
+// Read-only and deliberately silent about why it says no: an expired token, an
+// empty keyring and a context that was never created should all simply lead to
+// a normal login, not to three different diagnostics for something the user did
+// not ask about.
+func reusableContextCredential(baseURL string) (string, bool) {
+	store, err := contextcfg.Load()
+	if err != nil {
+		return "", false
+	}
+	name := store.FindByURL(baseURL)
+	if name == "" {
+		return "", false
+	}
+
+	tok, err := credential.GetContextToken(name)
+	if err != nil || strings.TrimSpace(tok) == "" {
+		// Keyring miss is not decisive — this host may be using the file
+		// fallback (Linux without libsecret, see storeLoginAsContext).
+		tok, _, err = credential.GetContextTokenFile(name)
+		if err != nil || strings.TrimSpace(tok) == "" {
+			return "", false
+		}
+	}
+
+	if err := apiclient.ValidateToken(baseURL, strings.TrimSpace(tok)); err != nil {
+		return "", false
+	}
+	return name, true
+}
+
 // browserLogin performs the browser-based OAuth login flow.
-func browserLogin(apiBaseURL string) (string, error) {
+func browserLogin(apiBaseURL string) (*auth.CLISession, error) {
 	// Derive the app URL for the auth UI.
 	appURL := config.DefaultAppURL
 	if apiBaseURL != config.DefaultAPIURL {
 		derived, err := auth.DeriveAppURL(apiBaseURL)
 		if err != nil {
-			return "", fmt.Errorf("cannot determine app URL for %s: %w\nUse 'Paste an API token' instead", apiBaseURL, err)
+			return nil, fmt.Errorf("cannot determine app URL for %s: %w\nUse 'Paste an API token' instead", apiBaseURL, err)
 		}
 		appURL = derived
 	}
 
 	state, err := auth.GenerateState()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -376,16 +471,16 @@ func browserLogin(apiBaseURL string) (string, error) {
 	result := <-resultCh
 	if result.Err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("login timed out after 5 minutes; try again or use --api-key")
+			return nil, fmt.Errorf("login timed out after 5 minutes; try again or use --api-key")
 		}
-		return "", result.Err
+		return nil, result.Err
 	}
 
-	fmt.Printf("%s Browser login successful! Creating API token...\n", platform.Icon("✅", "[OK]"))
+	fmt.Printf("%s Browser login successful! Opening a CLI session...\n", platform.Icon("✅", "[OK]"))
 
-	apiToken, err := auth.ExchangeJWTForAPIToken(apiBaseURL, result.Token)
+	session, err := auth.ExchangeJWTForCLISession(apiBaseURL, result.Token)
 	if err != nil {
-		return "", fmt.Errorf("failed to create API token: %w", err)
+		return nil, fmt.Errorf("failed to open a CLI session: %w", err)
 	}
 
 	// Linger briefly so the browser can finish loading the success page
@@ -397,7 +492,7 @@ func browserLogin(apiBaseURL string) (string, error) {
 	// to eliminate the localhost callback entirely.
 	time.Sleep(auth.CallbackGracePeriod)
 
-	return apiToken, nil
+	return session, nil
 }
 
 // resolveLoginBaseURL picks the API URL to validate against, in order:
@@ -489,7 +584,7 @@ func promptAPIToken(apiBaseURL string) (string, error) {
 //
 // Returns the context name, whether the keyring-less file fallback was used,
 // and whether this login became the context in use.
-func storeLoginAsContext(baseURL, token string) (name string, usedFile, switched bool, err error) {
+func storeLoginAsContext(baseURL, token, sessionID string) (name string, usedFile, switched bool, err error) {
 	store, err := contextcfg.Load()
 	if err != nil {
 		return "", false, false, err
@@ -524,7 +619,7 @@ func storeLoginAsContext(baseURL, token string) (name string, usedFile, switched
 	}
 
 	existing, existed := store.Get(name)
-	ctx := contextcfg.Context{APIURL: baseURL}
+	ctx := contextcfg.Context{APIURL: baseURL, SessionID: sessionID}
 	if existed && strings.TrimSuffix(existing.APIURL, "/") == strings.TrimSuffix(baseURL, "/") {
 		// A refresh of the same server keeps that context's organization pin:
 		// re-authenticating is not a request to change which org you act as.

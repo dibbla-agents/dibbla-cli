@@ -184,10 +184,10 @@ func TestStatus_UnderCIReportsNoContext(t *testing.T) {
 func TestLogin_SecondServerLeavesTheFirstIntact(t *testing.T) {
 	fake := statusIsolate(t)
 
-	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-prod"); err != nil {
+	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-prod", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := storeLoginAsContext("https://api.haja.fatshark.se", "tok-haja"); err != nil {
+	if _, _, _, err := storeLoginAsContext("https://api.haja.fatshark.se", "tok-haja", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,12 +216,12 @@ func TestLogin_SecondServerLeavesTheFirstIntact(t *testing.T) {
 func TestLogin_SameURLRefreshesRatherThanDuplicating(t *testing.T) {
 	statusIsolate(t)
 
-	name1, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v1")
+	name1, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Trailing slash and all: the same server is the same server.
-	name2, _, _, err := storeLoginAsContext("https://api.dibbla.com/", "tok-v2")
+	name2, _, _, err := storeLoginAsContext("https://api.dibbla.com/", "tok-v2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestLogin_SameURLRefreshesRatherThanDuplicating(t *testing.T) {
 func TestLogin_RefreshKeepsTheOrgPin_ButRepointingDropsIt(t *testing.T) {
 	statusIsolate(t)
 
-	name, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v1")
+	name, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestLogin_RefreshKeepsTheOrgPin_ButRepointingDropsIt(t *testing.T) {
 	}
 
 	// Re-authenticating against the same server is not a request to change org.
-	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v2"); err != nil {
+	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-v2", ""); err != nil {
 		t.Fatal(err)
 	}
 	store, _ = contextcfg.Load()
@@ -271,7 +271,7 @@ func TestLogin_RefreshKeepsTheOrgPin_ButRepointingDropsIt(t *testing.T) {
 	// from the old server means nothing on the new one.
 	loginContext = name
 	t.Cleanup(func() { loginContext = "" })
-	if _, _, _, err := storeLoginAsContext("https://api.other.example", "tok-v3"); err != nil {
+	if _, _, _, err := storeLoginAsContext("https://api.other.example", "tok-v3", ""); err != nil {
 		t.Fatal(err)
 	}
 	store, _ = contextcfg.Load()
@@ -287,12 +287,12 @@ func TestLogin_RefreshKeepsTheOrgPin_ButRepointingDropsIt(t *testing.T) {
 func TestLogin_NoSwitchLeavesTheSelectionAlone(t *testing.T) {
 	statusIsolate(t)
 
-	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-prod"); err != nil {
+	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok-prod", ""); err != nil {
 		t.Fatal(err)
 	}
 	loginNoSwitch = true
 	t.Cleanup(func() { loginNoSwitch = false })
-	name, _, switched, err := storeLoginAsContext("https://api.haja.fatshark.se", "tok-haja")
+	name, _, switched, err := storeLoginAsContext("https://api.haja.fatshark.se", "tok-haja", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestLogin_RefusesAnUnusableContextName(t *testing.T) {
 	loginContext = "../../evil"
 	t.Cleanup(func() { loginContext = "" })
 
-	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok"); err == nil {
+	if _, _, _, err := storeLoginAsContext("https://api.dibbla.com", "tok", ""); err == nil {
 		t.Fatal("an unusable --context name must be refused: it becomes a filename holding a bearer token")
 	}
 	if contextcfg.Exists() {

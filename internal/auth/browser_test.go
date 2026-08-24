@@ -313,13 +313,13 @@ func TestStartCallbackServer_StaysAliveAfterSuccess(t *testing.T) {
 	reloadResp.Body.Close()
 }
 
-func TestExchangeJWTForAPIToken(t *testing.T) {
+func TestExchangeJWTForCLISession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %q, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/auth/v1/tokens" {
-			t.Errorf("path = %q, want /api/auth/v1/tokens", r.URL.Path)
+		if r.URL.Path != "/api/auth/v1/cli-sessions" {
+			t.Errorf("path = %q, want /api/auth/v1/cli-sessions", r.URL.Path)
 		}
 		auth := r.Header.Get("Authorization")
 		if auth != "Bearer test-jwt" {
@@ -328,27 +328,88 @@ func TestExchangeJWTForAPIToken(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, `{"message":"API token created successfully","api_token":{"token":"ak_abc123","id":"at_123","user_id":"u1","expires_at":0}}`)
+		fmt.Fprint(w, `{"message":"CLI session created successfully","cli_session":{"id":"cs_123","token":"ds_abc123"}}`)
 	}))
 	defer server.Close()
 
-	token, err := ExchangeJWTForAPIToken(server.URL, "test-jwt")
+	session, err := ExchangeJWTForCLISession(server.URL, "test-jwt")
 	if err != nil {
-		t.Fatalf("ExchangeJWTForAPIToken() error: %v", err)
+		t.Fatalf("ExchangeJWTForCLISession() error: %v", err)
 	}
-	if token != "ak_abc123" {
-		t.Errorf("token = %q, want %q", token, "ak_abc123")
+	if session.Token != "ds_abc123" {
+		t.Errorf("token = %q, want %q", session.Token, "ds_abc123")
+	}
+	// The id matters as much as the secret: without it logout has nothing to
+	// revoke and the session outlives the machine that opened it.
+	if session.ID != "cs_123" {
+		t.Errorf("id = %q, want %q", session.ID, "cs_123")
 	}
 }
 
-func TestExchangeJWTForAPIToken_Error(t *testing.T) {
+// A server that predates DIB-415 has no such route. A bare 404 from a URL the
+// user never typed is a confusing way to learn that.
+func TestExchangeJWTForCLISessionExplainsAnOldServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := ExchangeJWTForCLISession(server.URL, "test-jwt")
+	if err == nil {
+		t.Fatal("expected an error against a server without the endpoint")
+	}
+	if !strings.Contains(err.Error(), "--api-key") {
+		t.Errorf("error should point at the workaround, got: %v", err)
+	}
+}
+
+func TestRevokeCLISessionCallsDeleteWithTheSessionID(t *testing.T) {
+	var gotPath, gotAuth, gotMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotAuth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"message":"CLI session ended successfully"}`)
+	}))
+	defer server.Close()
+
+	if err := RevokeCLISession(server.URL, "ds_abc123", "cs_123"); err != nil {
+		t.Fatalf("RevokeCLISession() error: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", gotMethod)
+	}
+	if gotPath != "/api/auth/v1/cli-sessions/cs_123" {
+		t.Errorf("path = %q, want /api/auth/v1/cli-sessions/cs_123", gotPath)
+	}
+	if gotAuth != "Bearer ds_abc123" {
+		t.Errorf("Authorization = %q, want the session's own token", gotAuth)
+	}
+}
+
+// Nothing to revoke is not a server problem, and must not become a request.
+func TestRevokeCLISessionWithoutAnIDDoesNotCallTheServer(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	if err := RevokeCLISession(server.URL, "ak_user_token", ""); err == nil {
+		t.Error("expected an error when no session id is recorded")
+	}
+	if called {
+		t.Error("a context with no session id must not issue a revoke request")
+	}
+}
+
+func TestExchangeJWTForCLISession_Error(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"error":"UNAUTHORIZED","message":"Invalid token"}`)
 	}))
 	defer server.Close()
 
-	_, err := ExchangeJWTForAPIToken(server.URL, "bad-jwt")
+	_, err := ExchangeJWTForCLISession(server.URL, "bad-jwt")
 	if err == nil {
 		t.Fatal("expected error for unauthorized response")
 	}
