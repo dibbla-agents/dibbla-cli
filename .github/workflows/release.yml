@@ -750,13 +750,34 @@ jobs:
             TAGS+=(--tag "$IMAGE:latest")
           fi
 
-          # No QEMU setup: the Dockerfile has no RUN steps, so nothing executes
-          # in the target architecture and both platforms are pure COPY.
+          # No QEMU setup: neither Dockerfile has a RUN step, so nothing
+          # executes in the target architecture and both platforms are pure COPY.
+          #
+          # The default image is Alpine-based. It carries a shell because CI
+          # runners generate one to execute a step's commands, and an image
+          # without one cannot be driven that way — see DIB-418 and the comment
+          # at the top of the Dockerfile.
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file .github/docker/Dockerfile \
             --build-arg VERSION="$VERSION" \
             "${TAGS[@]}" \
+            --push \
+            oci-context
+
+          # The distroless variant, for steps that are a single CLI invocation
+          # and want no scripting surface. Version-suffixed only: it never takes
+          # `latest`, so nothing lands on it by default.
+          DISTROLESS_TAGS=(--tag "$IMAGE:$VERSION-distroless" --tag "$IMAGE:$TAG-distroless")
+          if [[ "$TAG" != *-* ]]; then
+            DISTROLESS_TAGS+=(--tag "$IMAGE:latest-distroless")
+          fi
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file .github/docker/Dockerfile.distroless \
+            --build-arg VERSION="$VERSION" \
+            "${DISTROLESS_TAGS[@]}" \
             --push \
             oci-context
 
@@ -776,6 +797,32 @@ jobs:
             echo "image reports '${GOT}', expected 'dibbla version ${VERSION}'"
             exit 1
           }
+
+          # ⚠️ The assertion that would have caught DIB-418. A CI runner does not
+          # invoke the entrypoint — it overrides it with a generated shell script
+          # and runs the step's commands inside. Proving `--version` works proves
+          # nothing about that, which is exactly how an image with no shell
+          # shipped as the documented default for a runner that requires one.
+          SHELL_OUT="$(docker run --rm --entrypoint /bin/sh "$IMAGE:$VERSION" -c 'dibbla --version')"
+          [ "$SHELL_OUT" = "dibbla version ${VERSION}" ] || {
+            echo "the default image cannot run a shell-wrapped command — CI runners cannot drive it"
+            exit 1
+          }
+          echo "shell-wrapped invocation works (the CI-runner shape)"
+
+          # The distroless variant must NOT have a shell — that is its whole
+          # point, and a silent regression to a shell-bearing base would make
+          # the two tags indistinguishable.
+          if docker run --rm --entrypoint /bin/sh "$IMAGE:$VERSION-distroless" -c 'true' 2>/dev/null; then
+            echo "the -distroless variant has a shell; it is supposed to have none"
+            exit 1
+          fi
+          DGOT="$(docker run --rm "$IMAGE:$VERSION-distroless" --version)"
+          [ "$DGOT" = "dibbla version ${VERSION}" ] || {
+            echo "distroless image reports '${DGOT}', expected 'dibbla version ${VERSION}'"
+            exit 1
+          }
+          echo "distroless variant runs, and correctly has no shell"
 
           echo "Pinnable digest for consumers:"
           docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}'

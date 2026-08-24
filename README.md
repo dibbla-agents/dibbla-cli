@@ -56,7 +56,7 @@ your deploy token no longer pipes a remote install script into a shell.
 # Woodpecker
 steps:
   deploy:
-    image: ghcr.io/dibbla-agents/dibbla-cli:1.2.61
+    image: ghcr.io/dibbla-agents/dibbla-cli:latest
     environment:
       DIBBLA_API_TOKEN:
         from_secret: dibbla_api_token
@@ -75,24 +75,58 @@ to run JavaScript actions such as `actions/checkout`:
     DIBBLA_API_TOKEN: ${{ secrets.DIBBLA_API_TOKEN }}
   run: |
     docker run --rm -v "$PWD:/w" -w /w -e DIBBLA_API_TOKEN \
-      ghcr.io/dibbla-agents/dibbla-cli:1.2.61 deploy . --port 80 --update
+      ghcr.io/dibbla-agents/dibbla-cli:latest deploy . --port 80 --update
 ```
 
 **Tags.** `X.Y.Z` is published for every release, prereleases included.
-`latest` only ever moves to a stable release. In CI, pin by digest — a tag is
-mutable by definition, and a deploy step holds a credential:
+`latest` only ever moves to a stable release. The examples above use `latest`
+for readability; **in CI, pin by digest** — a tag is mutable by definition, and
+a deploy step holds a credential:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/dibbla-agents/dibbla-cli:1.2.61 \
+docker buildx imagetools inspect ghcr.io/dibbla-agents/dibbla-cli:latest \
   --format '{{.Manifest.Digest}}'
 # then pin: ghcr.io/dibbla-agents/dibbla-cli@sha256:...
 ```
 
-**What is in it.** The CLI and its CA certificates — no shell and no package
-manager. That covers the API-backed commands (`deploy`, `apps`, `secrets`,
-`db`), which is what a pipeline needs. `clone`, `create` and the preflight
-checks shell out to git, go and npm, so they do not work in the image; they say
-so explicitly rather than failing with a confusing PATH error.
+**What is in it.** The CLI, a shell, and CA certificates — on Alpine. The shell
+is there because CI runners do not invoke the image's entrypoint: they compile a
+step's `commands:` into `["/bin/sh","-c", ...]` and run your commands inside it.
+An image without a shell cannot be driven that way at all.
+
+`clone`, `create` and the preflight checks shell out to git, go and npm, which
+the image does not carry; they say so explicitly rather than failing with a
+confusing PATH error. The API-backed commands — `deploy`, `apps`, `secrets`,
+`db` — are what the image is for.
+
+#### The `-distroless` variant
+
+`ghcr.io/dibbla-agents/dibbla-cli:X.Y.Z-distroless` is the same binary with no
+shell and no package manager. Smaller, and no scripting surface in a container
+that holds a deploy token.
+
+The cost is that `commands:` cannot be used with it — there is no shell for the
+runner to generate a script into. A step must be a single invocation, passed as
+the container's argv:
+
+```yaml
+# Woodpecker — note: entrypoint, and no `commands:` key at all
+steps:
+  deploy:
+    image: ghcr.io/dibbla-agents/dibbla-cli:latest-distroless
+    entrypoint: [/usr/local/bin/dibbla, deploy, ., --port, "80", --update]
+    environment:
+      DIBBLA_API_TOKEN:
+        from_secret: dibbla_api_token
+```
+
+Reach for it when a step is one CLI call and you want the smaller surface. Use
+the default image when the pipeline needs to loop, pipe, or check something
+between calls.
+
+> **Images published before v1.2.63 were distroless-only** and have no shell,
+> so `commands:` does not work with them regardless of tag. Use `latest`, or a
+> version from v1.2.63 onward, for the shell-bearing default.
 
 ## Usage
 
