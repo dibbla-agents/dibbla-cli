@@ -869,7 +869,33 @@ jobs:
           host="${SLACK_BOT_URL#*://}"; host="${host%%/*}"; host="${host%%:*}"
           cluster_ip="$(dig +short "$SLACK_CLUSTER_DNS" @1.1.1.1 | head -1)"
 
-          curl -fsS -X POST "$SLACK_BOT_URL" \
+          # ⚠️ dig can return several A records and this takes the first. If they
+          # ever point at different backends, the one picked here decides which
+          # answers — worth knowing when debugging an auth failure that comes and
+          # goes between runs.
+          if [ -z "$cluster_ip" ]; then
+            echo "::warning::Slack notification skipped: $SLACK_CLUSTER_DNS did not resolve."
+            exit 0
+          fi
+
+          # This used to end in `|| true`, which swallowed the status code
+          # entirely: a release could report every job green while the
+          # notification had been failing for weeks, and the only symptom was a
+          # message nobody received. v1.2.63 hit exactly that — a 401 that no
+          # pipeline surfaced.
+          #
+          # Still non-fatal, deliberately. A broken notification must not fail a
+          # release that otherwise succeeded — the artefacts are already
+          # published by the time this runs. But it warns loudly, so the failure
+          # is visible in the run summary instead of being inferred from silence.
+          # Same lesson as HOMEBREW_TAP_GITHUB_TOKEN, which now preflights rather
+          # than burying a 401 (see CLAUDE.md).
+          # Clear the body file first: curl does not truncate it when the
+          # connection never opens, so a stale body would be reported against a
+          # later, unrelated failure.
+          rm -f /tmp/notify-body
+
+          http_code="$(curl -sS -o /tmp/notify-body -w '%{http_code}' -X POST "$SLACK_BOT_URL" \
             --resolve "${host}:443:${cluster_ip}" \
             -H "Authorization: Bearer ${SLACK_BOT_API_SECRET}" \
             -H "Content-Type: application/json" \
@@ -883,4 +909,25 @@ jobs:
             "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
           EOF
-          )" || true
+          )" || true)"
+          [ -n "$http_code" ] || http_code="000"
+
+          case "$http_code" in
+            2*)
+              echo "Slack notified (HTTP $http_code)."
+              ;;
+            000)
+              echo "::warning::Slack notification failed: could not reach $host (network, Tailscale or DNS). The release itself succeeded."
+              ;;
+            401|403)
+              echo "::warning::Slack notification rejected with HTTP $http_code — SLACK_BOT_API_SECRET is not being accepted. The release itself succeeded; the notification was not sent."
+              ;;
+            *)
+              echo "::warning::Slack notification failed with HTTP $http_code. The release itself succeeded; the notification was not sent."
+              ;;
+          esac
+          # The body can carry the reason and must not be assumed secret-free,
+          # so print it only on failure and only as a warning-adjacent detail.
+          if [ "${http_code#2}" = "$http_code" ] && [ -s /tmp/notify-body ]; then
+            echo "response body: $(head -c 300 /tmp/notify-body)"
+          fi
