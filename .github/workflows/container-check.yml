@@ -20,12 +20,14 @@ on:
       - ".github/docker/**"
       - ".github/workflows/release.yml"
       - ".github/workflows/container-check.yml"
+      - "README.md"
   push:
     branches: [main]
     paths:
       - ".github/docker/**"
       - ".github/workflows/release.yml"
       - ".github/workflows/container-check.yml"
+      - "README.md"
 
 concurrency:
   group: container-check-${{ github.ref }}
@@ -86,24 +88,59 @@ jobs:
             --tag dibbla-cli:ci \
             oci-context
 
-      - name: The image runs
+      - name: The distroless variant assembles too
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file .github/docker/Dockerfile.distroless \
+            --build-arg VERSION=0.0.0-ci \
+            --tag dibbla-cli:ci-distroless \
+            oci-context
+
+      - name: The image runs the way CI actually drives it
         run: |
           set -euo pipefail
 
-          # Load the runner-native platform and execute it — the same assertion
-          # release.yml makes after pushing, so the two cannot drift. Layers are
-          # already cached from the step above, so this is nearly free.
-          docker buildx build \
-            --platform linux/amd64 --load \
+          # Load the runner-native platform and execute it. Layers are already
+          # cached from the steps above, so this is nearly free.
+          docker buildx build --platform linux/amd64 --load \
             --file .github/docker/Dockerfile \
-            --build-arg VERSION=0.0.0-ci \
-            --tag dibbla-cli:ci \
-            oci-context
+            --build-arg VERSION=0.0.0-ci --tag dibbla-cli:ci oci-context
+          docker buildx build --platform linux/amd64 --load \
+            --file .github/docker/Dockerfile.distroless \
+            --build-arg VERSION=0.0.0-ci --tag dibbla-cli:ci-distroless oci-context
 
           GOT="$(docker run --rm dibbla-cli:ci --version)"
-          echo "$GOT"
           if [ "$GOT" != "dibbla version 0.0.0-ci" ]; then
             echo "::error file=.github/docker/Dockerfile::image reports '${GOT}', expected 'dibbla version 0.0.0-ci'"
             exit 1
           fi
-          echo "✓ image builds for linux/amd64 + linux/arm64 and runs"
+
+          # ⚠️ This is the assertion whose absence let DIB-418 ship. A CI runner
+          # does not invoke the entrypoint: Woodpecker compiles a step's
+          # `commands:` into ["/bin/sh","-c", ...] and GitLab CI does the same.
+          # An image with no shell dies there before the CLI is ever reached,
+          # and checking `--version` alone cannot see it.
+          if ! OUT="$(docker run --rm --entrypoint /bin/sh dibbla-cli:ci -c 'dibbla --version' 2>&1)"; then
+            echo "::error file=.github/docker/Dockerfile::the default image cannot run a shell-wrapped command, so no CI runner can drive it: ${OUT}"
+            exit 1
+          fi
+          if [ "$OUT" != "dibbla version 0.0.0-ci" ]; then
+            echo "::error file=.github/docker/Dockerfile::shell-wrapped run printed '${OUT}'"
+            exit 1
+          fi
+
+          # The variant's defining property, asserted so it cannot silently
+          # regress into being a second copy of the default image.
+          if docker run --rm --entrypoint /bin/sh dibbla-cli:ci-distroless -c 'true' 2>/dev/null; then
+            echo "::error file=.github/docker/Dockerfile.distroless::the -distroless variant has a shell; it is supposed to have none"
+            exit 1
+          fi
+          if [ "$(docker run --rm dibbla-cli:ci-distroless --version)" != "dibbla version 0.0.0-ci" ]; then
+            echo "::error file=.github/docker/Dockerfile.distroless::distroless variant does not run"
+            exit 1
+          fi
+
+          echo "✓ default image: builds both platforms, runs, and works under a shell (the CI shape)"
+          echo "✓ distroless variant: builds both platforms, runs, and has no shell"
