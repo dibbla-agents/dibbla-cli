@@ -1,6 +1,10 @@
 package wf
 
 import (
+	"errors"
+	"fmt"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -77,9 +81,66 @@ var functionsGetCmd = &cobra.Command{
 	},
 }
 
+// functionsProvidersCmd lists capability providers — worker-registered
+// replacements for a platform built-in (seats: tool_search, memory). They
+// live in their own registry and never appear in `fn list`.
+var functionsProvidersCmd = &cobra.Command{
+	Use:   "providers",
+	Short: "List registered capability providers",
+	Long: `List the capability providers registered by connected workers.
+
+A capability provider replaces the platform's built-in implementation behind
+one agent capability seat (tool_search, memory). Workflows opt in per agent
+node via 'capability_providers: {<seat>: "<name>"}'. Most workflows use the
+built-ins and need no provider.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := "/api/wf/capability-providers"
+		if capability, _ := cmd.Flags().GetString("capability"); capability != "" {
+			path += "?capability=" + capability
+		}
+		resp, err := getClient().Get(path)
+		if err != nil {
+			var apiErr *apiclient.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+				return fmt.Errorf("this workflow server does not support capability providers (endpoint not found) — it predates the provider registry; upgrade the workflow-server deployment to use this command")
+			}
+			return err
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		providers, _ := result["providers"].([]interface{})
+		if flagOutput == "json" {
+			return output.PrintJSON(result)
+		}
+		if flagOutput == "yaml" {
+			return output.PrintYAML(result)
+		}
+		headers := []string{"NAME", "SEAT", "SERVER", "VERSION", "DESCRIPTION"}
+		var rows [][]string
+		for _, pr := range providers {
+			p, ok := pr.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := p["name"].(string)
+			seat, _ := p["capability"].(string)
+			srv, _ := p["server"].(string)
+			version, _ := p["version"].(string)
+			desc, _ := p["description"].(string)
+			rows = append(rows, []string{name, seat, srv, version, desc})
+		}
+		output.PrintTable(headers, rows)
+		return nil
+	},
+}
+
 func init() {
 	functionsListCmd.Flags().String("server", "", "Filter by server name")
 	functionsListCmd.Flags().String("tag", "", "Filter by tag")
 	functionsCmd.AddCommand(functionsListCmd)
 	functionsCmd.AddCommand(functionsGetCmd)
+	functionsProvidersCmd.Flags().String("capability", "", "Filter by capability seat (tool_search, memory)")
+	functionsCmd.AddCommand(functionsProvidersCmd)
 }
