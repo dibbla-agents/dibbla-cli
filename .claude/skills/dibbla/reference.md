@@ -645,6 +645,81 @@ dibbla apps restart myapp -s web --quiet
 dibbla apps restart myapp -s redis --json
 ```
 
+### apps get
+
+Show one deployment's record. This is the command `logs --pod-stream` 404s point at ("check `dibbla apps get <alias>`") to see which services exist.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps get <alias>` |
+| **Arguments** | `alias` (required) — regex `^[a-z][a-z0-9-]{2,62}[a-z0-9]$`, validated locally (zero requests on failure, exit 5) |
+| **Flags** | `--json` — print the raw API document verbatim |
+| **Output** | Default: URL, status, deployed/updated times, replicas, size, health, login policy; for multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker |
+| **Errors** | `404` exit 4 with a hint to `apps list`; `401/403` exit 3 |
+
+**Examples:**
+```bash
+dibbla apps get myapp
+dibbla apps get myapp --json | jq '.services[].name'
+```
+
+---
+
+## apps checks
+
+Inspect and run an app's application checks (`dibbla-checks.yaml`). Alias is always positional; the check id is always a `--check` flag (same shape as `apps restart <alias> --service <name>`).
+
+**Exit codes are the product outcome, not just success/failure** — `run` exits 0 pass, 8 fail, 9 error, 10 indeterminate, 12 canceled, 13 skipped_concurrent, so CI gates on the code without scraping output. Transport failures keep the CLI-wide ladder: 3 auth/permission, 4 not found, 5 request validation, 6 conflict, 7 timeout, 1 unexpected. A check that *finds* a problem (exit 8) is the check working, not the command failing.
+
+### apps checks list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps checks list <alias>` |
+| **Flags** | `--json` — print the raw API document (one JSON document) |
+| **Output** | Runtime enabled state, config revision, one table row per definition (ID, KIND, SCHEDULE, CLASSIFICATION, ENABLED, NAME) |
+| **Notes** | `configured: false` (org enabled, no dibbla-checks.yaml) is exit 0 — "no checks" is an answer. Org capability disabled is a 404 (exit 4) with code `APPLICATION_CHECKS_DISABLED` |
+
+### apps checks run
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps checks run <alias>` |
+| **Arguments** | `alias` (required) |
+| **Flags** | `--check <id>` — run only this check (default all); regex `^[a-z][a-z0-9-]{0,62}$`, validated locally (exit 5, zero requests) |
+| | `--async` \| `--follow` — return once accepted, or poll and stream. Mutually exclusive |
+| | `-q`, `--quiet` \| `--json` — mutually exclusive |
+| **Output** | Default: polls to terminal, prints `✅ pass — execution acx_…` (or the matching outcome), terminal code, duration. `--quiet`: `<execution-id> [outcome]`. `--json` (sync): one document with `outcome` + `exit_code` + the final `execution`. `--async --json`: the parent execution object as answered by the run endpoint. `--follow --json`: NDJSON — one `execution_created` line, one `execution_status` line per status change, exactly one terminal `summary` line carrying `outcome` and `exit_code` |
+| **Errors** | Product outcomes per the table above; transport ladder otherwise; poll timeout exits 7 and names the execution id (it keeps running server-side) |
+
+**Examples:**
+```bash
+dibbla apps checks run myapp --check home-page        # exit 0 = pass, 8 = fail
+dibbla apps checks run myapp --async --quiet          # prints the execution id
+dibbla apps checks run myapp --follow --json | jq -c 'select(.type=="summary")'
+```
+
+### apps checks history
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps checks history <alias>` |
+| **Flags** | `--check <id>` — one check's page (default: every configured check, merged newest-first) |
+| | `--since <duration>` — client-side window filter, e.g. `24h` |
+| | `--limit <N>` — client-side cap; also sent as the server-side page size |
+| | `--json` — one JSON document. With `--check`: the server page verbatim (`runs` + `next_cursor`). Without: a merged `{runs: [...]}` document |
+| **Output** | Default: table of STARTED, CHECK, OUTCOME, CODE, SUMMARY (typed result documents — stable `code`, bounded prose `summary`) |
+
+### apps checks enable / disable
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps checks enable <alias>` / `dibbla apps checks disable <alias>` |
+| **Flags** | `-y`, `--yes` — skip confirmation. `--check` — **rejected** (exit 5, zero requests): enablement is app-wide until the API grows per-check enablement |
+| **Requires** | owner/admin. Enable also requires configured checks (a 400 with the server's code otherwise, exit 5) |
+| **Output** | `✓ application checks enabled for <alias> (settings version N)` |
+| **Errors** | Version conflict on concurrent edits is 409 → exit 6 |
+
 ---
 
 ## logs

@@ -498,6 +498,30 @@ dibbla apps restart myapp -s redis --json | jq '.status'
 
 Idempotent — calling twice in a row produces two pod rollouts.
 
+### Inspect one app in full
+
+```bash
+dibbla apps get myapp                # status, size, health, login policy + per-service breakdown
+dibbla apps get myapp --json | jq '.services[].name'
+```
+
+`apps get` is what `logs --pod-stream` 404s point at when the service name doesn't match a pod.
+
+### Run application checks and gate on the outcome
+
+```bash
+dibbla apps checks list myapp                       # definitions, classification, enabled state
+dibbla apps checks run myapp --check home-page      # exit 0 = pass, 8 = fail, 9 = error, 10 = indeterminate
+dibbla apps checks run myapp --async --quiet        # prints the execution id, returns immediately
+dibbla apps checks run myapp --follow --json \
+  | jq -c 'select(.type=="summary")'                # one terminal line: outcome + exit_code
+dibbla apps checks history myapp --since 24h        # typed results: outcome, stable code, summary
+dibbla apps checks enable myapp --yes               # start the nightly schedule (owner/admin)
+dibbla apps checks disable myapp --yes              # stop scheduled runs, keep definitions + history
+```
+
+The exit code **is** the product outcome (0/8/9/10/12/13), so a CI step fails exactly when the app fails its own assertions — no output scraping. Transport problems keep the CLI-wide codes (3 auth, 4 not found, 5 bad request, 6 conflict, 7 timeout, 1 other).
+
 ### Tail logs for the whole deployment (all services merged)
 
 ```bash
