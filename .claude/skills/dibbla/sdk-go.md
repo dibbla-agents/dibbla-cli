@@ -308,7 +308,43 @@ func GetGoogleTokenFunction() sdk.FunctionBuilder {
 
 To request additional Google scopes (Drive, Calendar, Sheets, Gmail) at deploy time, see the `--google-scopes` flag in [reference.md](reference.md) and the auth-header / scope brokering section of [platform.md](platform.md).
 
-## 10. Gotchas
+## 10. Capability providers — replacing a platform built-in (rare, ≥ v0.0.20)
+
+A **capability provider** lets a worker replace the platform's built-in implementation behind one agent capability seat — today `tool_search` (the relevance scorer) and `memory` (history selection). *Not to be confused with OAuth connected providers (§9).* This is an org-level extension mechanism, not something a normal workflow needs: agents get built-in tool search and memory without any provider, and a workflow only uses yours when it explicitly binds it via `capability_providers:` on an agent node (see [workflows.md](workflows.md) §6 → Capability providers, including the decision gate for when this is and isn't the right tool).
+
+A provider is a struct literal with one closure — no interface to implement — registered alongside functions and jobs, announced automatically on startup and reconnect:
+
+```go
+// tool_search seat: the engine offers tool stubs, you return an ordered subset.
+server.RegisterCapabilityProvider(sdk.ToolSearchProvider{
+    Name:        "org-ranker",
+    Description: "Ranks offered tools with our own heuristic.",
+    Version:     "1.0.0",
+    Select: func(query string, stubs []sdk.ProviderStub, topN int) ([]string, error) {
+        // rank/filter stubs (name + description); return tool names, truncated to topN
+    },
+})
+
+// memory seat: the engine hands you the stored turns, you return what gets injected.
+server.RegisterCapabilityProvider(sdk.MemoryProvider{
+    Name:               "org-memory-ranker",
+    Version:            "1.0.0",
+    MaxHistoryFraction: 0.5, // token ceiling as a fraction of context; 0 = platform default
+    Transform: func(currentMessage string, turns []sdk.Turn, tokenBudget int, meta sdk.ThreadMeta) ([]sdk.Turn, error) {
+        // summarize / rank / trim; return the turns to inject
+    },
+})
+```
+
+Key facts:
+
+- **Data boundary (memory seat):** the engine sends the thread's **full conversation history** to your worker on every agent turn. Treat the worker as holding user conversation data.
+- **Binding implies `custom`:** a workflow that binds your memory provider must leave `history_policy` unset — it resolves to `custom` automatically; an explicit non-custom policy alongside the binding fails the node at run time.
+- **The slim YAML key is `capability_providers:`** — the underscore-prefixed `_capability_providers` you may see in verbose/internal JSON is engine-injected and not authorable.
+- **Discoverability:** `dibbla fn providers` lists the providers currently registered by connected workers.
+- Working examples: `cmd/worker/examples/tool_search_provider.go` and `cmd/worker/examples/memory_provider.go` are marker-style — their effect is unmistakable in a run trace, which is exactly what you want while developing. The `sdk-go-test-worker` repo shows the org-side project layout (functions + providers + jobs).
+
+## 11. Gotchas
 
 - **`Start()` blocks forever.** Register every function and job before calling it.
 - **Authenticate with an `ak_` API token, not `WORKFLOW_SERVER_API_TOKEN`.** The latter is a platform-internal service token; user workers use a personal `ak_…` token and register scoped to its org. (§8)
@@ -323,7 +359,7 @@ To request additional Google scopes (Drive, Calendar, Sheets, Gmail) at deploy t
 - **`Logger.Error()` does not fail the job.** It's a log line. Return an error from `Execute` to fail.
 - **Always call `CompleteProgress()` before the next `TaskStarted()`.** The progress bar is per-task and lingers otherwise.
 
-## 11. Reference paths inside `sdk-go`
+## 12. Reference paths inside `sdk-go`
 
 | Path | What it has |
 |---|---|
@@ -337,10 +373,12 @@ To request additional Google scopes (Drive, Calendar, Sheets, Gmail) at deploy t
 | `jobs/examples/data_processing_job.go` | Multi-phase job with progress, warnings, dry-run handling. |
 | `cmd/worker/main.go` | Runnable worker registering several example functions. |
 | `cmd/worker/examples/oauth_example.go` | Canonical OAuth function (Google token + connected-providers). |
+| `cmd/worker/examples/tool_search_provider.go` | Marker-style tool_search capability provider (§10). |
+| `cmd/worker/examples/memory_provider.go` | Marker-style memory capability provider (§10). |
 | `cmd/worker/examples/google_sheets_example.go` | Calling a third-party API with the OAuth token. |
 | `README.md` | Long-form overview; section 8+ (auth, OAuth, TLS) is current. |
 
-## 12. End-to-end deploy
+## 13. End-to-end deploy
 
 1. Write your worker (`main.go`) using the patterns above.
 2. Author a `Dockerfile` that builds the binary and runs it. Pass `SERVER_NAME` and `SERVER_API_TOKEN` via env.

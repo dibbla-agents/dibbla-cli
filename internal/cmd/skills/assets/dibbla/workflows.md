@@ -286,6 +286,40 @@ Agents that fail silently do still look identical to agents that succeed with an
 
 A node can be **either** a data input feeding the agent's system prompt **or** a tool the agent calls — never both. If you list `node_x` in some agent's `tools:` array AND wire `node_x.output -> agent.system_message` (or anything that transitively flows back into the agent), the auto-generated tool-connection edge plus your data edge close a cycle. Pre-flight catches this and `wf execute` returns `422 CYCLE_DETECTED` instead of launching the run. Pick one role per node — the canonical shape for "inject this fact into the system prompt" is `data_source -> handlebars_template -> agent.system_message`, with the data source NOT in `tools:`. See the worked example in [examples.md](examples.md) → "Today's date in the system prompt".
 
+### Capability providers — replacing a built-in implementation (rare)
+
+Every capability above runs on a **platform built-in by default**: `memory:` uses the built-in history policies (tiered/full/text-only/last-N), `tool_search:` uses the built-in relevance scorer. The defaults are the right answer for almost every workflow — a user asking for "memory", "conversation history", "threads", or "tool discovery" wants the built-in keys documented above, **not** a provider.
+
+A **capability provider** replaces the built-in implementation behind one seat, and exists only for the case where someone explicitly wants to change *how* the platform selects history or ranks tool search. It requires running your own Go worker (sdk-go ≥ v0.0.20) that registers the provider — see [sdk-go.md](sdk-go.md) § Capability providers for authoring one. Decision gate:
+
+| User asks for | Use |
+|---|---|
+| Memory / history / threads on an agent | `memory:` built-in keys — no provider |
+| Tool discovery / "let the agent find tools" | `tool_search:` built-in keys — no provider |
+| "Replace / customize **how** history is selected" or "**how** tool search ranks", with their own algorithm | A capability provider |
+
+Bind a registered provider on an agent node by seat name:
+
+```yaml
+- id: agent
+  type: function
+  function: reasoning_agent_with_toolbox
+  server: function-server
+  inputs: { model: "claude-sonnet-4-5-20250514", prompt_message: ~, system_message: ~ }
+  capability_providers:
+    memory: org-memory-ranker     # seat -> provider name, as registered by the worker
+    # NOTE: no history_policy line — binding a memory provider implies "custom"
+```
+
+Rules (enforced in go-toolserver):
+
+- **Memory seat: leave `history_policy` unset.** A bound memory provider resolves the policy to `custom` automatically. Setting an explicit non-custom policy alongside the binding fails the node at run time: *"memory capability provider … is bound but history_policy is … — remove the provider binding, or set history_policy to \"custom\" (or leave it unset)"*.
+- No binding + unset policy → `tiered`, unchanged. Providers never activate implicitly.
+- The provider name must match a provider **currently registered** by a connected worker. Discover what's registered with `dibbla fn providers`. The validator does not yet check seat names or provider existence — a typo'd seat or unregistered provider is silently ignored / fails at run time, so verify with `fn providers` before executing.
+- Data boundary for the memory seat: the agent's **full conversation history is sent to the provider's worker**. Only bind memory providers whose worker you trust with that data.
+
+Do not offer a provider as the answer to a plain memory/tool-search request; it is an org-level extension mechanism, not a workflow-authoring feature.
+
 ---
 
 ## 7. Inputs come from three places

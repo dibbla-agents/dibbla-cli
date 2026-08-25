@@ -1463,3 +1463,59 @@ dibbla wf delete weather_assistant --yes
 dibbla wf create -f /tmp/weather_pre_recreate.yaml
 dibbla wf api-docs weather_assistant      # ← fresh urlid; update WEATHER_WF_URL_ID env in the app
 ```
+
+### Bind a custom capability provider (advanced — rare)
+
+**This is the advanced path.** For ordinary memory or tool discovery, use the built-in `memory:` / `tool_search:` keys — see the agent example in [workflows.md](workflows.md) §3 and the decision gate in §6 → Capability providers. A capability provider replaces the platform's built-in implementation and requires an org worker (sdk-go ≥ v0.0.20) that registers it — see [sdk-go.md](sdk-go.md) §10 for the worker side.
+
+```bash
+# 0. The provider must already be registered by a connected worker.
+#    Discover what's available:
+dibbla fn providers
+# NAME               SEAT         SERVER        VERSION
+# org-memory-ranker  memory       org-worker    1.0.0
+# org-ranker         tool_search  org-worker    1.0.0
+
+# 1. Author the workflow — bind by seat name on a toolbox agent node.
+cat > /tmp/wf.yaml <<'YAML'
+name: assistant_custom_memory
+nodes:
+  - id: api_input
+    type: api
+    inputs: [question]
+    outputs: [question]
+  - id: agent
+    type: function
+    function: reasoning_agent_with_toolbox
+    server: function-server
+    inputs:
+      model: "claude-sonnet-4-5-20250514"
+      prompt_message: ~
+      system_message: "You are a helpful assistant."
+      thread_id: "demo-thread-1"        # memory needs a thread to select history for
+    capability_providers:
+      memory: org-memory-ranker          # NO history_policy line — binding implies "custom"
+    outputs: [response]
+  - id: api_response
+    type: api_response
+    linked_to: api_input
+    inputs: [response]
+edges:
+  - api_input.question -> agent.prompt_message
+  - agent.response -> api_response.response
+YAML
+
+# 2. Validate, create, run with the log tail
+dibbla wf validate -f /tmp/wf.yaml
+dibbla wf create -f /tmp/wf.yaml
+dibbla wf execute assistant_custom_memory --data '{"question":"hi"}' --follow
+# The run log shows a capability_provider_call entry when the provider ran.
+
+# Footguns:
+# - Setting `history_policy: tiered` (or anything non-custom) next to the binding
+#   fails the node at run time: "memory capability provider … is bound but
+#   history_policy is … — remove the provider binding, or set history_policy to
+#   \"custom\" (or leave it unset)".
+# - The validator does not yet check the seat name or that the provider is
+#   registered — a typo passes validation and misbehaves at run time. Check
+#   `dibbla fn providers` first.
