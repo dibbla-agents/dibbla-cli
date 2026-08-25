@@ -1,6 +1,10 @@
 package wf
 
 import (
+	"errors"
+	"fmt"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -96,6 +100,10 @@ built-ins and need no provider.`,
 		}
 		resp, err := getClient().Get(path)
 		if err != nil {
+			var apiErr *apiclient.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+				return fmt.Errorf("this workflow server does not support capability providers (endpoint not found) — it predates the provider registry; upgrade the workflow-server deployment to use this command")
+			}
 			return err
 		}
 		var result map[string]interface{}
