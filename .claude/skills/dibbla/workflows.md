@@ -315,7 +315,7 @@ Rules (enforced in go-toolserver):
 
 - **Memory seat: leave `history_policy` unset.** A bound memory provider resolves the policy to `custom` automatically. Setting an explicit non-custom policy alongside the binding fails the node at run time: *"memory capability provider … is bound but history_policy is … — remove the provider binding, or set history_policy to \"custom\" (or leave it unset)"*.
 - No binding + unset policy → `tiered`, unchanged. Providers never activate implicitly.
-- The provider name must match a provider **currently registered** by a connected worker. Discover what's registered with `dibbla fn providers`. The validator does not yet check seat names or provider existence — a typo'd seat or unregistered provider is silently ignored / fails at run time, so verify with `fn providers` before executing.
+- The provider name must match a provider **currently registered** by a connected worker — discover what's registered with `dibbla fn providers`. The validator checks the binding's shape (`CAPABILITY_NOT_SUPPORTED` for a typo'd/unsupported seat or a function without the seat, `CAPABILITY_PROVIDER_CONFLICT` for the policy conflict) but deliberately not provider *existence* — providers come and go with their workers, so verify with `fn providers` before executing.
 - Data boundary for the memory seat: the agent's **full conversation history is sent to the provider's worker**. Only bind memory providers whose worker you trust with that data.
 
 Do not offer a provider as the answer to a plain memory/tool-search request; it is an org-level extension mechanism, not a workflow-authoring feature.
@@ -458,7 +458,8 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `INVALID_LINK` | `api_response.linked_to` points at a missing node, or at a node that isn't `type: api` | Point it at the corresponding `api` node |
 | `UNSATISFIED_INPUT` | A **required** input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Only inputs in the function's `required_inputs` are checked — optional and capability inputs are not. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
 | `TOOLS_NOT_SUPPORTED` | `tools:` on a function that isn't tagged `accepts_tools` | Pick an agent function — `dibbla fn list --tag accepts_tools`. (Previously this was accepted and the tools were silently ignored at runtime.) |
-| `CAPABILITY_NOT_SUPPORTED` | `toolbox_tools:` / `mcp_servers:` / `data_sources:` / `memory:` / `tool_search:` on a function that doesn't declare that capability | `dibbla fn get <server> <name>` lists the capabilities the function has |
+| `CAPABILITY_NOT_SUPPORTED` | `toolbox_tools:` / `mcp_servers:` / `data_sources:` / `memory:` / `tool_search:` on a function that doesn't declare that capability — or a `capability_providers:` binding on an unsupported seat or a function without that seat | `dibbla fn get <server> <name>` lists the capabilities the function has; provider bindings only work on `memory` / `tool_search` seats |
+| `CAPABILITY_PROVIDER_CONFLICT` | A memory provider is bound and `history_policy` is set to something other than `custom` | Remove the `history_policy` line (binding implies `custom`) or the binding |
 | `INVALID_MCP_SERVER` | An `mcp_servers:` entry is missing `name` or `url`, or uses the reserved `_` name prefix | Supply both; rename off the `_` prefix |
 | `SELF_REFERENTIAL_TOOL` | A node lists its own id in `tools:` | Remove it — that's an immediate cycle |
 | `INVALID_VALUE` | A capability setting is out of range (e.g. negative `history_policy_n`) | Correct the value |
