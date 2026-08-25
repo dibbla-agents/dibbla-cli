@@ -186,6 +186,11 @@ func TestRunAppsChecksListCore_OrgDisabledIsNotFound(t *testing.T) {
 			t.Errorf("missing %q: %q", want, stderr.String())
 		}
 	}
+	// The app is not what went missing — the alias hint would be a wrong
+	// answer here.
+	if strings.Contains(stderr.String(), "apps list") {
+		t.Errorf("org-disabled 404 must not hint at wrong aliases: %q", stderr.String())
+	}
 }
 
 func TestRunAppsChecksListCore_Forbidden(t *testing.T) {
