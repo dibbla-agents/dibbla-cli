@@ -33,6 +33,34 @@ type Deployment struct {
 	AppAccessPolicy string           `json:"app_access_policy,omitempty"`
 	GoogleScopes    []string         `json:"google_scopes,omitempty"`
 	MicrosoftScopes []string         `json:"microsoft_scopes,omitempty"`
+
+	// The fields below are present on GET /deployments/{alias} responses and
+	// rendered by `apps get`. They stay optional so the update response (which
+	// carries fewer fields) parses into the same struct.
+	Replicas      *int                `json:"replicas,omitempty"`
+	CPU           string              `json:"cpu,omitempty"`
+	Memory        string              `json:"memory,omitempty"`
+	Description   string              `json:"description,omitempty"`
+	ReviewStatus  string              `json:"review_status,omitempty"`
+	ReviewSummary string              `json:"review_summary,omitempty"`
+	ServiceCount  int                 `json:"service_count,omitempty"`
+	Services      []DeploymentService `json:"services,omitempty"`
+}
+
+// DeploymentService is one service of a multi-service deployment, as returned
+// by GET /deployments/{alias}.
+type DeploymentService struct {
+	Name          string `json:"name"`
+	Image         string `json:"image,omitempty"`
+	Port          *int   `json:"port,omitempty"`
+	Replicas      int    `json:"replicas"`
+	ReadyReplicas int    `json:"ready_replicas"`
+	CPU           string `json:"cpu,omitempty"`
+	Memory        string `json:"memory,omitempty"`
+	IsPublic      bool   `json:"is_public"`
+	IsBuilt       bool   `json:"is_built"`
+	Status        string `json:"status,omitempty"`
+	Stateful      bool   `json:"stateful,omitempty"`
 }
 
 // DeploymentStatus represents the status of a deployment.
