@@ -1219,7 +1219,7 @@ nodes:
     function: reasoning_agent_function
     server: function-server
     inputs:
-      model: "claude-sonnet-4-5-20250514"
+      model: "claude-sonnet-4-5"
       prompt_message: ~
       system_message: ~
     tools:
@@ -1294,7 +1294,7 @@ nodes:
     function: reasoning_agent_function
     server: function-server
     inputs:
-      model: "claude-sonnet-4-5-20250514"
+      model: "claude-sonnet-4-5"
       system_message: ~
       prompt_message: ~
     # NOTE: `today` is NOT listed in tools: — it's a pure data input.
@@ -1360,7 +1360,7 @@ dibbla edges remove weather_assistant "system_prompt.output -> agent.system_mess
 dibbla edges add    weather_assistant "date_tool.date -> agent.system_message"
 
 # Pin a specific model on the agent (overrides the YAML hardcode without rewriting it)
-dibbla inputs set weather_assistant agent model "claude-sonnet-4-5-20250514"
+dibbla inputs set weather_assistant agent model "claude-sonnet-4-5"
 
 # Attach the new tools to the agent — these are by node id, not function name
 dibbla tools add weather_assistant agent date_tool
@@ -1489,7 +1489,7 @@ nodes:
     function: reasoning_agent_with_toolbox
     server: function-server
     inputs:
-      model: "claude-sonnet-4-5-20250514"
+      model: "claude-sonnet-4-5"
       prompt_message: ~
       system_message: "You are a helpful assistant."
       thread_id: "demo-thread-1"        # memory needs a thread to select history for
