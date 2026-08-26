@@ -1208,6 +1208,16 @@ Omitting it fails validation with *"click/fill browser actions require
 identity_grant for an isolated fixture"*. This is the single most common way a
 hand-written or agent-drafted journey is rejected.
 
+**But mutating journeys are not usable end to end yet.** The field is required
+and it changes the classification, and that is *all* it does today: there is no
+API to create the grant it names, and nothing resolves the name at run time
+(verified 2026-08-26 — the field appears in the loader's validation and the
+classification derivation and nowhere else). If a user asks for a journey that
+logs in or submits a form, say so and steer them to read-only journeys
+(`navigate` + `assert_text`) and `http_sequence` checks, which work today. Do not
+draft a `click`/`fill` journey and present it as something they can deploy and
+rely on.
+
 ### 22.5. `semantic` and `composite`
 
 `semantic` proves the *content* of an answer, and requires `request`,
