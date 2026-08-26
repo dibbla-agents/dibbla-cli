@@ -669,6 +669,8 @@ dibbla apps get myapp --json | jq '.services[].name'
 
 Inspect and run an app's application checks (`dibbla-checks.yaml`). Alias is always positional; the check id is always a `--check` flag (same shape as `apps restart <alias> --service <name>`).
 
+These commands **operate** checks; they do not author them. For the file's schema — the four kinds, the `identity_grant` rule that `click`/`fill` depend on, `judge.output` as a type declaration, `secret_ref`, and why this is not a `healthcheck:` — see [manifest.md § 22](manifest.md). For what the platform does with the file at runtime (snapshot promotion, the two enablement switches, `nightly` jitter, isolation, result codes, the four notification events, emergency disable) see [platform.md § 8.7](platform.md).
+
 **Exit codes are the product outcome, not just success/failure** — `run` exits 0 pass, 8 fail, 9 error, 10 indeterminate, 12 canceled, 13 skipped_concurrent, so CI gates on the code without scraping output. Transport failures keep the CLI-wide ladder: 3 auth/permission, 4 not found, 5 request validation, 6 conflict, 7 timeout, 1 unexpected. A check that *finds* a problem (exit 8) is the check working, not the command failing.
 
 ### apps checks list
