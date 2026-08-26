@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/checks"
 	"github.com/dibbla-agents/dibbla-cli/internal/manifest"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/spf13/cobra"
@@ -23,7 +24,7 @@ var (
 
 var validateCmd = &cobra.Command{
 	Use:   "validate [path]",
-	Short: "Validate a dibbla.yaml manifest locally",
+	Short: "Validate a dibbla.yaml manifest, and any dibbla-checks.yaml beside it, locally",
 	Long: `Validate a dibbla.yaml manifest locally without contacting the server.
 
 Local validation covers the rules that don't need deploy-time context:
@@ -35,6 +36,13 @@ Local validation covers the rules that don't need deploy-time context:
 
 Env-aware resolution, quota checks, and multi-public detection happen on the
 server. For those, use 'dibbla preview'.
+
+If a dibbla-checks.yaml sits at the same root it is validated too, against a
+copy of the platform's own schema. That copy is a convenience, not the
+authority: deploy-api validates the file for real, before the build, and a
+deploy is refused there. So this command reports what it can decide, names in
+full what it cannot, and never calls a file invalid on a rule it could not
+check.
 
 Exits 0 if valid (or if no manifest is found and the dir would deploy via the
 legacy single-Dockerfile path) and 1 with the error code on the first failure.
@@ -82,6 +90,7 @@ type validateReport struct {
 	TargetEnv    string          `json:"target_env,omitempty"`
 	Profiles     []string        `json:"profiles,omitempty"`
 	NoPublic     bool            `json:"no_public,omitempty"`
+	Checks       *checks.Report  `json:"checks,omitempty"`
 }
 
 // runValidate is the testable core. Returns the exit code (0 valid, 1 invalid).
@@ -97,7 +106,7 @@ func runValidate(stdout, stderr io.Writer, args []string) int {
 		return emitFailure(stdout, stderr, "", []validateError{{
 			Code:   "MANIFEST_INVALID",
 			Detail: fmt.Sprintf("invalid path %q: %v", root, err),
-		}})
+		}}, checks.Report{})
 	}
 
 	info, err := os.Stat(abs)
@@ -106,12 +115,30 @@ func runValidate(stdout, stderr io.Writer, args []string) int {
 		return emitFailure(stdout, stderr, "", []validateError{{
 			Code:   "MANIFEST_INVALID",
 			Detail: fmt.Sprintf("path not found: %s", abs),
-		}})
+		}}, checks.Report{})
 	case err != nil:
 		return emitFailure(stdout, stderr, "", []validateError{{
 			Code:   "MANIFEST_INVALID",
 			Detail: err.Error(),
-		}})
+		}}, checks.Report{})
+	}
+
+	// dibbla-checks.yaml is independent input: it sits at the app root and is
+	// validated whether or not the app has a manifest, exactly as deploy-api
+	// discovers it before it ever looks for one.
+	checksRoot := abs
+	if !info.IsDir() {
+		checksRoot = filepath.Dir(abs)
+	}
+	checksReport, checksErr := checks.Validate(checksRoot)
+	if checksErr != nil {
+		// Unreadable here is a local condition, not a verdict on the file.
+		checksReport = checks.Report{
+			Present:    true,
+			Path:       filepath.Join(checksRoot, checks.FileName),
+			Valid:      true,
+			Unverified: []string{"could not read " + checks.FileName + " here: " + checksErr.Error()},
+		}
 	}
 
 	// If the user pointed directly at a yaml file, validate that file.
@@ -124,7 +151,7 @@ func runValidate(stdout, stderr io.Writer, args []string) int {
 		return emitFailure(stdout, stderr, "", []validateError{{
 			Code:   "MANIFEST_INVALID",
 			Detail: fmt.Sprintf("file %s is not a dibbla manifest (expected dibbla.yaml or dibbla.yml)", abs),
-		}})
+		}}, checksReport)
 	default:
 		p, ambiguous, found := manifest.Discover(abs)
 		switch {
@@ -132,9 +159,9 @@ func runValidate(stdout, stderr io.Writer, args []string) int {
 			return emitFailure(stdout, stderr, abs, []validateError{{
 				Code:   manifest.ErrCodeManifestAmbiguous,
 				Detail: fmt.Sprintf("both dibbla.yaml and dibbla.yml are present at %s; remove one", abs),
-			}})
+			}}, checksReport)
 		case !found:
-			return emitNoManifest(stdout, abs)
+			return emitNoManifest(stdout, stderr, abs, checksReport)
 		default:
 			path = p
 		}
@@ -142,44 +169,47 @@ func runValidate(stdout, stderr io.Writer, args []string) int {
 
 	m, err := manifest.ParseAndValidate(path)
 	if err != nil {
-		return emitFailure(stdout, stderr, path, []validateError{toValidateError(err)})
+		return emitFailure(stdout, stderr, path, []validateError{toValidateError(err)}, checksReport)
 	}
 
-	return emitSuccess(stdout, path, m)
+	return emitSuccess(stdout, stderr, path, m, checksReport)
 }
 
 // emitNoManifest writes the informational "no manifest, legacy path" notice.
 // Returns exit code 0 — absence is not a failure.
-func emitNoManifest(stdout io.Writer, root string) int {
+func emitNoManifest(stdout, stderr io.Writer, root string, checksReport checks.Report) int {
 	if validateJSON {
 		_ = json.NewEncoder(stdout).Encode(validateReport{
-			Valid:      true,
+			Valid:      checksReport.Present == false || checksReport.Valid,
 			NoManifest: true,
 			TargetEnv:  validateTargetEnv,
 			Profiles:   validateProfiles,
 			NoPublic:   validateNoPublic,
+			Checks:     checksPtr(checksReport),
 		})
-		return 0
+		return checksExit(checksReport)
 	}
 	fmt.Fprintf(stdout, "%s no dibbla.yaml/dibbla.yml found in %s\n",
 		platform.Icon("ℹ️", "[i]"), root)
 	fmt.Fprintln(stdout, "  this directory will deploy via the legacy single-Dockerfile path")
-	return 0
+	writeChecks(stdout, stderr, checksReport)
+	return checksExit(checksReport)
 }
 
 // emitSuccess prints the success report and returns exit code 0.
-func emitSuccess(stdout io.Writer, path string, m *manifest.Manifest) int {
+func emitSuccess(stdout, stderr io.Writer, path string, m *manifest.Manifest, checksReport checks.Report) int {
 	services := summarizeServices(m)
 	if validateJSON {
 		_ = json.NewEncoder(stdout).Encode(validateReport{
-			Valid:        true,
+			Valid:        !checksReport.Present || checksReport.Valid,
 			ManifestPath: path,
 			Services:     services,
 			TargetEnv:    validateTargetEnv,
 			Profiles:     validateProfiles,
 			NoPublic:     validateNoPublic,
+			Checks:       checksPtr(checksReport),
 		})
-		return 0
+		return checksExit(checksReport)
 	}
 	fmt.Fprintf(stdout, "%s %s is valid\n", platform.Icon("✓", "[OK]"), filepath.Base(path))
 	if len(services) > 0 {
@@ -199,11 +229,12 @@ func emitSuccess(stdout io.Writer, path string, m *manifest.Manifest) int {
 	if len(validateProfiles) > 0 {
 		fmt.Fprintf(stdout, "  profiles:   %s (profile filtering runs server-side; use 'dibbla preview')\n", join(validateProfiles, ", "))
 	}
-	return 0
+	writeChecks(stdout, stderr, checksReport)
+	return checksExit(checksReport)
 }
 
 // emitFailure prints the failure report and returns exit code 1.
-func emitFailure(stdout, stderr io.Writer, path string, errs []validateError) int {
+func emitFailure(stdout, stderr io.Writer, path string, errs []validateError, checksReport checks.Report) int {
 	if validateJSON {
 		_ = json.NewEncoder(stdout).Encode(validateReport{
 			Valid:        false,
@@ -212,6 +243,7 @@ func emitFailure(stdout, stderr io.Writer, path string, errs []validateError) in
 			TargetEnv:    validateTargetEnv,
 			Profiles:     validateProfiles,
 			NoPublic:     validateNoPublic,
+			Checks:       checksPtr(checksReport),
 		})
 		return 1
 	}
@@ -227,6 +259,7 @@ func emitFailure(stdout, stderr io.Writer, path string, errs []validateError) in
 			fmt.Fprintf(stderr, "  %s (%s)\n", e.Detail, e.Code)
 		}
 	}
+	writeChecks(stdout, stderr, checksReport)
 	return 1
 }
 
@@ -288,4 +321,54 @@ func join(parts []string, sep string) string {
 		out += p
 	}
 	return out
+}
+
+// checksPtr keeps the JSON shape quiet when no dibbla-checks.yaml exists —
+// most apps ship none, and an empty object would read as "checked, nothing
+// found" rather than "no file".
+func checksPtr(report checks.Report) *checks.Report {
+	if !report.Present {
+		return nil
+	}
+	return &report
+}
+
+// checksExit turns a checks verdict into an exit code. Absence is not failure.
+func checksExit(report checks.Report) int {
+	if report.Present && !report.Valid {
+		return 1
+	}
+	return 0
+}
+
+// writeChecks prints the checks verdict.
+//
+// The shape of this output is the point. On success it names the exact
+// app-hosting-service commit the schema was copied from, because a green answer
+// that cannot say where it came from invites being read as a guarantee. And the
+// rules this copy could not decide are printed in full, every time, under a
+// heading that says "not verified locally" rather than anything that could be
+// mistaken for a pass or a failure.
+func writeChecks(stdout, stderr io.Writer, report checks.Report) {
+	if !report.Present || validateJSON {
+		return
+	}
+	name := filepath.Base(report.Path)
+	if !report.Valid {
+		fmt.Fprintf(stderr, "%s %s is invalid\n", platform.Icon("✗", "[X]"), name)
+		for _, f := range report.Findings {
+			fmt.Fprintf(stderr, "  %s (%s)\n", f.Detail, f.Code)
+		}
+		fmt.Fprintln(stderr, "  the deploy would refuse this file before the build")
+		return
+	}
+	fmt.Fprintf(stdout, "%s %s is valid against the schema copied from app-hosting-service %s\n",
+		platform.Icon("✓", "[OK]"), name, checks.SourceCommit)
+	if len(report.CheckIDs) > 0 {
+		fmt.Fprintf(stdout, "  %d checks: %s\n", len(report.CheckIDs), join(report.CheckIDs, ", "))
+	}
+	fmt.Fprintln(stdout, "  the server is authoritative. Not verified locally:")
+	for _, rule := range report.Unverified {
+		fmt.Fprintf(stdout, "    - %s\n", rule)
+	}
 }
