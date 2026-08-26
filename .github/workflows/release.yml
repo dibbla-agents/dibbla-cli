@@ -2,9 +2,13 @@ name: Release
 
 # Pipeline shape (and why it is shaped this way):
 #
-#   release ──┬── sign-macos ──┬── checksums ──┬── mirror ───┐
-#             └── sign-windows ┘               └── homebrew ─┼── notify
-#             (parallel)                        (parallel)   ┘
+#   preflight ── release ──┬── sign-macos ──┬── checksums ──┬── mirror ───┐
+#                          └── sign-windows ┘               └── homebrew ─┼── notify
+#                          (parallel)                        (parallel)   ┘
+#
+#  * `preflight` is its own job so that a REFUSAL is distinguishable from a
+#    build failure. `notify` skips entirely when it refuses -- nothing was
+#    built, so there is no release outcome to report.
 #
 # Ordering rules that are load-bearing:
 #
@@ -82,15 +86,21 @@ permissions:
   contents: read
 
 jobs:
-  release:
-    name: Build and publish
+  # Its own job, not a first step of `release`, for one reason: a refusal here
+  # must be distinguishable from a build that broke. When this lived inside
+  # `release`, a refused dispatch failed that job, and `notify` -- which runs
+  # on `always()` -- reported the release as FAILED. Measured on run
+  # 33000451343: a harmless refusal tried to post "v1.2.65 / failed" to a human
+  # channel. A channel that cries wolf is one people stop reading, which is the
+  # same defect this repo already records for the permanently-red snyk check.
+  #
+  # As a separate job its result is a first-class signal (`needs.preflight`),
+  # and it shows up in the UI as its own box, so a refusal is legible at a
+  # glance instead of buried in the build log.
+  preflight:
+    name: Check the tag is safe to build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      # Everything downstream hangs off this job, so this is the one place a
-      # bad dispatch input can be stopped before it costs twenty minutes and
-      # touches anything public.
       - name: Validate the tag being released
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -212,6 +222,14 @@ jobs:
           echo "::error::If you really mean to, re-dispatch with force=true."
           exit 1
 
+
+  release:
+    name: Build and publish
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -1018,8 +1036,11 @@ jobs:
 
   notify:
     name: Notify Slack
-    needs: [release, sign-macos, sign-windows, checksums, mirror, verify-windows-installer, homebrew, container]
-    if: always()
+    needs: [preflight, release, sign-macos, sign-windows, checksums, mirror, verify-windows-installer, homebrew, container]
+    # `always()` so a genuine build failure still notifies -- but NOT when
+    # preflight refused, because nothing was built and there is nothing to
+    # report. A refusal is a correct outcome, not an incident.
+    if: always() && needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1058,7 +1079,22 @@ jobs:
           host="${SLACK_BOT_URL#*://}"; host="${host%%/*}"; host="${host%%:*}"
           cluster_ip="$(dig +short "$SLACK_CLUSTER_DNS" @1.1.1.1 | head -1)"
 
-          curl -fsS -X POST "$SLACK_BOT_URL" \
+          # `-f ... || true` used to swallow the outcome whole: a rejected
+          # notification exited non-zero, `|| true` turned that into a pass,
+          # and the job went green. Measured 2026-08-26: v1.2.63, v1.2.64 and
+          # v1.2.65 ALL got HTTP 401 here and all three reported success, so
+          # release notifications had been silently undelivered for at least
+          # three releases and nothing said so.
+          #
+          # A Slack outage must still not fail a release -- the delivery is
+          # ancillary to the release, and failing here would turn a chat
+          # problem into a shipping problem. So the outcome is reported
+          # loudly and the step still passes. "Failed silently" becomes
+          # "failed visibly, stopping nothing".
+          #
+          # No `-f`: it makes curl exit non-zero on 4xx/5xx without printing
+          # the code, and the code is the thing worth having.
+          code="$(curl -sS -o notify-response.txt -w '%{http_code}' -X POST "$SLACK_BOT_URL" \
             --resolve "${host}:443:${cluster_ip}" \
             -H "Authorization: Bearer ${SLACK_BOT_API_SECRET}" \
             -H "Content-Type: application/json" \
@@ -1072,4 +1108,21 @@ jobs:
             "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
           EOF
-          )" || true
+          )" 2>curl-error.txt || echo "000")"
+
+          case "$code" in
+            2*)
+              echo "Slack notified: release ${RELEASE_TAG} reported as ${status} (HTTP $code)."
+              ;;
+            000)
+              echo "::warning::Slack notification NOT delivered — could not reach the bot at all."
+              sed 's/^/  /' curl-error.txt >&2 || true
+              echo "::warning::The release itself is unaffected; only the notification failed."
+              ;;
+            *)
+              echo "::warning::Slack notification NOT delivered — HTTP $code (release ${RELEASE_TAG}, status ${status})."
+              echo "::warning::HTTP 401 here means SLACK_BOT_API_SECRET is expired or wrong; it needs rotating."
+              head -c 300 notify-response.txt >&2 || true
+              echo "::warning::The release itself is unaffected; only the notification failed."
+              ;;
+          esac
