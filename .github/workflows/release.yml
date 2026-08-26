@@ -154,10 +154,43 @@ jobs:
           )"
           EXPECTED="$(printf '%s\n' "$EXPECTED" | sed 's/^ *//')"
 
-          if ! PRESENT="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
-            echo "No release object for $RELEASE_TAG yet -- GoReleaser will create it."
-            exit 0
+          # This lookup is the ONLY thing standing between a dispatch and an
+          # overwrite, now that .goreleaser.yml sets
+          # `replace_existing_artifacts`. Before that flag, GoReleaser itself
+          # refused to clobber an existing asset and was a second line of
+          # defence; there is no second line any more.
+          #
+          # So it fails CLOSED. Only two answers let the run continue: an
+          # affirmative "this release does not exist", or a well-formed list of
+          # its assets. An API error, a rate limit, an expired token, a timeout
+          # or a malformed body all STOP the run. The earlier version treated
+          # every failure as "no release yet" and carried on -- against a
+          # complete release that meant silently overwriting signed archives.
+          ERR="$(mktemp)"
+          if ASSETS_JSON="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets 2>"$ERR")"; then
+            :
+          else
+            if grep -qi 'release not found' "$ERR"; then
+              echo "No release object for $RELEASE_TAG yet -- GoReleaser will create it."
+              rm -f "$ERR"; exit 0
+            fi
+            echo "::error::could not determine what release $RELEASE_TAG already contains:"
+            sed 's/^/::error::  /' "$ERR" >&2
+            echo "::error::Refusing to continue: proceeding blind could overwrite a signed release."
+            rm -f "$ERR"; exit 1
           fi
+          rm -f "$ERR"
+
+          # A successful call is not the same as a usable answer. Require the
+          # shape before trusting the contents, so a changed schema or a
+          # truncated body cannot read as "this release has no assets" -- which
+          # would look exactly like an incomplete release and be repaired over.
+          if ! printf '%s' "$ASSETS_JSON" | jq -e 'has("assets") and (.assets | type == "array")' >/dev/null 2>&1; then
+            echo "::error::unexpected response shape when reading release $RELEASE_TAG; refusing to continue."
+            printf '%s\n' "$ASSETS_JSON" | head -c 500 >&2
+            exit 1
+          fi
+          PRESENT="$(printf '%s' "$ASSETS_JSON" | jq -r '.assets[].name')"
 
           MISSING="$(comm -23 <(printf '%s\n' "$EXPECTED" | sort) <(printf '%s\n' "$PRESENT" | sort))"
 
