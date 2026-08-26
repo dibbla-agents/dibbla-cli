@@ -1118,6 +1118,7 @@ version: 1                    # const 1 — the only accepted value
 checks:                       # 1..100 entries, at least one
   - id: home-page             # ^[a-z][a-z0-9-]*$, ≤ 63 chars, unique in the file
     name: Home page is usable # 1..120 chars, human-facing
+    description: Why this check exists   # REQUIRED, 1..1000 chars — see below
     kind: http_sequence       # http_sequence | browser_journey | semantic | composite
     schedule: nightly         # enum with exactly one member today — never raw cron
     failure_threshold: 2      # 1..10, default 2 — consecutive failures before notifying
@@ -1128,6 +1129,18 @@ checks:                       # 1..100 entries, at least one
 
 `additionalProperties: false` everywhere — an unknown key is a rejected file,
 not an ignored line. Durations match `^[1-9][0-9]*(ms|s|m|h)$`.
+
+**`description` is required on every check, in all four kinds.** It is the one
+field written for a human rather than for the runner: it says *why the check
+exists and what it means that it failed*, not what it technically does — the
+steps already say that. It is what the console shows beside the check, and what
+the person woken by the notification reads first. A check without a
+`description` is rejected at deploy time, **before the build**, with
+`APPLICATION_CHECKS_DESCRIPTION_REQUIRED` naming the check that lacks it.
+
+When drafting one for a user, write the sentence they would want at 03:00 —
+"the signup form is how every new customer arrives; if this fails nobody can
+sign up" beats "checks that POST /signup returns 200".
 
 ### 22.2. `route` and `path` — the reason a check cannot become an SSRF tool
 
@@ -1140,12 +1153,15 @@ the app's authorised host set.
 
 ### 22.3. `http_sequence`
 
-Required: `id`, `name`, `kind`, `steps`. Each of the 1..50 steps carries **both**
+Required: `id`, `name`, `description`, `kind`, `steps`. Each of the 1..50 steps carries **both**
 a `request` and an `expect` — a request with no expectation is a rejected file.
 
 ```yaml
   - id: api-health
     name: The API answers and reports its version
+    description: >
+      The API is what every client talks to. If this fails the app may look
+      fine in a browser while every integration is down.
     kind: http_sequence
     steps:
       - request:
@@ -1168,12 +1184,15 @@ with no properties is rejected — assert something.
 
 ### 22.4. `browser_journey`
 
-Required: `id`, `name`, `kind`, `steps`. Each step is **exactly one** of
+Required: `id`, `name`, `description`, `kind`, `steps`. Each step is **exactly one** of
 `navigate`, `click`, `fill`, `assert_text` — objects, never bare strings.
 
 ```yaml
   - id: status-board-renders
     name: The status board renders its service sections
+    description: >
+      The status board is the page customers open during an incident. An empty
+      or broken board is worse than no board — it reads as "nothing is wrong".
     kind: browser_journey
     steps:
       - navigate: {route: public, path: /status}
@@ -1195,6 +1214,9 @@ fixture identity to mutate *as*:
 ```yaml
   - id: signup-works
     name: A visitor can complete signup
+    description: >
+      Signup is how every new customer arrives. If this fails, nobody new can
+      reach the product at all, and existing users see nothing wrong.
     kind: browser_journey
     identity_grant: disposable-fixture     # required by click/fill; an id, not a user
     steps:
@@ -1220,14 +1242,17 @@ rely on.
 
 ### 22.5. `semantic` and `composite`
 
-`semantic` proves the *content* of an answer, and requires `request`,
-`deterministic_expect` **and** `judge`. Transport is asserted deterministically
+`semantic` proves the *content* of an answer, and requires `id`, `name`,
+`description`, `kind`, `request`, `deterministic_expect` **and** `judge`. Transport is asserted deterministically
 first; only then does one structured-output judgement run against a rubric file
 you ship in the repo.
 
 ```yaml
   - id: answer-is-on-topic
     name: The assistant answers the question asked
+    description: >
+      The assistant can return a perfectly valid 200 that answers the wrong
+      question. This check is the only one that would notice.
     kind: semantic
     request: {method: GET, route: public, path: /api/answer?q=pricing}
     deterministic_expect: {status: 200}
@@ -1247,6 +1272,9 @@ almost every first draft.
 ```yaml
   - id: signup-journey
     name: Signup works end to end
+    description: >
+      Ties the pieces together: a green home page and a green signup form can
+      still add up to a broken path from landing to account.
     kind: composite
     checks: [home-page, signup-works]        # 1..50 unique ids from this file
     reducer: all_required                    # the only accepted reducer
