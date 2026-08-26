@@ -709,7 +709,7 @@ dibbla apps checks run myapp --follow --json | jq -c 'select(.type=="summary")'
 | **Flags** | `--check <id>` — one check's page (default: every configured check, merged newest-first) |
 | | `--since <duration>` — client-side window filter, e.g. `24h` |
 | | `--limit <N>` — client-side cap; also sent as the server-side page size |
-| | `--json` — one JSON document. With `--check`: the server page verbatim (`runs` + `next_cursor`). Without: a merged `{runs: [...]}` document |
+| | `--json` — one JSON document. With `--check`: the server page verbatim (`runs` + `next_cursor`). Without: the CLI's own envelope (`schema_version`, `deployment_alias`, `runs`) around **the server's own run documents**, key for key — the envelope differs because N pages cannot share one `next_cursor`, the runs do not differ. **First release after `v1.2.65`**; on `v1.2.65` and earlier the merged path re-serialised through a smaller struct, silently dropping `execution_id`, `transport_status`, `assertion_status`, `check_fingerprint`, `evidence_refs`, `evidence_gaps` and inventing `finished_at: 0001-01-01` / `duration_ms: 0` for unfinished runs. Tell the user to check `dibbla --version`, and on the older build to use `--check` per check when they need every field |
 | **Output** | Default: table of STARTED, CHECK, OUTCOME, CODE, SUMMARY (typed result documents — stable `code`, bounded prose `summary`) |
 
 ### apps checks enable / disable
