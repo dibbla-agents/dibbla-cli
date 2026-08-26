@@ -28,6 +28,7 @@ require (
 
 require (
 	aead.dev/minisign v0.2.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 )
 
