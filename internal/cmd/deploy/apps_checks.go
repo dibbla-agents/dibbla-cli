@@ -521,14 +521,20 @@ func runAppsChecksHistoryCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 		return 5
 	}
 
-	var runs []apps.CheckRun
+	// Each run travels as a pair: the parsed form the CLI sorts, filters and
+	// tabulates by, and the server's own document, which is what --json emits.
+	// Re-encoding the parsed form is what made this command drop evidence_refs
+	// and evidence_gaps while inventing zero-valued measurements for runs that
+	// had not finished (DIB-460); apps.CheckRun is a mirror of deploy-api's
+	// view and any field it does not model disappears without an error.
+	var runs []historyRun
 	var rawPage []byte
 	if checkID != "" {
 		page, raw, err := apps.GetCheckRuns(apiURL, apiToken, alias, checkID, limit)
 		if err != nil {
 			return reportAppError(stderr, "checks history", alias, err)
 		}
-		runs, rawPage = page.Runs, raw
+		runs, rawPage = pairRuns(page), raw
 	} else {
 		// No app-wide history endpoint exists; merge each check's page.
 		res, _, err := apps.ListChecks(apiURL, apiToken, alias)
@@ -538,7 +544,7 @@ func runAppsChecksHistoryCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 		if len(res.Definitions) == 0 {
 			if jsonOut {
 				writeJSONDocument(stdout, map[string]any{
-					"schema_version": 1, "deployment_alias": alias, "runs": []apps.CheckRun{},
+					"schema_version": 1, "deployment_alias": alias, "runs": []json.RawMessage{},
 				})
 			} else {
 				fmt.Fprintf(stdout, "%s no checks configured for %s\n", platform.Icon("🔍", "[CHECKS]"), alias)
@@ -550,19 +556,19 @@ func runAppsChecksHistoryCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 			if err != nil {
 				return reportAppError(stderr, "checks history", alias, err)
 			}
-			runs = append(runs, page.Runs...)
+			runs = append(runs, pairRuns(page)...)
 		}
 	}
 
 	// Newest first, then the caller's window and cap. --check pages come
 	// back already newest-first from the server; sorting again is harmless
 	// and keeps the merged path honest.
-	sort.SliceStable(runs, func(i, j int) bool { return runs[i].StartedAt.After(runs[j].StartedAt) })
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].parsed.StartedAt.After(runs[j].parsed.StartedAt) })
 	if since > 0 {
 		cutoff := now().Add(-since)
 		kept := runs[:0]
 		for _, run := range runs {
-			if !run.StartedAt.Before(cutoff) {
+			if !run.parsed.StartedAt.Before(cutoff) {
 				kept = append(kept, run)
 			}
 		}
@@ -578,8 +584,12 @@ func runAppsChecksHistoryCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 			fmt.Fprintln(stdout, string(rawPage))
 			return 0
 		}
+		// Merged: N pages cannot share one next_cursor, so this path keeps its
+		// own envelope. The runs inside it are the server's documents, key for
+		// key and in the server's order — the envelope differs by design, the
+		// run documents do not differ at all.
 		writeJSONDocument(stdout, map[string]any{
-			"schema_version": 1, "deployment_alias": alias, "runs": runs,
+			"schema_version": 1, "deployment_alias": alias, "runs": rawRunsOf(runs),
 		})
 		return 0
 	}
@@ -595,14 +605,56 @@ func runAppsChecksHistoryCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 		strings.Repeat("-", 16), strings.Repeat("-", 18), strings.Repeat("-", 12),
 		strings.Repeat("-", 20), strings.Repeat("-", 7))
 	for _, run := range runs {
-		summary := run.Summary
+		summary := run.parsed.Summary
 		if len(summary) > 48 {
 			summary = summary[:47] + "…"
 		}
 		fmt.Fprintf(stdout, "   %-18s %-20s %-14s %-22s %s\n",
-			run.StartedAt.Local().Format("2006-01-02 15:04"), run.CheckID, run.Outcome, run.Code, summary)
+			run.parsed.StartedAt.Local().Format("2006-01-02 15:04"),
+			run.parsed.CheckID, run.parsed.Outcome, run.parsed.Code, summary)
 	}
 	return 0
+}
+
+// historyRun couples one parsed run with the server document it was parsed
+// from, so ordering and filtering can use the typed fields while --json still
+// emits bytes the CLI never rebuilt.
+type historyRun struct {
+	parsed apps.CheckRun
+	raw    json.RawMessage
+}
+
+// pairRuns zips a page's parsed runs with their raw documents. A page whose
+// raw half is short (an older server, or a body that parsed loosely) falls back
+// to re-encoding that one run rather than emitting nothing — the fallback is
+// the old lossy behaviour, but only for a run the server did not give us bytes
+// for, and never silently for a run it did.
+func pairRuns(page *apps.CheckRunsPage) []historyRun {
+	paired := make([]historyRun, 0, len(page.Runs))
+	for i, run := range page.Runs {
+		pair := historyRun{parsed: run}
+		if i < len(page.RawRuns) {
+			pair.raw = page.RawRuns[i]
+		}
+		paired = append(paired, pair)
+	}
+	return paired
+}
+
+func rawRunsOf(runs []historyRun) []json.RawMessage {
+	raw := make([]json.RawMessage, 0, len(runs))
+	for _, run := range runs {
+		if len(run.raw) > 0 {
+			raw = append(raw, run.raw)
+			continue
+		}
+		encoded, err := json.Marshal(run.parsed)
+		if err != nil {
+			continue
+		}
+		raw = append(raw, encoded)
+	}
+	return raw
 }
 
 func runAppsChecksToggle(cmd *cobra.Command, args []string, enable bool) {

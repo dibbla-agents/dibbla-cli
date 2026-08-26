@@ -176,9 +176,39 @@ type CheckRunTokens struct {
 // CheckRunsPage is one page of per-check history. NextCursor is the opaque
 // stable cursor of this child-history snapshot; empty when this page is the
 // last one.
+//
+// RawRuns holds each run exactly as the server sent it, alongside the parsed
+// Runs. Both are needed because they answer different questions: Runs is what
+// the CLI sorts, filters and tabulates by; RawRuns is what --json prints. Only
+// the parsed form can drift from the wire — CheckRun is a hand-maintained
+// mirror of deploy-api's view, and a field it does not model is dropped with
+// no error and no warning. Printing RawRuns removes that failure mode from the
+// --json path entirely, including for fields deploy-api has not added yet.
 type CheckRunsPage struct {
-	Runs       []CheckRun `json:"runs"`
-	NextCursor string     `json:"next_cursor,omitempty"`
+	Runs       []CheckRun        `json:"runs"`
+	RawRuns    []json.RawMessage `json:"-"`
+	NextCursor string            `json:"next_cursor,omitempty"`
+}
+
+// UnmarshalJSON fills Runs and RawRuns from the same body, so a raw document is
+// available for every parsed run at the same index.
+func (p *CheckRunsPage) UnmarshalJSON(data []byte) error {
+	// A distinct type, so unmarshalling the parsed half does not recurse back
+	// into this method.
+	type page CheckRunsPage
+	var parsed page
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	var raw struct {
+		Runs []json.RawMessage `json:"runs"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	parsed.RawRuns = raw.Runs
+	*p = CheckRunsPage(parsed)
+	return nil
 }
 
 // GetApp fetches one deployment by alias (GET /api/deploy/deployments/{alias})
