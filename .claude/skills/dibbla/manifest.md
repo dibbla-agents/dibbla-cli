@@ -664,6 +664,8 @@ Common rules:
 
 Skip the field entirely to use the platform default health check, which is the same one the legacy single-Dockerfile path uses.
 
+**This is not "does my app still work".** A healthcheck is a kubelet probe: it asks whether the container is alive and ready for traffic, and its consequence is a restart or a load-balancer removal. It cannot see a broken signup form or an API that answers 200 with the wrong content. That question belongs to **application checks** — a separate `dibbla-checks.yaml` file, run by the platform against the app as a user reaches it. See [§ 22](#22-application-checks-dibbla-checksyaml), and § 22.6 for the full side-by-side. If a user asks "how do I verify my app still works after a deploy?", the answer is § 22, never this section.
+
 ---
 
 ## 13. Multiple public services + per-service auth
@@ -1093,6 +1095,199 @@ dibbla apps restart myapp --service worker
 dibbla secrets set NPM_TOKEN_SECRET <token> -d myapp           # build-time secret
 dibbla secrets set SENTRY_DSN https://... -d myapp --service web
 ```
+
+---
+
+## 22. Application checks (`dibbla-checks.yaml`)
+
+A **different file, a different job.** `dibbla.yaml` describes how the app is
+built and run; `dibbla-checks.yaml` describes what the app must be able to do
+once it is running. It lives beside `dibbla.yaml` at the repo root, ships with
+the deployment, and is promoted into an immutable, content-addressed **check
+source snapshot** on a successful deploy — the checks that run are exactly the
+ones that shipped with that revision, and a failed deploy never replaces the
+snapshot already in flight.
+
+Do not confuse it with § 12 healthchecks. See § 22.6.
+
+### 22.1. Top-level shape
+
+```yaml
+version: 1                    # const 1 — the only accepted value
+
+checks:                       # 1..100 entries, at least one
+  - id: home-page             # ^[a-z][a-z0-9-]*$, ≤ 63 chars, unique in the file
+    name: Home page is usable # 1..120 chars, human-facing
+    kind: http_sequence       # http_sequence | browser_journey | semantic | composite
+    schedule: nightly         # enum with exactly one member today — never raw cron
+    failure_threshold: 2      # 1..10, default 2 — consecutive failures before notifying
+    cooldown: 30m             # default 30m — quiet period after a notification
+    run_deadline: 2m          # default 2m — bounds the whole run
+    steps: [...]              # kind-specific; see below
+```
+
+`additionalProperties: false` everywhere — an unknown key is a rejected file,
+not an ignored line. Durations match `^[1-9][0-9]*(ms|s|m|h)$`.
+
+### 22.2. `route` and `path` — the reason a check cannot become an SSRF tool
+
+Every request addresses a **logical route** of the deployment plus a relative
+`path` (`^/`, ≤ 2048 chars). `route` is a route id from the manifest — `public`
+for a plain single-public-service app. A URL, a host or a scheme in either field
+is a validation error, not a fetch: a definition can never point the runner at
+an arbitrary server. Redirects are re-validated at every hop and cannot leave
+the app's authorised host set.
+
+### 22.3. `http_sequence`
+
+Required: `id`, `name`, `kind`, `steps`. Each of the 1..50 steps carries **both**
+a `request` and an `expect` — a request with no expectation is a rejected file.
+
+```yaml
+  - id: api-health
+    name: The API answers and reports its version
+    kind: http_sequence
+    steps:
+      - request:
+          method: GET               # GET | HEAD | OPTIONS only — checks are read-only
+          route: public
+          path: /api/health
+          headers:                  # optional, ≤ 32; each value is a Value (§ 22.7)
+            Accept: {literal: application/json}
+          timeout: 10s              # optional, per step
+          max_redirects: 2          # optional, 0..5
+          max_response_bytes: 65536 # optional, 1..1048576
+        expect:                     # at least one of the three
+          status: 200
+          body_contains: "ok"
+          json_has: ["version", "uptime_seconds"]
+```
+
+`json_has` is a list of ≤ 64 unique field paths that must be present. `expect`
+with no properties is rejected — assert something.
+
+### 22.4. `browser_journey`
+
+Required: `id`, `name`, `kind`, `steps`. Each step is **exactly one** of
+`navigate`, `click`, `fill`, `assert_text` — objects, never bare strings.
+
+```yaml
+  - id: status-board-renders
+    name: The status board renders its service sections
+    kind: browser_journey
+    steps:
+      - navigate: {route: public, path: /status}
+      - assert_text: {text: "All systems"}          # control: optional, scopes the assertion
+```
+
+Steps address things **by name, never by appearance**: `click` and `fill` take a
+`control` matching `^[a-z][a-z0-9-]*$` — the control's lowercase id, not its
+visible label. A journey therefore survives a copy change and breaks loudly when
+a control disappears. There is no `evaluate`, no repository script, no package
+install and no filesystem: the runner is platform-owned, so a check definition
+cannot become an arbitrary-code-execution ticket, and it cannot rot when the
+app's `node_modules` change.
+
+**`click` or `fill` require `identity_grant`.** A journey that only navigates and
+asserts is read-only; the moment it can mutate, the loader demands an isolated
+fixture identity to mutate *as*:
+
+```yaml
+  - id: signup-works
+    name: A visitor can complete signup
+    kind: browser_journey
+    identity_grant: disposable-fixture     # required by click/fill; an id, not a user
+    steps:
+      - navigate: {route: public, path: /signup}
+      - fill: {control: email-field, value: {secret_ref: fixture-email}}
+      - click: {control: submit-signup}
+      - assert_text: {text: "Check your inbox"}
+```
+
+Omitting it fails validation with *"click/fill browser actions require
+identity_grant for an isolated fixture"*. This is the single most common way a
+hand-written or agent-drafted journey is rejected.
+
+### 22.5. `semantic` and `composite`
+
+`semantic` proves the *content* of an answer, and requires `request`,
+`deterministic_expect` **and** `judge`. Transport is asserted deterministically
+first; only then does one structured-output judgement run against a rubric file
+you ship in the repo.
+
+```yaml
+  - id: answer-is-on-topic
+    name: The assistant answers the question asked
+    kind: semantic
+    request: {method: GET, route: public, path: /api/answer?q=pricing}
+    deterministic_expect: {status: 200}
+    judge:
+      rubric: checks/rubrics/on-topic.md     # a path, ≤ 512 chars, shipped with the app
+      output:
+        pass: boolean                        # LITERAL type words — not true/false
+        reason: string                       # not an example string
+```
+
+`judge.output` is a **type declaration**: the words `boolean` and `string` are
+schema constants. Writing `pass: true` is a rejected file. This trips up
+almost every first draft.
+
+`composite` reduces other checks in the same file:
+
+```yaml
+  - id: signup-journey
+    name: Signup works end to end
+    kind: composite
+    checks: [home-page, signup-works]        # 1..50 unique ids from this file
+    reducer: all_required                    # the only accepted reducer
+```
+
+### 22.6. Not the same as a § 12 healthcheck
+
+| | `healthcheck:` (§ 12) | `dibbla-checks.yaml` (§ 22) |
+|---|---|---|
+| Lives in | `dibbla.yaml`, per service | its own file at the repo root |
+| Asks | "is this container alive and ready to receive traffic?" | "does the running app still do what it is for?" |
+| Runs | kubelet, continuously, inside the pod | the platform, on the `nightly` schedule or on demand |
+| Consequence | pod is restarted or taken out of the load balancer | a typed result, history, and a notification |
+| Scope | one container | the app as a user reaches it |
+
+A green healthcheck and a working app are different facts. Do not answer "how do
+I check my app still works after deploy?" with `healthcheck:` — that is the
+kubelet probe, and it cannot see a broken signup form.
+
+### 22.7. `Value`, secrets and classification
+
+Anywhere a value is supplied (a header value, a `fill` value) the schema takes a
+**Value**: exactly one of `{literal: "<string>"}` (≤ 4096 chars) or
+`{secret_ref: <secret-id>}`. A bare string is a rejected file. Filling a control
+whose id contains `authorization`, `cookie`, `password`, `secret`, `token` or
+`api-key` with a `literal` is rejected outright with
+`APPLICATION_CHECKS_INLINE_SECRET` — those controls must use `secret_ref`. The
+match is on the control's id, so `api_key-field` and `apiKey-field` are caught
+too (`_` is normalised to `-`, comparison is lowercase).
+
+The platform derives a **classification** from the definition and shows it in
+`dibbla apps checks list`:
+
+- `read_only_deterministic` — `http_sequence`, and any `browser_journey` that
+  only navigates and asserts.
+- `isolated_fixture_mutation` — a `browser_journey` with `identity_grant`, a
+  `secret_ref`, or any `click`/`fill` step.
+- `semantic` — the `semantic` kind.
+
+Classification is derived, never declared: you cannot label a mutating journey
+read-only.
+
+### 22.8. Operating them
+
+Authoring is this file; running and reading are CLI commands —
+`dibbla apps checks list|run|history|enable|disable`, with the product exit
+codes (`0` pass, `8` fail, `9` error, `10` indeterminate) — see
+[reference.md § apps checks](reference.md). Definitions existing does **not**
+start the schedule: `dibbla apps checks enable <alias>` does, and it needs
+owner/admin. The org-level capability must also be on, or every call is a 404
+with `APPLICATION_CHECKS_DISABLED`.
 
 ---
 

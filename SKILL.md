@@ -156,6 +156,28 @@ Trigger a K8s rolling restart of one service in a multi-service deployment. Idem
 -   **Errors:** 404 (service not found) prints a hint to run `dibbla apps list`. Bad service-name regex is caught locally before the HTTP call.
 -   **Example:** `dibbla apps restart myapp --service worker` — **Quiet:** `dibbla apps restart myapp -s web -q`
 
+#### `apps checks`
+
+Inspect and run an app's **application checks** — the assertions in `dibbla-checks.yaml` that prove the running app still does what it is for. This is not a `healthcheck:` in `dibbla.yaml`: that is a kubelet probe about the container, and it cannot see a broken signup form. The alias is always positional; a single check id is always the `--check` flag.
+
+-   **`apps checks list <alias> [--json]`** — the definitions in the promoted snapshot, each with its kind, schedule, classification and enabled state. `configured: false` (the org capability is on, the app ships no file) is exit **0** — "no checks" is an answer, not an error.
+-   **`apps checks run <alias> [--check <id>] [--async|--follow] [--quiet|--json]`** — run now, the same execution path as the schedule. **The exit code is the product outcome:** `0` pass, `8` fail, `9` error, `10` indeterminate, `12` canceled, `13` skipped_concurrent. Transport failures keep the CLI-wide ladder (`3` auth, `4` not found, `5` validation, `6` conflict, `7` timeout, `1` unexpected). Gate CI on the code, never on output text — exit 8 is the check working, not the command failing. `--async` returns the execution id immediately; `--follow --json` is NDJSON with exactly one terminal `summary` line carrying `outcome` and `exit_code`.
+-   **`apps checks history <alias> [--check <id>] [--since 24h] [--limit N] [--json]`** — past executions, newest first, each with an outcome, a stable machine code and a bounded, redacted summary. History survives disablement.
+-   **`apps checks enable|disable <alias> [--yes]`** — start or stop the schedule. Requires owner/admin, and `enable` requires configured checks. **Shipping the file does not start anything**; this command does. `disable` keeps definitions and history readable.
+-   **Errors:** the org capability being off is a `404` with `APPLICATION_CHECKS_DISABLED` (exit 4). If a user says "I added the file and nothing happens", check the org capability first and the per-app `enable` second.
+-   **Example:** `dibbla apps checks run myapp --check home-page` — **CI:** `dibbla apps checks run myapp --quiet || exit $?`
+
+#### `dibbla-checks.yaml` (the file those commands operate on)
+
+Lives at the app root beside `dibbla.yaml`, and is promoted into an immutable, content-addressed snapshot by a **successful** deploy — editing it in the repo changes nothing until the next deploy. `version: 1`, then `checks:` (1–100), each with `id` (`^[a-z][a-z0-9-]*$`), `name`, `kind`, optional `schedule: nightly` (the only value; no raw cron), `failure_threshold` (default 2), `cooldown` (default 30m) and `run_deadline` (default 2m). Unknown keys are a rejected file.
+
+-   **`http_sequence`** — `steps:` where each step has **both** `request: {method, route, path}` and `expect: {status?, body_contains?, json_has?}`. `method` is `GET`, `HEAD` or `OPTIONS` only; `route` is a logical route id from the manifest (`public` for a plain web app) and `path` is relative — never a host or URL.
+-   **`browser_journey`** — `steps:` where each step is exactly one of `navigate: {route, path}`, `click: {control}`, `fill: {control, value: {literal|secret_ref}}`, `assert_text: {text}`. `control` is a control's lowercase id, not its visible label. **`click` or `fill` require `identity_grant: <id>`** on the check — omit it and the file is rejected. A `fill` literal on a control whose id looks like a credential is rejected with `APPLICATION_CHECKS_INLINE_SECRET`; use `secret_ref`.
+-   **`semantic`** — `request:`, `deterministic_expect:` and `judge: {rubric: <path>, output: {pass: boolean, reason: string}}`. `judge.output` is a **type declaration**: the literal words `boolean` and `string`, not example values.
+-   **`composite`** — `checks: [<ids from this file>]` plus `reducer: all_required`.
+
+When drafting one for a user, show the draft before writing the file, and never invent fields — the schema rejects unknown keys rather than ignoring them.
+
 ### `logs`
 
 Print logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes of logs and exits.

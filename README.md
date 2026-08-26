@@ -314,6 +314,28 @@ dibbla apps update my-app --cpu 500m --memory 512Mi --port 3000
 dibbla apps delete my-app
 ```
 
+### Verify an App Still Works (`dibbla-checks.yaml`)
+
+A green deploy and a working app are different facts. Ship a `dibbla-checks.yaml`
+next to `dibbla.yaml` and the platform runs its assertions against the app the way
+a user reaches it — nightly, or on demand.
+
+```bash
+dibbla apps checks list my-app                  # definitions in the promoted snapshot
+dibbla apps checks enable my-app --yes          # start the schedule (owner/admin)
+dibbla apps checks run my-app --check home-page # exit 0 = pass, 8 = fail, 9 = error
+dibbla apps checks history my-app --since 24h   # typed results, newest first
+```
+
+`run` exits with the **product outcome** (`0` pass, `8` fail, `9` error, `10`
+indeterminate), so CI gates on the exit code rather than scraping output. The file
+ships with the app and is promoted by a successful deploy; shipping it does not
+start the schedule — `enable` does. This is not the same thing as a `healthcheck:`
+probe in `dibbla.yaml`, which only asks whether the container is alive. For the
+file's schema and the runtime model see
+[`.claude/skills/dibbla/manifest.md` § 22](.claude/skills/dibbla/manifest.md) and
+[`.claude/skills/dibbla/platform.md` § 8.7](.claude/skills/dibbla/platform.md).
+
 ### View Logs
 
 ```bash

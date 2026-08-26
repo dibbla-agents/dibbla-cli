@@ -264,6 +264,93 @@ The PVC delete step is the destructive part. Tell users to back up first if the 
 
 ---
 
+## 8.7. Application checks — the runtime model
+
+The authoring format is in [manifest.md § 22](manifest.md); this is what the
+platform does with it. The distinction that matters: a healthcheck is a kubelet
+probe about the *container*, application checks are platform-run assertions about
+the *app as a user reaches it*. Container truth is not application truth.
+
+### Promotion — checks are pinned to a revision
+
+`dibbla-checks.yaml` (≤ 256 KiB) ships with the app source. A **successful**
+deploy promotes it into an immutable, content-addressed **check source
+snapshot**; files it references — a `semantic` check's rubric, for example —
+are promoted with it (≤ 32 files, ≤ 1 MiB total). The checks that run are
+exactly the ones that shipped with that revision. A failed deploy never replaces
+the snapshot already in flight, and editing the file in the repo changes nothing
+until the next successful deploy. Snapshots are garbage-collected after 90 days.
+
+### Two switches, both off by default
+
+1. **Org capability.** Feature-gated per organization, off by default and
+   especially on customer-specific instances. When it is off, every checks call
+   is a `404` with `APPLICATION_CHECKS_DISABLED` (CLI exit 4) — and a disabled
+   org spends **zero** tokens: nothing is scheduled, nothing is judged.
+2. **Per-app enablement.** `dibbla apps checks enable <alias>` (owner/admin)
+   starts the schedule. Definitions existing is *not* activation — a file in the
+   repo never silently starts running work. `disable` stops scheduled runs and
+   keeps definitions and history readable.
+
+If a user reports "I added the file and nothing happens", the answer is almost
+always one of these two switches, in that order.
+
+### Scheduling
+
+`schedule: nightly` is a product abstraction, not a cron string. The control
+plane expands it to a concrete time with a stable per-app jitter — visible in
+the API, console and CLI — so ten thousand apps do not all fire at 02:00. There
+is no raw cron to get wrong, and `nightly` is the only value the schema accepts
+today.
+
+`dibbla apps checks run <alias>` runs the same execution path on demand,
+recording the triggering identity instead of no actor.
+
+### Isolation
+
+Runs execute in a platform-owned runner, not in the app's pod and not from the
+repo: no `evaluate`, no repository scripts, no package installs, no filesystem.
+Requests are read-only (`GET`/`HEAD`/`OPTIONS`) against logical routes of the
+deployment, so a definition cannot address an arbitrary host, and redirects are
+re-validated at every hop against the app's authorised host set. A browser
+journey that can mutate must name an `identity_grant` and mutates as that
+isolated fixture, never as a real user.
+
+### Results, thresholds and notifications
+
+Every execution is immutable and typed: an outcome plus a stable machine code
+and a bounded, redacted summary — never raw response bodies or logs. The runner's
+codes are `ASSERTION_FAILED` (the app answered, the assertion did not hold),
+`ROUTE_UNRESOLVED` (the logical route did not resolve for this deployment —
+usually a `route:` that does not exist in the manifest), `STEP_METHOD_UNSUPPORTED`,
+`CHECK_NOT_IN_BUNDLE` (the definition is not in the promoted snapshot — deploy
+first) and `PROBE_EXECUTOR_FAILED` (the runner itself failed; that is an `error`,
+not a failing app). Outcomes map to the CLI's product exit codes: `0` pass,
+`8` fail, `9` error, `10` indeterminate, `12` canceled, `13` skipped_concurrent.
+
+`failure_threshold` (default 2) means a check notifies only after that many
+consecutive failing runs; `cooldown` (default 30m) keeps it quiet afterwards
+even if it keeps failing. `run_deadline` (default 2m) bounds the whole run — a
+hung check records `error` rather than hanging, and schedule lateness, the
+whole-run deadline and a step timeout are three separate codes, never one
+ambiguous "timeout".
+
+Four notification events reach the notification surfaces:
+`application.check.failed`, `application.check.error`,
+`application.check.indeterminate` and `application.check.recovered`. `recovered`
+is the one people forget to subscribe to — without it a fixed app is silent.
+
+### Emergency disable
+
+Turning the capability off atomically stops new occurrences, revokes active run
+grants and lease epochs, and fences later result writes; queued work is
+canceled (executions are marked `canceled` with `ORG_DISABLED` or
+`RUNTIME_DISABLED`), running isolated jobs terminate and record `error`, and
+definitions and history stay readable. Re-enabling creates no catch-up storm — there is no
+backlog to drain.
+
+---
+
 ## 9. Public URL & access control
 
 - Default public URL: `https://<alias>.dibbla.com`.
