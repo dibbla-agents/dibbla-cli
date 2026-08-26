@@ -30,10 +30,47 @@ on:
   push:
     tags:
       - "v*"
+  # The emergency exit. release.yml used to be reachable only by pushing a `v*`
+  # tag, so a release that died for reasons of its own -- the GitHub Actions
+  # outage of 2026-08-26 stranded v1.2.66 with the tag public and no release
+  # object at all -- could only be retried by pushing a NEW tag. That is a
+  # public event requiring the user's confirmation every time (CLAUDE.md), and
+  # it burns a version number to work around an infrastructure fault.
+  #
+  # Same shape as publish-skill.yml and mirror-redeploy.yml, which have had
+  # `workflow_dispatch` for exactly this reason.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish (e.g. v1.2.66). It must already exist; this never creates a tag."
+        required: true
+        type: string
 
-# Never let two tag pushes race over the same release assets.
+# THE tag this run is about, resolved once.
+#
+# Every job below used to read `github.ref_name`, i.e. "whatever ref started
+# this run". On a tag push that IS the tag. On a workflow_dispatch it is the
+# BRANCH the dispatch was made from (`main`), and the whole pipeline would go
+# looking for `dibbla_main_darwin_amd64.tar.gz`. Worse, the three prerelease
+# guards would have tested the string `main` instead of the tag, so a dispatch
+# of `v1.2.52-rc.1` would have moved latest.json, the Homebrew formula and
+# `:latest` to a release candidate -- silently, which is the failure mode that
+# actually costs something.
+#
+# `github.event.inputs.tag` rather than `inputs.tag`: the `github` context is
+# available everywhere this is needed, including `concurrency` and job-level
+# `if:`, and `inputs` is not. On a tag push `github.event.inputs` is undefined,
+# so this falls back to `github.ref_name` and the tag-push path is unchanged.
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+# Never let two runs race over the same release assets -- and that now includes
+# a tag push and a dispatch naming the same tag, which is precisely the
+# collision the emergency exit makes possible. Keyed on the resolved tag rather
+# than on `github.ref`, which for a dispatch would be `refs/heads/main` and
+# would put every dispatch, of every tag, in one group.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -46,9 +83,52 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Everything downstream hangs off this job, so this is the one place a
+      # bad dispatch input can be stopped before it costs twenty minutes and
+      # touches anything public.
+      - name: Validate the tag being released
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "event=$GITHUB_EVENT_NAME  resolved tag=${RELEASE_TAG:-<empty>}"
+
+          [ -n "${RELEASE_TAG:-}" ] || { echo "::error::RELEASE_TAG is empty"; exit 1; }
+
+          # The same shape the push trigger accepts. Without this an operator
+          # who types a branch name gets a green checkout and a confusing
+          # GoReleaser failure instead of an answer.
+          case "$RELEASE_TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::'$RELEASE_TAG' is not a v* tag name"; exit 1 ;;
+          esac
+
+          # Must exist, and must exist as a TAG -- checking the tags namespace
+          # specifically, so a branch that happens to be named like a tag
+          # cannot be released.
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha \
+            || { echo "::error::tag '$RELEASE_TAG' does not exist. This workflow never creates tags."; exit 1; }
+
+          # Report, do not decide. GoReleaser refuses to overwrite an asset
+          # that already exists (.goreleaser.yml sets no
+          # `replace_existing_artifacts`), so re-running a release that got
+          # PART of the way through will fail at upload. Printing the current
+          # state here means the operator learns that in the first 10 seconds
+          # instead of inferring it from a stack trace later.
+          if ASSETS="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets | length' 2>/dev/null)"; then
+            echo "::notice::release $RELEASE_TAG already exists with $ASSETS asset(s); GoReleaser will fail on any it would re-upload"
+          else
+            echo "No release object for $RELEASE_TAG yet -- GoReleaser will create it."
+          fi
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          # Pinned to the resolved tag rather than left to the default. On a tag
+          # push this is the same commit the default would have given; on a
+          # dispatch it is the difference between GoReleaser building the tag
+          # and GoReleaser refusing to build an untagged `main`.
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Set up Go
@@ -80,7 +160,7 @@ jobs:
           mkdir -p dist
           # Packaged from the editable source dir, matching prior releases.
           ( cd .claude/skills && zip -qr ../../dist/dibbla-cli-skill.zip dibbla/ )
-          gh release upload "$GITHUB_REF_NAME" dist/dibbla-cli-skill.zip --clobber
+          gh release upload "$RELEASE_TAG" dist/dibbla-cli-skill.zip --clobber
 
   sign-macos:
     name: Sign and notarize macOS
@@ -127,7 +207,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
           WORK="$RUNNER_TEMP/sign"
 
@@ -192,7 +272,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = "${{ github.ref_name }}"
+          $tag = "$env:RELEASE_TAG"
           $version = $tag -replace '^v', ''
           $signDir = Join-Path $env:RUNNER_TEMP 'sign'
           New-Item -ItemType Directory -Force -Path $signDir | Out-Null
@@ -264,7 +344,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
 
           # Recomputing from what is actually attached to the release beats
           # patching individual lines with sed/regex: it cannot drift, and it
@@ -300,27 +380,33 @@ jobs:
     # consistent with each other, so an -rc tag either moves both or neither;
     # moving `latest` to an rc would hand every new install a release candidate.
     # Same rule and same reasoning as the homebrew job below.
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ !contains(github.event.inputs.tag || github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
+        # The TAG's tree, not the default branch's. On a tag push these are the
+        # same thing; on a dispatch they are not, and this job reads files from
+        # the checkout (installer-site/stage.sh and wait-ready.sh), so an unpinned checkout would build the tag's
+        # binaries with main's supporting files.
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Stage the mirror
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ./installer-site/stage.sh "$GITHUB_REF_NAME" https://install.dibbla.com
+          ./installer-site/stage.sh "$RELEASE_TAG" https://install.dibbla.com
 
           # A mirror whose tag_name disagrees with the tag being released is
           # worse than no mirror: it silently pins every new install to another
           # version. Assert it before anything is deployed.
           STAGED="$(jq -r .tag_name installer-site/public/latest.json)"
-          [ "$STAGED" = "$GITHUB_REF_NAME" ] || {
-            echo "latest.json tag_name=$STAGED but GITHUB_REF_NAME=$GITHUB_REF_NAME" >&2
+          [ "$STAGED" = "$RELEASE_TAG" ] || {
+            echo "latest.json tag_name=$STAGED but RELEASE_TAG=$RELEASE_TAG" >&2
             exit 1
           }
 
@@ -342,7 +428,7 @@ jobs:
           # reachable from Actions runners by definition — the 403 that motivated
           # P-0020 is a sandbox restriction, not a GitHub one — so taking the
           # binary straight off the release we just published breaks the cycle.
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           gh release download "$TAG" -p "dibbla_${TAG#v}_linux_amd64.tar.gz" -D cli --clobber -R "$GITHUB_REPOSITORY"
 
           # Verify it the same way the installer would, against the checksums the
@@ -369,10 +455,10 @@ jobs:
           dibbla deploy ./installer-site \
             --alias install \
             --update \
-            -m "P-0020 mirror: $GITHUB_REF_NAME"
+            -m "P-0020 mirror: $RELEASE_TAG"
 
       - name: Wait for the app to serve the new tag
-        run: ./installer-site/wait-ready.sh https://install.dibbla.com "$GITHUB_REF_NAME"
+        run: ./installer-site/wait-ready.sh https://install.dibbla.com "$RELEASE_TAG"
 
       - name: Verify the published bytes
         run: |
@@ -384,8 +470,8 @@ jobs:
           # app started, not that it serves the right bytes.
           curl -fsSL "$BASE/latest.json" -o live-latest.json
           LIVE_TAG="$(jq -r .tag_name live-latest.json)"
-          [ "$LIVE_TAG" = "$GITHUB_REF_NAME" ] || {
-            echo "live latest.json says $LIVE_TAG, expected $GITHUB_REF_NAME" >&2
+          [ "$LIVE_TAG" = "$RELEASE_TAG" ] || {
+            echo "live latest.json says $LIVE_TAG, expected $RELEASE_TAG" >&2
             exit 1
           }
 
@@ -453,7 +539,7 @@ jobs:
             exit 1
           }
 
-          echo "Mirror verified: $GITHUB_REF_NAME"
+          echo "Mirror verified: $RELEASE_TAG"
 
   verify-windows-installer:
     name: Verify install.ps1 on Windows
@@ -462,7 +548,7 @@ jobs:
     # never invokes the installer, despite a comment in scripts/e2e that claimed
     # otherwise. This is the only place the PowerShell path runs.
     needs: mirror
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ !contains(github.event.inputs.tag || github.ref_name, '-') }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -471,7 +557,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expected = "$env:GITHUB_REF_NAME".TrimStart('v')
+          $expected = "$env:RELEASE_TAG".TrimStart('v')
 
           irm https://install.dibbla.com/install.ps1 | iex
 
@@ -494,7 +580,7 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP 'fixture'
           New-Item -ItemType Directory -Force -Path (Join-Path $root 'latest') | Out-Null
 
-          $tag = "$env:GITHUB_REF_NAME"
+          $tag = "$env:RELEASE_TAG"
           $ver = $tag.TrimStart('v')
           $name = "dibbla_${ver}_windows_amd64.zip"
 
@@ -563,13 +649,19 @@ jobs:
     #
     # Everything upstream (build, both signing jobs, checksums) still runs for a
     # prerelease, which is what makes `-rc` tags usable as a full rehearsal.
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ !contains(github.event.inputs.tag || github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
+        # The TAG's tree, not the default branch's. On a tag push these are the
+        # same thing; on a dispatch they are not, and this job reads files from
+        # the checkout (.github/homebrew/dibbla.rb.tmpl), so an unpinned checkout would build the tag's
+        # binaries with main's supporting files.
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Render formula from the final checksums
         env:
@@ -578,7 +670,7 @@ jobs:
           set -euo pipefail
           command -v envsubst >/dev/null || sudo apt-get install -y --no-install-recommends gettext-base
 
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
 
           gh release download "$TAG" -p checksums.txt -D . --clobber -R "$GITHUB_REPOSITORY"
@@ -628,7 +720,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
 
           if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
             echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set. Create a PAT with"
@@ -686,14 +778,20 @@ jobs:
       packages: write
     steps:
       - name: Checkout
+        # The TAG's tree, not the default branch's. On a tag push these are the
+        # same thing; on a dispatch they are not, and this job reads files from
+        # the checkout (.github/docker/Dockerfile and Dockerfile.distroless), so an unpinned checkout would build the tag's
+        # binaries with main's supporting files.
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Stage the published linux binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
 
           # Assemble the image from the published archives rather than building
@@ -724,7 +822,7 @@ jobs:
       - name: Build and push
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/dibbla-cli"
 
@@ -784,7 +882,7 @@ jobs:
       - name: Verify the pushed image
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/dibbla-cli"
 
@@ -877,7 +975,7 @@ jobs:
           {
             "service": "dibbla-cli",
             "environment": "release",
-            "tag": "${GITHUB_REF_NAME}",
+            "tag": "${RELEASE_TAG}",
             "status": "${status}",
             "actor": "${GITHUB_ACTOR}",
             "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
