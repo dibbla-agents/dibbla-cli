@@ -68,7 +68,7 @@ Concretely, when editing skill files:
 
 DIB-188 scrubbed all of the above; keep it clean rather than re-running a scrub.
 
-## Releases are tag-driven
+## Releases are tag-driven, with one manual exit
 
 Pushing a `v*` tag triggers two workflows in parallel:
 
@@ -78,6 +78,45 @@ Pushing a `v*` tag triggers two workflows in parallel:
 
 Don't push tags casually — they're public events with consumer-facing
 side effects. Confirm with the user before tagging.
+
+### When a release fails for reasons of its own
+
+**You do not need a new tag.** `release.yml` also takes a
+`workflow_dispatch` with a `tag` input, so an existing tag can be built and
+published again:
+
+```
+gh workflow run release.yml -f tag=v1.2.66
+```
+
+This exists because on 2026-08-26 a GitHub Actions outage killed the
+`v1.2.66` run at startup — zero jobs, no release object, and a public tag
+already pushed. The only remedy at the time was cutting a *new* tag: a
+public event needing the user's confirmation, burning a version number to
+work around someone else's infrastructure fault. `publish-skill.yml` and
+`mirror-redeploy.yml` had carried a manual trigger for this reason for a
+while; `release.yml` now does too.
+
+Two things about it are load-bearing:
+
+- **It repairs; it does not overwrite.** The preflight compares the release
+  against the twelve assets a finished one carries and refuses a release
+  that is already **complete**. An incomplete one it repairs, naming what
+  is missing. `.goreleaser.yml` sets `replace_existing_artifacts: true` to
+  make that possible — the two are a pair, and removing either alone
+  breaks the other.
+- **`-f force=true` overrides that refusal, and costs something.** A rebuild
+  replaces the *signed* darwin archives with the unsigned ones GoReleaser
+  just built; `sign-macos` only puts that right if the run reaches it. A
+  normal release only moves forward, so its equivalent window is harmless.
+  A repair can move backwards and leave the release worse than it found
+  it. Force only a release you know is bad.
+
+Every job builds against the resolved tag (`RELEASE_TAG`), never against
+whatever ref started the run — on a dispatch that ref is the *branch*. If
+you add a job here, read `RELEASE_TAG`, and if it needs an `if:` guard on
+the tag string, inline `github.event.inputs.tag || github.ref_name`,
+because `if:` cannot see `env`.
 
 ### `release.yml` job order is load-bearing
 
