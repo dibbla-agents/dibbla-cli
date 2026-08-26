@@ -74,13 +74,19 @@ func errEnvelope(code, message string) map[string]any {
 }
 
 func executionDoc(id, status string) map[string]any {
+	// deadline_at must stay in the future: the CLI stops polling once the
+	// execution's deadline has passed and exits 7 (timeout). A hardcoded date
+	// here is a time bomb — the literal "2026-08-25T23:00:00Z" this fixture
+	// shipped with turned five sync-outcome subtests and three sibling tests red
+	// the moment that instant passed, on a CLI that had not changed. Derive it.
+	deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	return map[string]any{
 		"execution_id": id, "organization_id": "org_1", "deployment_id": "dep_1",
 		"trigger": "manual", "status": status, "run_id": "run_" + id,
 		"workflow_revision": "acv1", "config_revision": "rev_1a2b3c4d5e6f",
 		"requested_check_ids": []string{"home-page"}, "reservation_id": "res_1",
 		"tool_allowlist": []string{"http"}, "lease_epoch": 1,
-		"deadline_at": "2026-08-25T23:00:00Z",
+		"deadline_at": deadline,
 		"started_at":  "2026-08-25T10:00:00Z", "finished_at": "2026-08-25T10:00:09Z",
 	}
 }
