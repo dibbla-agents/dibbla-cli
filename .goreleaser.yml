@@ -48,6 +48,18 @@ release:
     name: dibbla-cli
   draft: false
   prerelease: auto
+  # Let a re-run repair a release instead of dying on the first duplicate
+  # upload. Without this, release.yml's emergency exit (workflow_dispatch, added
+  # alongside this) only works when the release object is missing entirely --
+  # i.e. only when nothing had gone wrong yet, which is not an emergency.
+  #
+  # This flag alone would be a bad trade: it also lets a re-run replace SIGNED
+  # darwin archives with the unsigned ones GoReleaser just built, and a run that
+  # is cancelled before sign-macos would leave the release worse than it found
+  # it. The guard that makes it safe lives in release.yml's preflight, which
+  # refuses to touch a release that already looks complete unless the operator
+  # explicitly forces it. Do not remove one without the other.
+  replace_existing_artifacts: true
   name_template: "v{{.Version}}"
 
 # NOTE: there is deliberately no `brews`/`homebrew_casks` block here.

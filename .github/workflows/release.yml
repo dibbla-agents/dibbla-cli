@@ -45,6 +45,11 @@ on:
         description: "Existing tag to build and publish (e.g. v1.2.66). It must already exist; this never creates a tag."
         required: true
         type: string
+      force:
+        description: "Rebuild a release that already looks COMPLETE. Normally left off: the exit is for repairing a broken release, not for overwriting a good one. See the preflight step for what this costs."
+        required: false
+        default: false
+        type: boolean
 
 # THE tag this run is about, resolved once.
 #
@@ -89,6 +94,8 @@ jobs:
       - name: Validate the tag being released
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Empty on a tag push, so a push can never be a "force".
+          FORCE: ${{ github.event.inputs.force }}
         run: |
           set -euo pipefail
           echo "event=$GITHUB_EVENT_NAME  resolved tag=${RELEASE_TAG:-<empty>}"
@@ -109,17 +116,68 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha \
             || { echo "::error::tag '$RELEASE_TAG' does not exist. This workflow never creates tags."; exit 1; }
 
-          # Report, do not decide. GoReleaser refuses to overwrite an asset
-          # that already exists (.goreleaser.yml sets no
-          # `replace_existing_artifacts`), so re-running a release that got
-          # PART of the way through will fail at upload. Printing the current
-          # state here means the operator learns that in the first 10 seconds
-          # instead of inferring it from a stack trace later.
-          if ASSETS="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets | length' 2>/dev/null)"; then
-            echo "::notice::release $RELEASE_TAG already exists with $ASSETS asset(s); GoReleaser will fail on any it would re-upload"
-          else
+          # Decide, do not merely report.
+          #
+          # .goreleaser.yml sets `replace_existing_artifacts: true` so that a
+          # re-run can REPAIR a release rather than dying on the first
+          # duplicate upload. That flag on its own is a bad trade: a re-run
+          # also replaces the SIGNED darwin archives with the unsigned ones
+          # GoReleaser just built, and sign-macos only puts that right if the
+          # run reaches it. A run cancelled in between would leave the release
+          # worse than it found it -- and unlike a normal release, which only
+          # ever moves forward, a repair can move backwards.
+          #
+          # So the flag is paired with this guard, and the semantics are "fix
+          # what is broken", never "always overwrite": a release that already
+          # looks complete is refused unless the operator explicitly forces it.
+          VERSION="${RELEASE_TAG#v}"
+
+          # The 12 assets a finished release carries -- 6 archives, 4 packages,
+          # checksums.txt and the skill zip. Measured against v1.2.63, v1.2.64
+          # and v1.2.65, which have exactly these and nothing else. Checked by
+          # NAME rather than by count, so a release missing one specific
+          # archive is still recognised as incomplete.
+          EXPECTED="$(cat <<EOF
+          dibbla_${VERSION}_darwin_amd64.tar.gz
+          dibbla_${VERSION}_darwin_arm64.tar.gz
+          dibbla_${VERSION}_linux_amd64.tar.gz
+          dibbla_${VERSION}_linux_arm64.tar.gz
+          dibbla_${VERSION}_windows_amd64.zip
+          dibbla_${VERSION}_windows_arm64.zip
+          dibbla_${VERSION}_linux_amd64.deb
+          dibbla_${VERSION}_linux_arm64.deb
+          dibbla_${VERSION}_linux_amd64.rpm
+          dibbla_${VERSION}_linux_arm64.rpm
+          checksums.txt
+          dibbla-cli-skill.zip
+          EOF
+          )"
+          EXPECTED="$(printf '%s\n' "$EXPECTED" | sed 's/^ *//')"
+
+          if ! PRESENT="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
             echo "No release object for $RELEASE_TAG yet -- GoReleaser will create it."
+            exit 0
           fi
+
+          MISSING="$(comm -23 <(printf '%s\n' "$EXPECTED" | sort) <(printf '%s\n' "$PRESENT" | sort))"
+
+          if [ -n "$MISSING" ]; then
+            echo "::notice::release $RELEASE_TAG exists but is INCOMPLETE; repairing it. Missing:"
+            printf '  - %s\n' $MISSING
+            exit 0
+          fi
+
+          if [ "${FORCE:-}" = "true" ]; then
+            echo "::warning::release $RELEASE_TAG already has all 12 expected assets, and force=true was given. Rebuilding it."
+            echo "::warning::If this run does not reach sign-macos/sign-windows, the release will be left carrying UNSIGNED archives."
+            exit 0
+          fi
+
+          echo "::error::release $RELEASE_TAG already has all 12 expected assets -- it is complete, so there is nothing to repair."
+          echo "::error::This workflow's manual trigger exists to finish a BROKEN release. Rebuilding a good one"
+          echo "::error::replaces its signed archives with unsigned ones until signing runs again."
+          echo "::error::If you really mean to, re-dispatch with force=true."
+          exit 1
 
       - name: Checkout
         uses: actions/checkout@v7
