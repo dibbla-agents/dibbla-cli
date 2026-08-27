@@ -330,8 +330,14 @@ server.RegisterCapabilityProvider(sdk.MemoryProvider{
     Name:               "org-memory-ranker",
     Version:            "1.0.0",
     MaxHistoryFraction: 0.5, // token ceiling as a fraction of context; 0 = platform default
-    Transform: func(currentMessage string, turns []sdk.Turn, tokenBudget int, meta sdk.ThreadMeta) ([]sdk.Turn, error) {
-        // summarize / rank / trim; return the turns to inject
+    Transform: func(ctx context.Context, currentMessage string, turns []sdk.Turn, tokenBudget int, meta sdk.ThreadMeta) ([]sdk.Turn, error) {
+        // summarize / rank / trim; return the turns to inject.
+        // ctx cancels when the engine abandons the call (hard ~15 s per-call
+        // budget, or the run terminated): stop work and abort store writes.
+        // meta carries engine-asserted identity (OrgID, nullable UserID,
+        // RunID/WorkflowID/NodeID) — partition a persistent store on those,
+        // never on the caller-supplied ThreadID alone. (sdk-go >= v0.0.21;
+        // on v0.0.20 Transform has no ctx and meta has only ThreadID/TurnCount.)
     },
 })
 ```
