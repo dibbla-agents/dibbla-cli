@@ -48,8 +48,8 @@ nodes:
   # ── HTTP entry point ──────────────────────────────────────
   - id: api_input               # required; unique within the workflow
     type: api                   # one of: api | api_response | function
-    inputs: [question]          # api inputs is a LIST of names (becomes request body keys)
-    outputs: [question]         # api outputs typically mirror inputs
+    inputs: [question, thread_id]   # api inputs is a LIST of names (becomes request body keys)
+    outputs: [question, thread_id]  # api outputs typically mirror inputs
 
   # ── Static system prompt via Handlebars ───────────────────
   - id: system_prompt
@@ -87,6 +87,10 @@ nodes:
       model: "claude-sonnet-4-5"
       prompt_message: ~
       system_message: ~
+      thread_id: ~                  # wired from the api node — memory selects history per thread.
+                                    # NEVER hardcode a literal here on a multi-caller workflow:
+                                    # one shared thread = every caller sees every other caller's
+                                    # history. Supply a per-user/per-conversation key at call time.
     tools: [weather_tool]           # capability "tools" — tool NODES, wired as edges
     toolbox_tools: [generate_image] # capability "tools" — tools resolved by registry NAME
     mcp_servers:                    # capability "mcp"
@@ -125,6 +129,7 @@ edges:
   # Note the spaces around the arrow — required by the parser.
   - api_input.question -> agent.prompt_message
   - system_prompt.output -> agent.system_message
+  - api_input.thread_id -> rich_agent.thread_id   # per-caller memory thread, never a hardcoded literal
   - agent.response -> api_response.response
   # Tool-connection edges are auto-generated from the agent's `tools:` list — do not author them manually.
 ```
@@ -145,7 +150,7 @@ That's all there is. Three top-level keys (`nodes`, `edges`, plus metadata); edg
 | `toolbox_tools` | agent `function` | Registry function **names**, resolved at run time |
 | `mcp_servers` | agent `function` | `{name, url, allowed_tools?}` entries |
 | `data_sources` | agent `function` | Bare source id, or `{source_id, access?, allowed_operations?, include_linked_tools?, allowed_linked_tools?}` |
-| `memory` | agent `function` | `{history_policy?, history_policy_n?}` |
+| `memory` | agent `function` | `{history_policy?, history_policy_n?}`. History is keyed by the node's `thread_id` **input** — wire it from the `api` node so each caller/conversation gets its own thread; a hardcoded literal shares one thread across all callers (leaks history between users; validator warns `SHARED_THREAD_ACROSS_API_CALLERS`). The related `memory_op` input, when set to `reset`, deletes the thread's stored history before the turn (sending the prompt `/clear` is the back-compat equivalent). Note: decay policies (`tiered`, `last-N`, …) trim stored *tool results*, not what the assistant said — assistant text that restated a tool result keeps it in history, so decay is **not** redaction; a PII redactor must rewrite text parts too. |
 | `tool_search` | agent `function` | `{allow?, persist?, scope?}` |
 | `capability_providers` | agent `function` | Capability seat → provider name |
 
@@ -294,7 +299,7 @@ A **capability provider** replaces the built-in implementation behind one seat, 
 
 | User asks for | Use |
 |---|---|
-| Memory / history / threads on an agent | `memory:` built-in keys — no provider |
+| Memory / history / threads on an agent | `memory:` built-in keys — no provider. Either way, wire `thread_id` per caller (see §3) — never a hardcoded literal |
 | Tool discovery / "let the agent find tools" | `tool_search:` built-in keys — no provider |
 | "Replace / customize **how** history is selected" or "**how** tool search ranks", with their own algorithm | A capability provider |
 

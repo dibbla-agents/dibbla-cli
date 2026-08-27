@@ -1506,8 +1506,8 @@ name: assistant_custom_memory
 nodes:
   - id: api_input
     type: api
-    inputs: [question]
-    outputs: [question]
+    inputs: [question, thread_id]
+    outputs: [question, thread_id]
   - id: agent
     type: function
     function: reasoning_agent_with_toolbox
@@ -1516,7 +1516,7 @@ nodes:
       model: "claude-sonnet-4-5"
       prompt_message: ~
       system_message: "You are a helpful assistant."
-      thread_id: "demo-thread-1"        # memory needs a thread to select history for
+      thread_id: ~                       # wired from the caller — one thread per user/conversation
     capability_providers:
       memory: org-memory-ranker          # NO history_policy line — binding implies "custom"
     outputs: [response]
@@ -1526,16 +1526,23 @@ nodes:
     inputs: [response]
 edges:
   - api_input.question -> agent.prompt_message
+  - api_input.thread_id -> agent.thread_id
   - agent.response -> api_response.response
 YAML
 
 # 2. Validate, create, run with the log tail
 dibbla wf validate -f /tmp/wf.yaml
 dibbla wf create -f /tmp/wf.yaml
-dibbla wf execute assistant_custom_memory --data '{"question":"hi"}' --follow
+dibbla wf execute assistant_custom_memory --data '{"question":"hi","thread_id":"user-123"}' --follow
 # The run log shows a capability_provider_call entry when the provider ran.
 
 # Footguns:
+# - Never hardcode `thread_id` in the workflow YAML for a multi-caller workflow:
+#   a literal thread means every caller shares ONE conversation — each user sees
+#   the previous users' history (cross-user leakage). Wire it from the api node
+#   as above so each caller supplies its own thread key. Hardcoding is only
+#   legitimate for single-tenant/demo workflows; the validator flags the pattern
+#   with a SHARED_THREAD_ACROSS_API_CALLERS warning (non-blocking).
 # - Setting `history_policy: tiered` (or anything non-custom) next to the binding
 #   fails the node at run time: "memory capability provider … is bound but
 #   history_policy is … — remove the provider binding, or set history_policy to
