@@ -154,7 +154,11 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	if !deleteYes {
-		if !askConfirm(fmt.Sprintf("Are you sure you want to delete '%s'? This action cannot be undone.", alias)) {
+		ok, err := askConfirm(fmt.Sprintf("Are you sure you want to delete '%s'? This action cannot be undone.", alias))
+		if err != nil {
+			os.Exit(refuseUnconfirmable(os.Stderr, fmt.Sprintf("deleting application '%s'", alias)))
+		}
+		if !ok {
 			fmt.Println("Deletion cancelled.")
 			os.Exit(0)
 		}

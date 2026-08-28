@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -32,6 +33,24 @@ func requireToken(cfg *config.Config) {
 	}
 }
 
-func askConfirm(msg string) bool {
-	return prompt.AskConfirm(msg)
+// askConfirm reports the user's answer and, separately, whether they could
+// be asked at all. The two are not the same outcome: see prompt.ErrNotInteractive.
+func askConfirm(msg string) (bool, error) {
+	return prompt.AskConfirmErr(msg)
+}
+
+// refuseUnconfirmable is what every confirm caller does when the prompt
+// could not be shown. It is one function so all of them refuse identically.
+//
+// The outcome it replaces was the dangerous one: survey returns io.EOF
+// without a terminal, the old code read that as a plain "no", printed
+// "Cancelled." and exited 0. A script or coding agent driving the CLI was
+// therefore told the command had succeeded in doing nothing, when in truth
+// nobody had been asked. Exit 5 matches the CLI's "request validation /
+// local refusal, zero requests made" code.
+func refuseUnconfirmable(w io.Writer, action string) int {
+	fmt.Fprintf(w, "%s %s needs confirmation, but stdin is not a terminal.\n",
+		platform.Icon("❌", "[X]"), action)
+	fmt.Fprintln(w, "  Re-run with --yes to confirm non-interactively, or run it from a terminal.")
+	return 5
 }

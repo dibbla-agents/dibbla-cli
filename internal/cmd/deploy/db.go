@@ -201,7 +201,11 @@ func runDbDelete(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	if !dbDeleteYes {
-		if !askConfirm(fmt.Sprintf("Are you sure you want to delete database '%s'? This action cannot be undone.", name)) {
+		ok, err := askConfirm(fmt.Sprintf("Are you sure you want to delete database '%s'? This action cannot be undone.", name))
+		if err != nil {
+			os.Exit(refuseUnconfirmable(os.Stderr, fmt.Sprintf("deleting database '%s'", name)))
+		}
+		if !ok {
 			if !dbDeleteQuiet {
 				fmt.Println("Deletion cancelled.")
 			}

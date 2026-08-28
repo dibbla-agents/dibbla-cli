@@ -623,6 +623,7 @@ dibbla preview --json | jq '.active_services'
 | **Usage** | `dibbla apps delete <alias>` |
 | **Arguments** | `alias` (required) |
 | **Flags** | `--yes`, `-y` — skip confirmation |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests, rather than printing `Deletion cancelled.` and exiting 0. Always pass `--yes` from scripts, CI and coding agents. |
 
 ### apps restart
 
@@ -721,6 +722,7 @@ dibbla apps checks run myapp --follow --json | jq -c 'select(.type=="summary")'
 | **Requires** | owner/admin. Enable also requires configured checks (a 400 with the server's code otherwise, exit 5) |
 | **Output** | `✓ application checks enabled for <alias> (settings version N)` |
 | **Errors** | Version conflict on concurrent edits is 409 → exit 6 |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command **refuses**: exit 5, zero requests, message naming `--yes`. It does not silently cancel — a script that was never asked must not be told the work succeeded. Scripts, CI and coding agents should always pass `--yes`. |
 
 ---
 
@@ -809,6 +811,7 @@ dibbla logs expense-reporter --service worker -f     # narrow to one service aft
 | **Arguments** | `name` (required) |
 | **Flags** | `--yes`, `-y` — skip confirmation |
 | | `--quiet`, `-q` — errors only (scripting) |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests, rather than printing `Deletion cancelled.` and exiting 0. Always pass `--yes` from scripts, CI and coding agents. |
 
 ### db dump
 
@@ -930,6 +933,7 @@ not a CLI bug.
 | | `--force` — delete even if the bucket still holds objects (irreversible) |
 | | `--quiet`, `-q` — errors only (scripting) |
 | **Behaviour** | Deletes the bucket, its scoped credentials **and** the four injected secrets. A non-empty bucket is refused without `--force`. |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests, rather than printing `Deletion cancelled.` and exiting 0. Always pass `--yes` from scripts, CI and coding agents. |
 
 ### storage rotate
 
@@ -1052,6 +1056,7 @@ Two things that bite:
 | **Flags** | `--deployment`, `-d` — for deployment-scoped secret |
 | | `--service`, `-s` — for per-service secret (requires `-d`) |
 | | `--yes`, `-y` — skip confirmation |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests, rather than printing `Deletion cancelled.` and exiting 0. Always pass `--yes` from scripts, CI and coding agents. |
 
 ---
 

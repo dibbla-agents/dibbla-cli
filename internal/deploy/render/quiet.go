@@ -55,8 +55,8 @@ func (q *Quiet) OnDone() int {
 		}
 		fmt.Fprintf(q.out, "✓ %s  ·  %s  ·  %s%s\n",
 			q.result.Deployment.Alias, q.result.Deployment.URL, elapsed, suffix)
-		if q.result.SupportNotice != "" {
-			fmt.Fprintf(q.out, "! support: %s\n", q.result.SupportNotice)
+		for _, n := range q.result.Notices() {
+			fmt.Fprintf(q.out, "! %s: %s\n", n.Label, n.Text)
 		}
 	}
 	return 0

@@ -53,6 +53,15 @@ func (j *JSONRenderer) OnDone() int {
 		if j.result.SupportNotice != "" {
 			out["support_notice"] = j.result.SupportNotice
 		}
+		if j.result.ChecksNotice != "" {
+			out["checks_notice"] = j.result.ChecksNotice
+		}
+		if j.result.VCSError != "" {
+			out["vcs_error"] = j.result.VCSError
+		}
+		if len(j.result.VCSFiltered) > 0 {
+			out["vcs_filtered"] = j.result.VCSFiltered
+		}
 		_ = enc.Encode(out)
 	}
 	return 0

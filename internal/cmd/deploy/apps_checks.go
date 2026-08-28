@@ -667,7 +667,7 @@ func runAppsChecksToggle(cmd *cobra.Command, args []string, enable bool) {
 // runAppsChecksToggleCore is the testable inner implementation of
 // `apps checks enable|disable`. confirm is the interactive prompt; --yes
 // short-circuits it. Returns the exit code.
-func runAppsChecksToggleCore(stdout, stderr io.Writer, apiURL, apiToken, alias, checkID string, yes, enable bool, confirm func(string) bool) int {
+func runAppsChecksToggleCore(stdout, stderr io.Writer, apiURL, apiToken, alias, checkID string, yes, enable bool, confirm func(string) (bool, error)) int {
 	verb := "disable"
 	if enable {
 		verb = "enable"
@@ -689,7 +689,14 @@ func runAppsChecksToggleCore(stdout, stderr io.Writer, apiURL, apiToken, alias, 
 		if enable {
 			effect = "start scheduled nightly runs"
 		}
-		if !confirm(fmt.Sprintf("%s application checks for '%s'? This will %s.", title(verb), alias, effect)) {
+		ok, err := confirm(fmt.Sprintf("%s application checks for '%s'? This will %s.", title(verb), alias, effect))
+		if err != nil {
+			// Not the same as a declined prompt: nobody was asked. Saying
+			// "Cancelled." and exiting 0 here handed every script and coding
+			// agent a green for work that never happened.
+			return refuseUnconfirmable(stderr, fmt.Sprintf("%s application checks for '%s'", verb, alias))
+		}
+		if !ok {
 			fmt.Fprintln(stdout, "Cancelled.")
 			return 0
 		}

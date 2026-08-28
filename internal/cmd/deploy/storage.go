@@ -215,7 +215,11 @@ func runStorageDelete(cmd *cobra.Command, args []string) {
 		if storageDeleteForce {
 			warning = fmt.Sprintf("Are you sure you want to delete bucket '%s' AND ALL ITS OBJECTS? This action cannot be undone.", name)
 		}
-		if !askConfirm(warning) {
+		ok, err := askConfirm(warning)
+		if err != nil {
+			os.Exit(refuseUnconfirmable(os.Stderr, fmt.Sprintf("deleting bucket '%s'", name)))
+		}
+		if !ok {
 			if !storageDeleteQuiet {
 				fmt.Println("Deletion cancelled.")
 			}

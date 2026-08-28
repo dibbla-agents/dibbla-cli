@@ -3,6 +3,7 @@ package deploy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 )
 
 // fakeChecksAPI is a scripted deploy-api: routes are keyed by "METHOD /path"
@@ -696,7 +699,7 @@ func TestRunAppsChecksToggleCore_EnableAndDisable(t *testing.T) {
 			})
 
 			var stdout, stderr bytes.Buffer
-			code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", true, tc.enable, func(string) bool { return true })
+			code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", true, tc.enable, func(string) (bool, error) { return true, nil })
 			if code != 0 {
 				t.Fatalf("exit %d (stderr=%q)", code, stderr.String())
 			}
@@ -722,7 +725,7 @@ func TestRunAppsChecksToggleCore_EnableAndDisable(t *testing.T) {
 func TestRunAppsChecksToggleCore_ConfirmDeclinedMakesZeroRequests(t *testing.T) {
 	api := newFakeChecksAPI(t, map[string]http.HandlerFunc{})
 	var stdout, stderr bytes.Buffer
-	code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", false, true, func(string) bool { return false })
+	code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", false, true, func(string) (bool, error) { return false, nil })
 	if code != 0 {
 		t.Fatalf("exit %d, want 0", code)
 	}
@@ -737,7 +740,7 @@ func TestRunAppsChecksToggleCore_ConfirmDeclinedMakesZeroRequests(t *testing.T) 
 func TestRunAppsChecksToggleCore_CheckFlagRejectedLocally(t *testing.T) {
 	api := newFakeChecksAPI(t, map[string]http.HandlerFunc{})
 	var stdout, stderr bytes.Buffer
-	code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "home-page", true, true, func(string) bool { return true })
+	code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "home-page", true, true, func(string) (bool, error) { return true, nil })
 	if code != 5 {
 		t.Fatalf("exit %d, want 5", code)
 	}
@@ -768,7 +771,7 @@ func TestRunAppsChecksToggleCore_ServerErrors(t *testing.T) {
 				},
 			})
 			var stdout, stderr bytes.Buffer
-			code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", true, true, func(string) bool { return true })
+			code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", true, true, func(string) (bool, error) { return true, nil })
 			if code != tc.want {
 				t.Fatalf("exit %d, want %d", code, tc.want)
 			}
@@ -776,5 +779,66 @@ func TestRunAppsChecksToggleCore_ServerErrors(t *testing.T) {
 				t.Errorf("stable code must reach stderr: %q", stderr.String())
 			}
 		})
+	}
+}
+
+// TestRunAppsChecksToggleCore_UnaskablePromptRefuses is the control this
+// slice exists for. Before SLC-0129 a prompt that could not be shown
+// (survey returns io.EOF with no terminal on stdin) was indistinguishable
+// from a user answering "no": both printed "Cancelled." and exited 0. A
+// script or coding agent driving the CLI was told the command had
+// succeeded while the checks were never enabled — a false green.
+//
+// It is deliberately paired with
+// TestRunAppsChecksToggleCore_ConfirmDeclinedMakesZeroRequests: that test
+// pins the human "no" at exit 0, this one pins "nobody was asked" at a
+// non-zero exit. A fix that collapses the two again fails one or the other.
+func TestRunAppsChecksToggleCore_UnaskablePromptRefuses(t *testing.T) {
+	for _, enable := range []bool{true, false} {
+		name := "disable"
+		if enable {
+			name = "enable"
+		}
+		t.Run(name, func(t *testing.T) {
+			api := newFakeChecksAPI(t, map[string]http.HandlerFunc{})
+			var stdout, stderr bytes.Buffer
+			unaskable := func(string) (bool, error) { return false, prompt.ErrNotInteractive }
+
+			code := runAppsChecksToggleCore(&stdout, &stderr, api.url(), "tok", "myapp", "", false, enable, unaskable)
+
+			if code == 0 {
+				t.Fatalf("exit 0 tells a script the command succeeded while nothing was enabled; want non-zero (stdout=%q)", stdout.String())
+			}
+			if code != 5 {
+				t.Errorf("exit %d, want 5 (local refusal, zero requests)", code)
+			}
+			if !strings.Contains(stderr.String(), "--yes") {
+				t.Errorf("refusal must name the flag that unblocks it: %q", stderr.String())
+			}
+			if strings.Contains(stdout.String(), "Cancelled.") {
+				t.Errorf("%q claims the user cancelled; nobody was asked", stdout.String())
+			}
+			if api.total() != 0 {
+				t.Errorf("an unconfirmable prompt must make zero requests: %d hits", api.total())
+			}
+		})
+	}
+}
+
+// TestAskConfirmErr_NoTerminalIsNotADecline pins the distinction at its
+// source. Without this, prompt.AskConfirm's dropped error could be
+// reintroduced and only the callers' tests would notice.
+func TestAskConfirmErr_NoTerminalIsNotADecline(t *testing.T) {
+	// The test binary's stdin is not a terminal, which is exactly the
+	// condition under test.
+	ok, err := prompt.AskConfirmErr("proceed?")
+	if err == nil {
+		t.Fatalf("want an error when stdin is not a terminal, got ok=%v err=nil", ok)
+	}
+	if !errors.Is(err, prompt.ErrNotInteractive) {
+		t.Errorf("err = %v, want ErrNotInteractive", err)
+	}
+	if ok {
+		t.Errorf("an unaskable prompt must never report confirmation")
 	}
 }

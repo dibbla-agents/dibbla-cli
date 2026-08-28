@@ -1,12 +1,15 @@
 package prompt
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
+	isatty "github.com/mattn/go-isatty"
 )
 
 // HostingType represents the type of Dibbla hosting
@@ -109,13 +112,37 @@ func AskIncludeFrontend() bool {
 	return include
 }
 
-// AskConfirm asks a yes/no question with default yes
+// ErrNotInteractive is returned by AskConfirmErr when there is no terminal
+// on stdin to ask. It is deliberately distinct from a user answering "no":
+// a caller that cannot tell them apart reports "cancelled" and exit 0 to a
+// script that never got to answer, which is a false green.
+var ErrNotInteractive = errors.New("stdin is not a terminal, so the confirmation prompt cannot be shown")
+
+// AskConfirm asks a yes/no question with default yes. It cannot distinguish
+// a declined prompt from one that could never be shown — prefer
+// AskConfirmErr wherever "the user said no" and "nobody was asked" must lead
+// to different exit codes.
 func AskConfirm(message string) bool {
+	confirm, _ := AskConfirmErr(message)
+	return confirm
+}
+
+// AskConfirmErr asks a yes/no question with default yes and reports why it
+// failed. The isatty check happens BEFORE survey runs: survey writes its
+// prompt plus raw cursor-position queries (ESC[6n) to stdout and only then
+// returns io.EOF, so letting it run at all would smear terminal escapes
+// through a script's captured output before the caller could refuse.
+func AskConfirmErr(message string) (bool, error) {
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return false, ErrNotInteractive
+	}
 	var confirm bool
 	prompt := &survey.Confirm{
 		Message: message,
 		Default: true,
 	}
-	survey.AskOne(prompt, &confirm)
-	return confirm
+	if err := survey.AskOne(prompt, &confirm); err != nil {
+		return false, err
+	}
+	return confirm, nil
 }
