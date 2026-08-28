@@ -516,8 +516,8 @@ dibbla apps checks run myapp --async --quiet        # prints the execution id, r
 dibbla apps checks run myapp --follow --json \
   | jq -c 'select(.type=="summary")'                # one terminal line: outcome + exit_code
 dibbla apps checks history myapp --since 24h        # typed results: outcome, stable code, summary
-dibbla apps checks enable myapp --yes               # start the nightly schedule (owner/admin)
-dibbla apps checks disable myapp --yes              # stop scheduled runs, keep definitions + history
+dibbla apps checks enable myapp --yes               # turn the checks runtime on (owner/admin)
+dibbla apps checks disable myapp --yes              # turn it off, keep definitions + history
 ```
 
 The exit code **is** the product outcome (0/8/9/10/12/13), so a CI step fails exactly when the app fails its own assertions — no output scraping. Transport problems keep the CLI-wide codes (3 auth, 4 not found, 5 bad request, 6 conflict, 7 timeout, 1 other).
