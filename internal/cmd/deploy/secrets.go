@@ -266,7 +266,11 @@ func runSecretsDelete(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	if !secretsDeleteYes {
-		if !askConfirm(fmt.Sprintf("Are you sure you want to delete secret '%s'?", name)) {
+		ok, err := askConfirm(fmt.Sprintf("Are you sure you want to delete secret '%s'?", name))
+		if err != nil {
+			os.Exit(refuseUnconfirmable(os.Stderr, fmt.Sprintf("deleting secret '%s'", name)))
+		}
+		if !ok {
 			fmt.Println("Deletion cancelled.")
 			os.Exit(0)
 		}

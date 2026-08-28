@@ -314,9 +314,11 @@ func (t *TTY) finalize() {
 		t.prop("revision", t.paint(t.result.VCSCommit, colorMagenta+colorBold))
 	}
 	t.printServicesTable()
-	if t.result.SupportNotice != "" {
+	if notices := t.result.Notices(); len(notices) > 0 {
 		fmt.Fprintln(t.w)
-		fmt.Fprintf(t.w, "  %s %s\n", t.paint("support ·", colorDim), t.result.SupportNotice)
+		for _, n := range notices {
+			fmt.Fprintf(t.w, "  %s %s\n", t.paint(n.Label+" ·", colorDim), n.Text)
+		}
 	}
 	fmt.Fprintln(t.w)
 	fmt.Fprintf(t.w, "  %s %s\n",

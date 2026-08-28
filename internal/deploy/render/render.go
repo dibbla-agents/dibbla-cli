@@ -8,6 +8,7 @@ package render
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,15 @@ type DeployResult struct {
 	// live console-set support setting (P-0024 Part J) — rendered so the
 	// console switch never appears to have silently stopped working.
 	SupportNotice string `json:"support_notice,omitempty"`
+	// ChecksNotice is set when the deploy is live but Application Checks
+	// could not be promoted onto the new revision (SLC-0129). The server
+	// used to report this as a failed deploy; it is a notice on a success.
+	ChecksNotice string `json:"checks_notice,omitempty"`
+	// VCSError and VCSFiltered have been on the server's success response
+	// since P-0021, but had no field here — so the CLI silently dropped a
+	// failed version-control commit and the list of paths excluded from it.
+	VCSError    string   `json:"vcs_error,omitempty"`
+	VCSFiltered []string `json:"vcs_filtered,omitempty"`
 }
 
 type ResultDeployment struct {
@@ -149,6 +159,31 @@ type ParsedBuildError struct {
 type Renderer interface {
 	OnEvent(ev DeployEvent)
 	OnDone() int
+}
+
+// Notices returns the post-deploy caveats attached to a SUCCESSFUL deploy,
+// in a stable order, skipping the ones that are absent. They exist because
+// the work they describe runs after the workload is already live: failing
+// the deploy over them would misreport the cluster, and dropping them would
+// hide a real problem. SLC-0129 fixed both halves at once.
+func (r *DeployResult) Notices() []struct{ Label, Text string } {
+	if r == nil {
+		return nil
+	}
+	var out []struct{ Label, Text string }
+	add := func(label, text string) {
+		if text != "" {
+			out = append(out, struct{ Label, Text string }{label, text})
+		}
+	}
+	add("support", r.SupportNotice)
+	add("checks", r.ChecksNotice)
+	add("vcs", r.VCSError)
+	if len(r.VCSFiltered) > 0 {
+		add("vcs", fmt.Sprintf("%d path(s) excluded from version control: %s",
+			len(r.VCSFiltered), strings.Join(r.VCSFiltered, ", ")))
+	}
+	return out
 }
 
 // formatElapsed renders a duration with the same shape the design uses
