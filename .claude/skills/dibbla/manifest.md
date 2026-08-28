@@ -1332,8 +1332,9 @@ Authoring is this file; running and reading are CLI commands —
 `dibbla apps checks list|run|history|enable|disable`, with the product exit
 codes (`0` pass, `8` fail, `9` error, `10` indeterminate) — see
 [reference.md § apps checks](reference.md). Definitions existing does **not**
-start the schedule: `dibbla apps checks enable <alias>` does, and it needs
-owner/admin. The org-level capability must also be on, or every call is a 404
+activate anything: `dibbla apps checks enable <alias>` turns the app's runtime
+on, and it needs owner/admin. Enabling still runs nothing on its own — nothing
+runs on a cadence today, so results come from `dibbla apps checks run`. The org-level capability must also be on, or every call is a 404
 with `APPLICATION_CHECKS_DISABLED`.
 
 ---
