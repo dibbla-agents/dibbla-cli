@@ -1236,8 +1236,8 @@ API to create the grant it names, and nothing resolves the name at run time
 (verified 2026-08-26 — the field appears in the loader's validation and the
 classification derivation and nowhere else). That is the smaller of two problems.
 
-**Only `http_sequence` executes at all.** `core/go-toolserver/functions/applicationchecks/function.go:270`
-returns outcome `indeterminate` with code `CHECK_KIND_UNSUPPORTED` for every
+**Only `http_sequence` executes at all.** The check runner returns outcome
+`indeterminate` with code `CHECK_KIND_UNSUPPORTED` for every
 other kind — `browser_journey` (read-only or not), `semantic` and `composite`
 alike. They still pass validation and deploy green, so nothing warns the user.
 The outcome is neither pass nor fail, which reads as "all clear" more easily
