@@ -3,6 +3,8 @@ package wf
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
@@ -92,7 +94,13 @@ var functionsProvidersCmd = &cobra.Command{
 A capability provider replaces the platform's built-in implementation behind
 one agent capability seat (tool_search, memory). Workflows opt in per agent
 node via 'capability_providers: {<seat>: "<name>"}'. Most workflows use the
-built-ins and need no provider.`,
+built-ins and need no provider.
+
+PORTS lists any extra input/output ports the provider declares. Once its seat
+is bound, those are wireable on the agent node as '<seat>.<port>' — e.g.
+'edges: [classify.topic -> agent.memory.topic]'. A starred input is required
+and gates the node like any other required input. Use -o json for the full
+JSON Schemas (types, descriptions).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path := "/api/wf/capability-providers"
 		if capability, _ := cmd.Flags().GetString("capability"); capability != "" {
@@ -117,7 +125,7 @@ built-ins and need no provider.`,
 		if flagOutput == "yaml" {
 			return output.PrintYAML(result)
 		}
-		headers := []string{"NAME", "SEAT", "SERVER", "VERSION", "DESCRIPTION"}
+		headers := []string{"NAME", "SEAT", "SERVER", "VERSION", "PORTS", "DESCRIPTION"}
 		var rows [][]string
 		for _, pr := range providers {
 			p, ok := pr.(map[string]interface{})
@@ -129,11 +137,61 @@ built-ins and need no provider.`,
 			srv, _ := p["server"].(string)
 			version, _ := p["version"].(string)
 			desc, _ := p["description"].(string)
-			rows = append(rows, []string{name, seat, srv, version, desc})
+			ports := summarizeExtraPorts(seat, p["extra_inputs_schema"], p["extra_outputs_schema"])
+			rows = append(rows, []string{name, seat, srv, version, ports, desc})
 		}
 		output.PrintTable(headers, rows)
 		return nil
 	},
+}
+
+// summarizeExtraPorts renders a provider's declared extra ports for the table:
+// the wireable "<seat>.<port>" names a workflow can address, with required
+// inputs starred. Providers that declare none (the common case) get an empty
+// cell. Full JSON Schemas stay available via -o json.
+func summarizeExtraPorts(seat string, inSchema, outSchema interface{}) string {
+	var parts []string
+	if names := extraPortNames(seat, inSchema, true); names != "" {
+		parts = append(parts, "in "+names)
+	}
+	if names := extraPortNames(seat, outSchema, false); names != "" {
+		parts = append(parts, "out "+names)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// extraPortNames pulls the property names out of one extra-port JSON Schema,
+// sorted for a stable table. Anything that is not a schema object with
+// properties yields "" — a provider is free to declare nothing.
+func extraPortNames(seat string, schema interface{}, markRequired bool) string {
+	obj, ok := schema.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	props, ok := obj["properties"].(map[string]interface{})
+	if !ok || len(props) == 0 {
+		return ""
+	}
+	required := map[string]bool{}
+	if markRequired {
+		if list, ok := obj["required"].([]interface{}); ok {
+			for _, r := range list {
+				if s, ok := r.(string); ok {
+					required[s] = true
+				}
+			}
+		}
+	}
+	names := make([]string, 0, len(props))
+	for name := range props {
+		label := seat + "." + name
+		if required[name] {
+			label += "*"
+		}
+		names = append(names, label)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func init() {
