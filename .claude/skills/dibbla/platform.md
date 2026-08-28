@@ -288,9 +288,11 @@ until the next successful deploy. Snapshots are garbage-collected after 90 days.
    is a `404` with `APPLICATION_CHECKS_DISABLED` (CLI exit 4) — and a disabled
    org spends **zero** tokens: nothing is scheduled, nothing is judged.
 2. **Per-app enablement.** `dibbla apps checks enable <alias>` (owner/admin)
-   starts the schedule. Definitions existing is *not* activation — a file in the
-   repo never silently starts running work. `disable` stops scheduled runs and
-   keeps definitions and history readable.
+   turns the app's checks runtime on. Definitions existing is *not* activation —
+   a file in the repo never silently starts running work. `disable` turns it off
+   and keeps definitions and history readable. Note that enabling does not by
+   itself produce a result: nothing runs on a cadence today, so `dibbla apps
+   checks run` is what executes a check.
 
 If a user reports "I added the file and nothing happens", the answer is almost
 always one of these two switches, in that order.
