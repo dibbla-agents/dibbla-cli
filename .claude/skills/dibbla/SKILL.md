@@ -93,7 +93,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 - `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
-- **Login guard:** Use `--require-login` to require authentication. Combine with `--access-policy invite_only` to restrict to invited users, or `all_members` for org-wide access. Use `--google-scopes` to request additional Google OAuth scopes (e.g. Drive, Calendar).
+- **Login guard:** Use `--require-login` to require authentication. Combine with `--access-policy invite_only` to restrict to invited users, or `all_members` for org-wide access. Use `--google-scopes` to request additional Google OAuth scopes (e.g. Drive, Calendar). Invitations to an `invite_only` app are made in the console's **Access & users** dialog: **Add member** for org members, **Invite by email** for anyone else — the latter grants access to that app only and never adds the person to the organisation (see `platform.md` §9).
 - Use `--quiet` / `-q` on `db list`, `db delete`, `db connect` for machine-readable output in scripts.
 - `db create --deployment <alias>` scopes the database and its auto-created secret to a specific deployment. The scoped secret is named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `DATABASE_URL_MY_DB` for database `my_db`), **not** a plain `DATABASE_URL` — app code must read the suffixed env var.
 - `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
