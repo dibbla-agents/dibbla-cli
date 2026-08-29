@@ -1,0 +1,583 @@
+{
+  "contract_version": "1.0.0",
+  "kind": "dibbla.platform.capabilities",
+  "description": "Every relevant Dibbla operation with exactly one state. A capability belongs in /platform only when a stable API backs it, it needs no caller filesystem, keyring, TTY or external binary, and it either finishes promptly or returns a durable pollable ID.",
+  "states": [
+    {
+      "id": "remote-read",
+      "summary": "Exposed remotely, no side effects. Cannot acknowledge, refresh, rotate or mark-read as a hidden convenience."
+    },
+    {
+      "id": "remote-write",
+      "summary": "Exposed remotely, mutates, uses an idempotency key."
+    },
+    {
+      "id": "remote-destructive",
+      "summary": "Exposed remotely, requires an accurate destructiveHint, a bound read-only plan and a distinct human approval."
+    },
+    {
+      "id": "remote-async",
+      "summary": "Exposed remotely, returns a durable operation ID that is polled. An MCP call never holds a long run open."
+    },
+    {
+      "id": "local-only",
+      "summary": "Deliberately never remote. Requires a stated reason."
+    },
+    {
+      "id": "not-yet-available",
+      "summary": "Intended but not exposed. Requires an owning proposal or API dependency."
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "mcp.community_whoami",
+      "title": "Identify the calling Dibbla user in the community",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_whoami",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_search",
+      "title": "Search community posts",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_search",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_topics",
+      "title": "List community topics",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_topics",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_read_topic",
+      "title": "Read one community topic",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_read_topic",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_notifications",
+      "title": "Read the caller's community notifications",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_notifications",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_create_topic",
+      "title": "Create a community topic",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_create_topic",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_reply",
+      "title": "Reply to a community topic",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_reply",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.community_edit_post",
+      "title": "Edit one of the caller's own community posts",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/community",
+      "mcp_tool": "community_edit_post",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_tickets",
+      "title": "List support tickets for an app",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_tickets",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_read_ticket",
+      "title": "Read one support ticket",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_read_ticket",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_create_ticket",
+      "title": "Create a support ticket",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_create_ticket",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_reply",
+      "title": "Reply to a support ticket",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_reply",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_assign",
+      "title": "Assign a support ticket",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_assign",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.support_set_status",
+      "title": "Set a support ticket's status",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/support",
+      "mcp_tool": "support_set_status",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.notifications_list",
+      "title": "List platform notifications",
+      "state": "remote-read",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/notifications",
+      "mcp_tool": "notifications_list",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "mcp.notifications_ack",
+      "title": "Acknowledge a platform notification",
+      "state": "remote-write",
+      "scopes": [],
+      "auth": "static-bearer",
+      "mcp_toolset": "/notifications",
+      "mcp_tool": "notifications_ack",
+      "note": "Shipped before P-0035. Authenticates with a static Dibbla bearer validated by auth-service, not an OAuth grant, and is therefore excluded from the connector's directory manifest."
+    },
+    {
+      "id": "platform.identity.whoami",
+      "title": "Return the granted user and organization",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:identity:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.apps.list",
+      "title": "List applications in the granted organization",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.apps.get",
+      "title": "Get one application by alias",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.apps.update",
+      "title": "Update an application's configuration",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.apps.restart",
+      "title": "Restart an application",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:apps:restart"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.apps.delete",
+      "title": "Delete an application",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:apps:delete"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-destructive",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.deployments.list",
+      "title": "List deployments",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:deployments:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.deployment_proposals.create",
+      "title": "Create an agent-authored deployment proposal",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:deployment-proposals:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.deployments.start",
+      "title": "Start a deployment",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:deployments:execute"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-async",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.logs.read",
+      "title": "Read a bounded application log window",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:logs:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.secrets.list",
+      "title": "List secret names and metadata",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:secrets:metadata:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.secrets.set",
+      "title": "Set or rotate a secret",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:secrets:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.databases.list",
+      "title": "List managed databases",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:databases:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.databases.create",
+      "title": "Provision a managed database",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:databases:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-async",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.databases.restore",
+      "title": "Restore a database from a backup",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:databases:restore"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-async",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.databases.delete",
+      "title": "Delete a managed database",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:databases:delete"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-destructive",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.storage.list",
+      "title": "List object-storage buckets",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:storage:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.storage.create",
+      "title": "Create a bucket with scoped credentials",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:storage:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.storage.rotate",
+      "title": "Rotate bucket credentials",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:storage:rotate"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.storage.delete",
+      "title": "Delete a bucket",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:storage:delete"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-destructive",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.workflows.list",
+      "title": "List workflows and revisions",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:workflows:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.workflows.update",
+      "title": "Create or update a workflow definition",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:workflows:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.workflows.execute",
+      "title": "Execute a workflow at a pinned immutable revision",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:workflows:execute"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-async",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.files.get",
+      "title": "Read file metadata and issue a download ticket",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:files:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.files.put",
+      "title": "Issue an upload ticket and register a file",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:files:write"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.files.delete",
+      "title": "Delete a file",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:files:delete"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-destructive",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.operations.get",
+      "title": "Poll a durable operation by its principal-bound ID",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:operations:read"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-read",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "platform.operations.cancel",
+      "title": "Cancel a durable operation",
+      "state": "not-yet-available",
+      "scopes": [
+        "platform:operations:cancel"
+      ],
+      "auth": "oauth",
+      "eventual_state": "remote-write",
+      "owner": "P-0035 Part B",
+      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+    },
+    {
+      "id": "cli.deploy.archive",
+      "title": "Archive a local repository for deploy",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Reads the caller's filesystem and builds the upload archive.",
+      "source": "dibbla-cli/internal/deploy/deploy.go:225,368-500"
+    },
+    {
+      "id": "cli.manifest.validate",
+      "title": "Validate dibbla.yaml offline",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Validates a file on the caller's disk with no platform round-trip.",
+      "source": "dibbla-cli/internal/cmd/manifestcmd/validate.go:24-42"
+    },
+    {
+      "id": "cli.run",
+      "title": "Run a dibbla-task.yaml pipeline",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Executes commands on the caller's machine.",
+      "source": "dibbla-cli/internal/cmd/run/run.go:30-47"
+    },
+    {
+      "id": "cli.context",
+      "title": "Switch the local CLI context",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Local state, and a model-controlled context switch is forbidden outright: the connector URL selects the installation and the OAuth grant selects user and org.",
+      "source": "dibbla-cli/internal/cmd/context/context.go:41-116"
+    },
+    {
+      "id": "cli.login",
+      "title": "Authenticate the CLI and store credentials",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Uses the OS keyring and a TTY.",
+      "source": "dibbla-cli/internal/cmd/login.go"
+    },
+    {
+      "id": "cli.update",
+      "title": "Update the CLI binary in place",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Replaces a binary on the caller's machine.",
+      "source": "dibbla-cli/internal/cmd/update"
+    }
+  ]
+}

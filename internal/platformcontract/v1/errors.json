@@ -1,0 +1,57 @@
+{
+  "contract_version": "1.0.0",
+  "kind": "dibbla.platform.errors",
+  "description": "The one error envelope every Dibbla platform surface returns. Its whole purpose is that a caller can tell five different failures apart without any of them leaking what the caller is not entitled to know.",
+  "envelope": {
+    "fields": [
+      { "name": "code", "type": "string", "required": true, "summary": "Stable machine code from the registry below. Never a free-text or generated string." },
+      { "name": "message", "type": "string", "required": true, "summary": "Safe human message. Written for the caller, not copied from an upstream." },
+      { "name": "retryable", "type": "boolean", "required": true, "summary": "Whether an identical retry can succeed. A caller must never have to infer this from the code." },
+      { "name": "correlation_id", "type": "string", "required": true, "summary": "Opaque per-request ID for support. Carries no tenant information." },
+      { "name": "field_violations", "type": "array", "required": false, "summary": "Per-field caller errors: field path plus a safe reason." }
+    ],
+    "field_violation_fields": [
+      { "name": "field", "type": "string", "required": true },
+      { "name": "reason", "type": "string", "required": true }
+    ]
+  },
+  "forbidden_in_message": {
+    "summary": "These never enter an error message, at any surface. Each one has leaked from some platform at some point; the list is the reason the envelope exists at all.",
+    "items": [
+      "raw database or client process output (pg_dump/pg_restore/psql stdout or stderr)",
+      "connection strings and DSNs",
+      "request or response headers",
+      "presigned or otherwise credentialed URLs",
+      "internal hostnames, service names and cluster addresses",
+      "any token, secret value, or fragment of one",
+      "whether an object exists in another tenant"
+    ]
+  },
+  "classes": [
+    { "id": "caller", "summary": "The request was malformed or asked for something impossible. Fixable by the caller." },
+    { "id": "authorization", "summary": "The principal is known but not entitled. Never distinguishes 'absent' from 'not yours'." },
+    { "id": "absence", "summary": "The object does not exist within what this principal may see." },
+    { "id": "upstream", "summary": "A dependency failed. The dependency is never named in the message." },
+    { "id": "misconfiguration", "summary": "The platform is not configured to serve this. Operator error, not caller error." }
+  ],
+  "codes": [
+    { "code": "VALIDATION_FAILED", "class": "caller", "http": 400, "retryable": false, "summary": "The request did not satisfy the schema. Populates field_violations." },
+    { "code": "UNSUPPORTED", "class": "caller", "http": 400, "retryable": false, "summary": "A well-formed request for something this contract version does not offer." },
+    { "code": "IDEMPOTENCY_KEY_REQUIRED", "class": "caller", "http": 400, "retryable": false, "summary": "A routine write was attempted without an idempotency key." },
+    { "code": "IDEMPOTENCY_KEY_CONFLICT", "class": "caller", "http": 409, "retryable": false, "summary": "The key was reused with different parameters." },
+    { "code": "MISSING_TOKEN", "class": "authorization", "http": 401, "retryable": false, "summary": "No credential was presented. Answered with a WWW-Authenticate challenge pointing at protected-resource metadata." },
+    { "code": "INVALID_TOKEN", "class": "authorization", "http": 401, "retryable": false, "summary": "The credential failed issuer, audience, resource, client, expiry, not-before or signature validation. Deliberately one code: which check failed is not the caller's business." },
+    { "code": "INSUFFICIENT_SCOPE", "class": "authorization", "http": 403, "retryable": false, "summary": "The grant is valid but lacks the exact scope. Names the required scope, because that is what the user consents to next." },
+    { "code": "FORBIDDEN", "class": "authorization", "http": 403, "retryable": false, "summary": "Role, entitlement or per-object authorization denied the action." },
+    { "code": "CONFIRMATION_REQUIRED", "class": "authorization", "http": 403, "retryable": false, "summary": "A destructive action was attempted without a bound, redeemed confirmation." },
+    { "code": "CONFIRMATION_INVALID", "class": "authorization", "http": 403, "retryable": false, "summary": "The confirmation was changed, expired, reused, concurrently redeemed, differently authorized or revoked." },
+    { "code": "NOT_FOUND", "class": "absence", "http": 404, "retryable": false, "summary": "No such object within this principal's visibility. An object in another tenant is NOT_FOUND, never FORBIDDEN — the distinction would itself be a cross-tenant disclosure." },
+    { "code": "CONFLICT", "class": "caller", "http": 409, "retryable": false, "summary": "The object's current state does not permit this transition." },
+    { "code": "RATE_LIMITED", "class": "caller", "http": 429, "retryable": true, "summary": "Too many requests. Retry after the indicated interval." },
+    { "code": "UPSTREAM_FAILED", "class": "upstream", "http": 502, "retryable": true, "summary": "A dependency failed in a way that may not repeat." },
+    { "code": "UPSTREAM_UNAVAILABLE", "class": "upstream", "http": 503, "retryable": true, "summary": "A dependency is unreachable." },
+    { "code": "TIMEOUT", "class": "upstream", "http": 504, "retryable": true, "summary": "A dependency did not answer in time. A durable operation is returned instead wherever one exists." },
+    { "code": "NOT_CONFIGURED", "class": "misconfiguration", "http": 503, "retryable": false, "summary": "This install has not been configured to serve the capability. Operator-facing, and never implies the caller lacks access." },
+    { "code": "INTERNAL", "class": "upstream", "http": 500, "retryable": false, "summary": "An unclassified failure. Carries a correlation ID and nothing else." }
+  ]
+}

@@ -1,0 +1,245 @@
+{
+  "contract_version": "1.0.0",
+  "kind": "dibbla.platform.scopes",
+  "description": "The OAuth scopes the Dibbla platform connector grants. Composable and reviewable: one scope per capability class, never one scope per tool.",
+  "rules": {
+    "no_scope_implies_another": true,
+    "broad_write_never_substitutes_for_narrow": [
+      "platform:apps:restart",
+      "platform:apps:delete",
+      "platform:deployments:execute",
+      "platform:databases:restore",
+      "platform:databases:delete",
+      "platform:storage:rotate",
+      "platform:storage:delete",
+      "platform:workflows:execute",
+      "platform:files:delete",
+      "platform:operations:cancel"
+    ],
+    "forbidden_scope_patterns": [
+      "^platform:secrets:read-value$",
+      "^admin:",
+      "^platform:databases:sql$"
+    ],
+    "consent_defaults_to_read_only": true
+  },
+  "scopes": [
+    {
+      "name": "platform:identity:read",
+      "class": "read",
+      "summary": "Read the granted user and organization. Returns only the granted organization; it can never be used to reach another.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:apps:read",
+      "class": "read",
+      "summary": "List and inspect applications in the granted organization.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:apps:write",
+      "class": "write",
+      "summary": "Create and update applications. Routine idempotent writes only.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:apps:restart",
+      "class": "narrow-write",
+      "summary": "Restart an application. Deliberately not implied by platform:apps:write.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:apps:delete",
+      "class": "destructive",
+      "summary": "Delete an application. Requires a bound confirmation in addition to the scope.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:deployments:read",
+      "class": "read",
+      "summary": "Read deployments and their status.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:deployment-proposals:write",
+      "class": "write",
+      "summary": "Create and inspect agent-authored deployment proposals. Approve/deny/apply is absent from the toolset: P-0034 four-eyes review stays in console and CLI.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:deployments:execute",
+      "class": "narrow-write",
+      "summary": "Start a deployment. RESERVED: defined here so it can never be silently conflated with platform:apps:write, but not granted by the first public toolset.",
+      "granted_by_first_public_toolset": false,
+      "reserved_reason": "P-0035 A3 reserves deployment execution until the build/egress enforcement in Part B exists.",
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:logs:read",
+      "class": "read",
+      "summary": "Read bounded application log windows.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:secrets:metadata:read",
+      "class": "read",
+      "summary": "Read secret names and metadata. There is no scope that reads a secret value, by construction.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:secrets:write",
+      "class": "write",
+      "summary": "Set and rotate secrets. Always produces an audit record.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:databases:read",
+      "class": "read",
+      "summary": "Read database inventory and metadata. Not a query interface.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:databases:write",
+      "class": "write",
+      "summary": "Provision and update managed databases.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:databases:restore",
+      "class": "narrow-write",
+      "summary": "Restore a database from a backup. Deliberately not implied by platform:databases:write.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:databases:delete",
+      "class": "destructive",
+      "summary": "Delete a managed database. Requires a bound confirmation.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:storage:read",
+      "class": "read",
+      "summary": "Read object-storage bucket inventory and metadata.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:storage:write",
+      "class": "write",
+      "summary": "Create and update buckets and bucket-scoped credentials.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:storage:rotate",
+      "class": "narrow-write",
+      "summary": "Rotate bucket credentials. Deliberately not implied by platform:storage:write.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:storage:delete",
+      "class": "destructive",
+      "summary": "Delete a bucket or its contents. Requires a bound confirmation.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:workflows:read",
+      "class": "read",
+      "summary": "Read workflows, revisions and run history.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:workflows:write",
+      "class": "write",
+      "summary": "Create and update workflow definitions.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:workflows:execute",
+      "class": "narrow-write",
+      "summary": "Execute a workflow at a pinned immutable revision. Deliberately not implied by platform:workflows:write.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:files:read",
+      "class": "read",
+      "summary": "Read file metadata and issue principal-bound download tickets. Never returns an internal presign.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:files:write",
+      "class": "write",
+      "summary": "Issue principal-bound upload tickets and register files.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:files:delete",
+      "class": "destructive",
+      "summary": "Delete a file. Requires a bound confirmation.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:operations:read",
+      "class": "read",
+      "summary": "Poll a durable operation by its principal-bound operation ID. The ID is data, never authentication.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:operations:cancel",
+      "class": "narrow-write",
+      "summary": "Cancel a durable operation. Deliberately not implied by any write scope.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    }
+  ]
+}
