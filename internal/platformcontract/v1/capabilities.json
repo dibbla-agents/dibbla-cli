@@ -192,38 +192,38 @@
     {
       "id": "platform.identity.whoami",
       "title": "Return the granted user and organization",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:identity:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-530 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_whoami"
     },
     {
       "id": "platform.apps.list",
       "title": "List applications in the granted organization",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps_list"
     },
     {
       "id": "platform.apps.get",
       "title": "Get one application by alias",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_get"
     },
     {
       "id": "platform.apps.update",
@@ -300,14 +300,14 @@
     {
       "id": "platform.logs.read",
       "title": "Read a bounded application log window",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:logs:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_logs"
     },
     {
       "id": "platform.secrets.list",
