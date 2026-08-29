@@ -312,26 +312,38 @@
     {
       "id": "platform.secrets.list",
       "title": "List secret names and metadata",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:secrets:metadata:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secrets_list"
     },
     {
       "id": "platform.secrets.set",
       "title": "Set or rotate a secret",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool. A set on an existing name rotates it; routine write with an idempotency key.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secret_set"
+    },
+    {
+      "id": "platform.secrets.delete",
+      "title": "Delete a secret",
+      "state": "remote-write",
+      "scopes": [
+        "platform:secrets:write"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secret_delete"
     },
     {
       "id": "platform.databases.list",
