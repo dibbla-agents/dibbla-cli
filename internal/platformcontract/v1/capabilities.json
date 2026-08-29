@@ -228,26 +228,26 @@
     {
       "id": "platform.apps.update",
       "title": "Update an application's configuration",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:apps:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-535 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset: the safe configuration update — non-secret environment variables by name (merge, never replace), replicas, cpu and memory within plan; no port, login policy, OAuth scopes or free JSON, and a secret-shaped name or value is refused. Under the same idempotency ledger as restart.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update"
     },
     {
       "id": "platform.apps.restart",
       "title": "Restart an application",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:apps:restart"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-535 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset: rolling restart of an application or one named service, under an idempotency key that deploy-api's durable ledger honours (same key + same request → same answer, no second side effect; changed request → conflict; keys never alias across actor, organization or client). Requires platform:apps:restart; platform:apps:write never substitutes.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_restart"
     },
     {
       "id": "platform.apps.delete",
