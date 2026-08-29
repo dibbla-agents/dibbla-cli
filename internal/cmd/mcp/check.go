@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,12 +23,11 @@ import (
 // failure is invisible until some other tool call fails (review 2026-08-19,
 // finding A3).
 func runCommunityCheck(w io.Writer) error {
-	r := resolveMCPURL()
-	if r.URL == "" {
-		return fmt.Errorf("cannot resolve the MCP host: %s\nSet DIBBLA_MCP_URL explicitly, e.g. DIBBLA_MCP_URL=https://mcp.dibbla.com", r.Source)
+	endpoint, source, err := communityToolset.endpoint()
+	if err != nil {
+		return err
 	}
-	endpoint := r.URL + "/community"
-	fmt.Fprintf(w, "Endpoint: %s  (%s)\n", endpoint, r.Source)
+	fmt.Fprintf(w, "Endpoint: %s  (%s)\n", endpoint, source.Source)
 
 	// The source matters as much as the presence: every client config this
 	// command emits references ${DIBBLA_API_TOKEN}, so a token that resolves
@@ -44,46 +44,12 @@ func runCommunityCheck(w io.Writer) error {
 	}
 	fmt.Fprintf(w, "Token:    present (%d chars, from %s)\n", len(cfg.APIToken), tokenSource(envTok, cfg.APIToken))
 
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	init := map[string]any{
-		"protocolVersion": "2025-06-18",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "dibbla-cli", "version": "check"},
-	}
-	var initResp struct {
-		Result struct {
-			ServerInfo struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-			} `json:"serverInfo"`
-		} `json:"result"`
-	}
-	if err := rpcCall(client, endpoint, cfg.APIToken, "initialize", init, &initResp); err != nil {
+	probe, err := probeToolset(communityToolset, endpoint, cfg.APIToken)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "Server:   ✅ %s %s\n", initResp.Result.ServerInfo.Name, initResp.Result.ServerInfo.Version)
-
-	var whoResp struct {
-		Result struct {
-			IsError bool `json:"isError"`
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"result"`
-	}
-	call := map[string]any{"name": "community_whoami", "arguments": map[string]any{}}
-	if err := rpcCall(client, endpoint, cfg.APIToken, "tools/call", call, &whoResp); err != nil {
-		return err
-	}
-	var text string
-	if len(whoResp.Result.Content) > 0 {
-		text = whoResp.Result.Content[0].Text
-	}
-	if whoResp.Result.IsError {
-		return fmt.Errorf("community_whoami failed: %s", text)
-	}
-	fmt.Fprintf(w, "Identity: ✅\n\n%s", text)
+	fmt.Fprintf(w, "Server:   ✅ %s %s\n", probe.ServerName, probe.ServerVersion)
+	fmt.Fprintf(w, "Identity: ✅\n\n%s", probe.WhoamiText)
 
 	if envTok == "" {
 		fmt.Fprintf(w, "\n⚠️  The server chain works, but DIBBLA_API_TOKEN is NOT exported in this shell.\n")
@@ -104,10 +70,92 @@ func tokenSource(envTok, resolved string) string {
 	return "the credentials file"
 }
 
+// probeResult is what one initialize + whoami round-trip proves.
+type probeResult struct {
+	ServerName    string
+	ServerVersion string
+	WhoamiText    string
+	// WhoamiStructured is the tool's structuredContent when it returns one
+	// (platform_whoami does; community_whoami does not).
+	WhoamiStructured json.RawMessage
+}
+
+// probeToolset runs the MCP handshake and the toolset's whoami tool with the
+// given bearer, the shared half of every --check.
+func probeToolset(ts toolset, endpoint, token string) (*probeResult, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	init := map[string]any{
+		"protocolVersion": "2025-06-18",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "dibbla-cli", "version": "check"},
+	}
+	var initResp struct {
+		Result struct {
+			ServerInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := rpcCall(client, ts, endpoint, token, "initialize", init, &initResp); err != nil {
+		return nil, err
+	}
+	out := &probeResult{ServerName: initResp.Result.ServerInfo.Name, ServerVersion: initResp.Result.ServerInfo.Version}
+
+	var whoResp struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent json.RawMessage `json:"structuredContent"`
+		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	call := map[string]any{"name": ts.WhoamiTool, "arguments": map[string]any{}}
+	if err := rpcCall(client, ts, endpoint, token, "tools/call", call, &whoResp); err != nil {
+		return nil, err
+	}
+	if whoResp.Error != nil {
+		return nil, fmt.Errorf("%s failed: %s (JSON-RPC %d)", ts.WhoamiTool, whoResp.Error.Message, whoResp.Error.Code)
+	}
+	if len(whoResp.Result.Content) > 0 {
+		out.WhoamiText = whoResp.Result.Content[0].Text
+	}
+	if whoResp.Result.IsError {
+		return nil, fmt.Errorf("%s failed: %s", ts.WhoamiTool, out.WhoamiText)
+	}
+	out.WhoamiStructured = whoResp.Result.StructuredContent
+	return out, nil
+}
+
+// endpointError is an HTTP-level refusal from the MCP endpoint, kept typed so
+// the platform check can map the server's error code (INVALID_TOKEN,
+// INSUFFICIENT_SCOPE, …) onto the right advice.
+type endpointError struct {
+	Status  int
+	Code    string
+	Message string
+	Body    string
+	WWWAuth string
+}
+
+func (e *endpointError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("HTTP %d %s: %s", e.Status, e.Code, e.Message)
+	}
+	return fmt.Sprintf("HTTP %d: %s", e.Status, strings.TrimSpace(e.Body))
+}
+
 // rpcCall posts one JSON-RPC request and decodes the response, unwrapping SSE
 // framing when the server answers as an event stream. HTTP-level failures are
-// translated into the errors a user can act on.
-func rpcCall(client *http.Client, endpoint, token, method string, params, out any) error {
+// translated into the errors a user can act on; the platform check unwraps
+// the *endpointError beneath them for finer advice.
+func rpcCall(client *http.Client, ts toolset, endpoint, token, method string, params, out any) error {
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": method, "params": params,
 	})
@@ -134,14 +182,18 @@ func rpcCall(client *http.Client, endpoint, token, method string, params, out an
 
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted:
-	case http.StatusUnauthorized:
-		return fmt.Errorf("the endpoint rejected the token (HTTP 401) — the token is invalid or expired; run `dibbla login` and retry")
-	case http.StatusForbidden:
-		return fmt.Errorf("the endpoint refused the request (HTTP 403): %s", strings.TrimSpace(string(raw)))
-	case http.StatusNotFound:
-		return fmt.Errorf("no community toolset at this endpoint (HTTP 404) — the community is a central-install feature; customer and dev installs serve 404 here by design")
 	default:
-		return fmt.Errorf("unexpected HTTP %d from %s: %s", resp.StatusCode, endpoint, strings.TrimSpace(string(raw)))
+		ee := &endpointError{Status: resp.StatusCode, Body: string(raw), WWWAuth: resp.Header.Get("WWW-Authenticate")}
+		var env struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &env) == nil {
+			ee.Code, ee.Message = env.Error.Code, env.Error.Message
+		}
+		return describeEndpointError(ts, endpoint, ee)
 	}
 
 	payload := extractJSON(string(raw))
@@ -152,6 +204,47 @@ func rpcCall(client *http.Client, endpoint, token, method string, params, out an
 		return fmt.Errorf("cannot decode the response: %w", err)
 	}
 	return nil
+}
+
+// describeEndpointError wraps an endpointError in the sentence a user acts on.
+// The wrapped error stays reachable through errors.As.
+func describeEndpointError(ts toolset, endpoint string, ee *endpointError) error {
+	switch ee.Status {
+	case http.StatusUnauthorized:
+		if ts.StaticBearer {
+			return fmt.Errorf("the endpoint rejected the token (HTTP 401) — the token is invalid or expired; run `dibbla login` and retry%w", hidden(ee))
+		}
+		return fmt.Errorf("the endpoint rejected the token (HTTP 401 %s): %s%w", ee.Code, ee.Message, hidden(ee))
+	case http.StatusForbidden:
+		if ee.Code != "" {
+			return fmt.Errorf("the endpoint refused the request (HTTP 403 %s): %s%w", ee.Code, ee.Message, hidden(ee))
+		}
+		return fmt.Errorf("the endpoint refused the request (HTTP 403): %s%w", strings.TrimSpace(ee.Body), hidden(ee))
+	case http.StatusNotFound:
+		return fmt.Errorf("%s%w", ts.NotFoundHint, hidden(ee))
+	case http.StatusServiceUnavailable:
+		return fmt.Errorf("the endpoint cannot verify tokens right now (HTTP 503 %s): %s — the platform's auth service is unreachable; retry shortly%w", ee.Code, ee.Message, hidden(ee))
+	default:
+		return fmt.Errorf("unexpected HTTP %d from %s: %s%w", ee.Status, endpoint, strings.TrimSpace(ee.Body), hidden(ee))
+	}
+}
+
+// hidden wraps an error so it is reachable with errors.As but adds nothing to
+// the message — the sentence around it already says everything.
+func hidden(err error) error { return silent{err} }
+
+type silent struct{ err error }
+
+func (s silent) Error() string { return "" }
+func (s silent) Unwrap() error { return s.err }
+
+// asEndpointError returns the *endpointError behind err, if any.
+func asEndpointError(err error) (*endpointError, bool) {
+	var ee *endpointError
+	if errors.As(err, &ee) {
+		return ee, true
+	}
+	return nil, false
 }
 
 // extractJSON returns the first JSON document from either a plain JSON body or
