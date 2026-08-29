@@ -7,6 +7,9 @@
 //
 //	dibbla mcp community                       print config for all three clients
 //	dibbla mcp community --client claude       print just one client's form
+//
+// The platform toolset (P-0035) is OAuth-protected; `dibbla mcp platform`
+// prints its config, --login authorizes this machine, --check proves the chain.
 package mcp
 
 import (
@@ -24,18 +27,24 @@ var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Connect MCP clients (Claude Code, Codex CLI, Gemini CLI) to Dibbla's hosted MCP endpoints",
 	Long: `Dibbla hosts MCP endpoints on mcp.<domain>, one toolset per URL path.
-Authentication is your ordinary Dibbla API token as a bearer header; the
-server acts against the platform as you, so everything you can see is
-everything the agent can see — nothing more.
+The server acts against the platform as you, so everything you can see is
+everything the agent can see — nothing more. Authentication differs per
+toolset: the community toolset takes your ordinary Dibbla API token as a
+bearer header; the platform toolset is protected by OAuth, which the MCP
+client negotiates itself (or 'dibbla mcp platform --login' does for this
+machine).
 
 Subcommands:
   dibbla mcp community    print client config for the community toolset
-                          (community.dibbla.com over MCP)`,
+                          (community.dibbla.com over MCP)
+  dibbla mcp platform     print client config for the platform toolset,
+                          --login to authorize, --check to verify`,
 }
 
 // Register attaches `dibbla mcp` to root.
 func Register(root *cobra.Command) {
 	mcpCmd.AddCommand(communityCmd)
+	mcpCmd.AddCommand(platformCmd)
 	root.AddCommand(mcpCmd)
 }
 

@@ -345,3 +345,70 @@ func LookupScope(name string) (Scope, bool) {
 	}
 	return Scope{}, false
 }
+
+// Capability is one entry of v1/capabilities.json: an operation and the single
+// state it holds in the connector.
+type Capability struct {
+	ID         string   `json:"id"`
+	Title      string   `json:"title"`
+	State      string   `json:"state"`
+	Scopes     []string `json:"scopes"`
+	Auth       string   `json:"auth,omitempty"`
+	MCPToolset string   `json:"mcp_toolset,omitempty"`
+	MCPTool    string   `json:"mcp_tool,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Note       string   `json:"note,omitempty"`
+	Source     string   `json:"source,omitempty"`
+}
+
+// Capability states, as the contract spells them.
+const (
+	StateRemoteRead        = "remote-read"
+	StateRemoteWrite       = "remote-write"
+	StateRemoteDestructive = "remote-destructive"
+	StateRemoteAsync       = "remote-async"
+	StateLocalOnly         = "local-only"
+	StateNotYetAvailable   = "not-yet-available"
+)
+
+type capabilitiesDoc struct {
+	ContractVersion string       `json:"contract_version"`
+	Capabilities    []Capability `json:"capabilities"`
+}
+
+var (
+	capOnce   sync.Once
+	capLoaded capabilitiesDoc
+	capErr    error
+)
+
+func loadCapabilities() (capabilitiesDoc, error) {
+	capOnce.Do(func() {
+		capErr = json.Unmarshal(capabilitiesJSON, &capLoaded)
+	})
+	return capLoaded, capErr
+}
+
+// Capabilities returns every capability in the vendored contract, in file
+// order.
+func Capabilities() []Capability {
+	doc, err := loadCapabilities()
+	if err != nil {
+		return nil
+	}
+	return append([]Capability(nil), doc.Capabilities...)
+}
+
+// CapabilitiesInState returns the capabilities holding one state, in file
+// order. It is how a command that must describe the connector's boundary —
+// what is deliberately never remote, what is not yet remote — reads it from
+// the contract instead of keeping a list of its own.
+func CapabilitiesInState(state string) []Capability {
+	var out []Capability
+	for _, c := range Capabilities() {
+		if c.State == state {
+			out = append(out, c)
+		}
+	}
+	return out
+}
