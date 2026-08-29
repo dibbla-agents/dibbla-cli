@@ -264,26 +264,26 @@
     {
       "id": "platform.deployments.list",
       "title": "List deployments",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:deployments:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployments family: platform_deployments_list (history from the app's Dibbla-managed main branch, one commit per deploy, plus live status), platform_deployment_get (one revision) and platform_deployment_logs (the current deployment's bounded log window; needs platform:logs:read as well). Read only: no start, no rollback. Listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_deployments_list"
     },
     {
       "id": "platform.deployment_proposals.create",
       "title": "Create an agent-authored deployment proposal",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:deployment-proposals:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployment_proposals family: platform_deployment_proposal_create (a branch in the caller's push namespace, pinned at its head; title and description; an Idempotency-Key that replays to the same proposal; no environment variables, no secret values, no build options) and, under the same scope — the registry defines it as 'create and inspect' — platform_deployment_proposals_list, _get and _events. There is no approve, deny, apply, close or retry tool; the decision stays in the console (P-0034), and a test pins tools/list against one ever appearing.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_deployment_proposal_create"
     },
     {
       "id": "platform.deployments.start",
