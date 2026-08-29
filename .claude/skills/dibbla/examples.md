@@ -225,7 +225,7 @@ dibbla deploy ./ --cpu 500m --memory 512Mi -e NODE_ENV=production
 
 # Deploy with login guard
 dibbla deploy --alias my-app --require-login
-dibbla deploy --alias my-app --require-login --access-policy invite_only
+dibbla deploy --alias my-app --require-login --access-policy invite_only   # then invite people in the console: Access & users → Invite by email (app access only, no org membership)
 dibbla deploy --alias my-app --require-login --google-scopes https://www.googleapis.com/auth/drive.readonly
 ```
 

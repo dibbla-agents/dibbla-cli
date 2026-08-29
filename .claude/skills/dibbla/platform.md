@@ -377,6 +377,7 @@ backlog to drain.
 
 - Default public URL: `https://<alias>.dibbla.com`.
 - Gate access with `dibbla deploy --require-login` (any authenticated Dibbla user) plus `--access-policy invite_only` (only explicitly invited users) or `--access-policy all_members` (all org members).
+- **Inviting people to an `invite_only` app** happens in the console (app card → ⋮ → **Access & users**), not the CLI. Two buttons: **Add member** picks an existing org member; **Invite by email** admits *anyone* by address — a client, a contractor, a tester — to **this app only**. An e-mail invite never makes the person an org member: if the address already has a Dibbla account, access is live at once; if not, it is granted the first time they sign in. Do **not** invite app end users to the *organisation* (portal → Members) just to let them into an app: org membership grants console access, not app access, and a viewer-role member who only needed one app is the wrong outcome.
 - Request additional Google OAuth scopes (Drive, Calendar, etc.) via `--google-scopes`.
 - TLS certificates and routing are managed by the platform — no app-side configuration needed.
 
