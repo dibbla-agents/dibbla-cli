@@ -348,38 +348,74 @@
     {
       "id": "platform.databases.list",
       "title": "List managed databases",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_databases_list with cursor pagination. Returns only organization-owned name, PostgreSQL version, linked app, creation time, size, table count and phase; never DSN, host, user, password or secret material.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_databases_list"
+    },
+    {
+      "id": "platform.databases.get",
+      "title": "Inspect bounded database metadata",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_get. Returns the same explicit metadata allowlist as list after organization ownership validation; no schema, row data or credentials.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_get"
+    },
+    {
+      "id": "platform.databases.status",
+      "title": "Read database lifecycle status",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_status. Returns provisioning, ready, restoring or failed with only the bounded database metadata allowlist.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_status"
+    },
+    {
+      "id": "platform.databases.rows.query",
+      "title": "Run a bounded structured read-only SELECT",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:rows:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_rows_query and intentionally absent from tools/list under metadata-only platform:databases:read. The caller supplies one database, one public base table, explicit catalog-validated columns, typed eq|in|lt|lte|gt|gte|is_null filters, at most one order_by, cursor and limit — never SQL, schema, join, view, CTE, function, expression, offset or wildcard. The server builds one parametrized SELECT with a SELECT-only role and read-only transaction, and enforces 100 rows, two seconds and 256 KiB. Audit stores actor and shape but never filter or cell values.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_rows_query"
     },
     {
       "id": "platform.databases.create",
       "title": "Provision a managed database",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:databases:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_database_provision(name, app_alias?, idempotency_key). Returns a durable database_provision operation immediately; identical normalized retries replay it and changed payloads conflict. Deploy-api persists, leases and resumes the work, while the generic operation tools expose status, events, logs, output and cancel.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_provision"
     },
     {
       "id": "platform.databases.restore",
       "title": "Restore a database from a backup",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:databases:restore"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_database_restore(name, source_file_id, idempotency_key). The opaque source_file_id binds a ready immutable hash- and size-bound file object in the same organization; transfer IDs, hashes, tickets, sessions and bytes are never restore identities. Restore is create-only and returns a durable database_restore operation immediately.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_restore"
     },
     {
       "id": "platform.databases.delete",
@@ -517,7 +553,7 @@
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output: typed phase, bounded progress, cursor-paged content. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
     },
     {
       "id": "platform.operations.cancel",
@@ -527,7 +563,7 @@
         "platform:operations:cancel"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel: idempotent, valid only while the operation is cancellable, CONFLICT once it has finished; a terminal state is never rewritten."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten."
     },
     {
       "id": "cli.deploy.archive",

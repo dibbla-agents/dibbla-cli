@@ -116,15 +116,23 @@
     {
       "name": "platform:databases:read",
       "class": "read",
-      "summary": "Read database inventory and metadata. Not a query interface.",
+      "summary": "Read organization-owned database inventory and bounded status metadata. This scope is explicitly metadata-only and never grants row access.",
       "granted_by_first_public_toolset": true,
       "consent_default": true,
       "static_token_eligible": true
     },
     {
+      "name": "platform:databases:rows:read",
+      "class": "read",
+      "summary": "Read bounded rows through the server-owned structured SELECT surface. Never accepts SQL; catalog allowlists, 100 rows, two seconds, 256 KiB, a SELECT-only role and shape-only query audit are mandatory.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
       "name": "platform:databases:write",
       "class": "write",
-      "summary": "Provision and update managed databases.",
+      "summary": "Provision managed databases as durable idempotent operations.",
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
@@ -132,7 +140,7 @@
     {
       "name": "platform:databases:restore",
       "class": "narrow-write",
-      "summary": "Restore a database from a backup. Deliberately not implied by platform:databases:write.",
+      "summary": "Create a new database from an organization-bound ready immutable file object as a durable operation. Deliberately not implied by platform:databases:write.",
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
