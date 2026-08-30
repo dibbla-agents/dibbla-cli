@@ -437,7 +437,7 @@
         "platform:storage:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as platform_storage_buckets_list and platform_storage_bucket_get. Both return only tenant-owned bucket name, quota, used bytes, object count, optional deployment, four secret names, creation time and status; credentials, endpoints, MinIO details, policies and object contents cannot enter the response. Platform and connector buckets are absent from this surface.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as platform_storage_buckets_list({cursor?,limit? 1..100}) -> {items:BucketMetadata[],next_cursor?} and platform_storage_bucket_get({name}) -> BucketMetadata. BucketMetadata is exactly name, quota_bytes, used_bytes, object_count, optional deployment_alias, four secret_names, expire_days, RFC3339 created_at and status; credentials, endpoints, MinIO details, policies and object contents cannot enter the response. Both tools are read-only, non-destructive, idempotent and closed-world. Platform and connector buckets are absent from this surface.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_storage_buckets_list"
     },
@@ -449,7 +449,7 @@
         "platform:storage:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_provision. A required idempotency key binds the actor, organization, client, target and payload; exact retry replays, changed payload conflicts. The control plane creates the hard quota, lifecycle rule, bucket-scoped service account and four STORAGE_<NAME>_* secrets atomically from the caller's perspective, and never returns credential material.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_provision({name,quota_bytes?,deployment_alias?,expire_days? 0..3650,idempotency_key}) -> {bucket:BucketMetadata,replayed}. quota_bytes is an integer byte count; no size alias or free-form unit string exists. A required idempotency key binds the actor, organization, client, target and payload; exact retry replays, changed payload conflicts. The control plane creates the hard quota, lifecycle rule, bucket-scoped service account and four STORAGE_<NAME>_* secrets atomically from the caller's perspective, and never returns credential material. The tool is non-read-only, non-destructive, idempotent and closed-world.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_storage_bucket_provision"
     },
@@ -461,7 +461,7 @@
         "platform:storage:rotate"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous, idempotent platform_storage_bucket_rotate under the narrow rotate scope. The old credential is invalidated, the two credential secrets are replaced and every service in a bound deployment must accept a restart before success; there is no no_restart input. Organization-global buckets report that restart is not applicable. Credential material is never returned.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_rotate({name,idempotency_key}) -> {bucket:BucketMetadata,restarted,restart_status:accepted|not_applicable,replayed} under the narrow rotate scope. The old credential is invalidated, the two credential secrets are replaced and every service in a bound deployment must accept a restart before success; there is no no_restart input. Organization-global buckets report not_applicable. Credential material is never returned. The tool is non-read-only, non-destructive, idempotent and closed-world.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_storage_bucket_rotate"
     },
@@ -473,7 +473,7 @@
         "platform:storage:delete"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as exactly platform_storage_bucket_delete_plan and platform_storage_bucket_delete_execute. The 10-minute random request binds owner/admin subject, organization, client, grant, role, exact scope, bucket identity, current credential-free metadata, normalized force-delete effects and digest. Only the same authenticated human approves in the CSRF-protected console; MCP has no decision, direct-delete or force tool. Execute accepts only request_id, revalidates metadata, atomically claims once, then force-deletes all objects, bucket, service account, ownership and four secrets while concurrent/retried calls receive IN_PROGRESS or the same terminal result. Platform and connector buckets never enter this surface.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as exactly platform_storage_bucket_delete_plan({name}) -> {request_id,expires_at,approval_url,summary,effect_digest} and platform_storage_bucket_delete_execute({request_id}) -> stored terminal result or IN_PROGRESS. Plan is read-only, non-destructive and closed-world; execute is non-read-only, destructive, idempotent and closed-world. The 10-minute random request binds owner/admin subject, organization, client, grant, role, exact scope, bucket identity, current credential-free metadata, normalized force-delete effects and digest. Only the same authenticated human approves in the CSRF-protected console; MCP has no decision, direct-delete or force tool. Execute revalidates metadata, atomically claims once, then force-deletes all objects, bucket, service account, ownership and four secrets. Platform and connector buckets never enter this surface.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_storage_bucket_delete_execute"
     },
