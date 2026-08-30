@@ -353,33 +353,45 @@
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_databases_list. Returns only organization-owned database names; no PostgreSQL roles, connection strings or credentials.",
+      "note": "Shipped by DIB-540 as platform_databases_list with cursor pagination. Returns only organization-owned name, PostgreSQL version, linked app, creation time, size, table count and phase; never DSN, host, user, password or secret material.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_databases_list"
     },
     {
       "id": "platform.databases.get",
-      "title": "Inspect bounded database schema metadata",
+      "title": "Inspect bounded database metadata",
       "state": "remote-read",
       "scopes": [
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_get. Returns one bounded page of public tables and columns after organization ownership validation; no row data or credentials.",
+      "note": "Shipped by DIB-540 as platform_database_get. Returns the same explicit metadata allowlist as list after organization ownership validation; no schema, row data or credentials.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_database_get"
     },
     {
-      "id": "platform.databases.query",
-      "title": "Run a bounded structured read-only SELECT",
+      "id": "platform.databases.status",
+      "title": "Read database lifecycle status",
       "state": "remote-read",
       "scopes": [
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_query. The caller supplies database, table, catalog-validated columns, allowlisted filter operators and sort keys — never SQL. The server builds the SELECT with parameters, uses a SELECT-only role and read-only transaction, and enforces 100 rows and five seconds. Query audit stores shape but never filter values or returned rows; platform:databases:sql remains forbidden.",
+      "note": "Shipped by DIB-540 as platform_database_status. Returns provisioning, ready, restoring or failed with only the bounded database metadata allowlist.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_query"
+      "mcp_tool": "platform_database_status"
+    },
+    {
+      "id": "platform.databases.rows.query",
+      "title": "Run a bounded structured read-only SELECT",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:rows:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_rows_query and intentionally absent from tools/list under metadata-only platform:databases:read. The caller supplies one database, one public base table, explicit catalog-validated columns, typed eq|in|lt|lte|gt|gte|is_null filters, at most one order_by, cursor and limit — never SQL, schema, join, view, CTE, function, expression, offset or wildcard. The server builds one parametrized SELECT with a SELECT-only role and read-only transaction, and enforces 100 rows, two seconds and 256 KiB. Audit stores actor and shape but never filter or cell values.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_rows_query"
     },
     {
       "id": "platform.databases.create",
@@ -389,7 +401,7 @@
         "platform:databases:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_provision. Requires an idempotency key and returns a database-operation ID immediately; deploy-api persists, leases and resumes the work, while the generic operation tools expose status, events, logs, output and cancel.",
+      "note": "Shipped by DIB-540 as platform_database_provision(name, app_alias?, idempotency_key). Returns a durable database_provision operation immediately; identical normalized retries replay it and changed payloads conflict. Deploy-api persists, leases and resumes the work, while the generic operation tools expose status, events, logs, output and cancel.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_database_provision"
     },
@@ -401,7 +413,7 @@
         "platform:databases:restore"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_restore. Requires an idempotency key and an organization-bound ready file-broker SHA-256 hash; archive bytes move server-to-server and never through MCP or the model. Returns a durable database-operation ID.",
+      "note": "Shipped by DIB-540 as platform_database_restore(name, source_file_id, idempotency_key). The opaque source_file_id binds a ready immutable hash- and size-bound file object in the same organization; transfer IDs, hashes, tickets, sessions and bytes are never restore identities. Restore is create-only and returns a durable database_restore operation immediately.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_database_restore"
     },
