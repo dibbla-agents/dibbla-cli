@@ -348,38 +348,62 @@
     {
       "id": "platform.databases.list",
       "title": "List managed databases",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_databases_list. Returns only organization-owned database names; no PostgreSQL roles, connection strings or credentials.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_databases_list"
+    },
+    {
+      "id": "platform.databases.get",
+      "title": "Inspect bounded database schema metadata",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_get. Returns one bounded page of public tables and columns after organization ownership validation; no row data or credentials.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_get"
+    },
+    {
+      "id": "platform.databases.query",
+      "title": "Run a bounded structured read-only SELECT",
+      "state": "remote-read",
+      "scopes": [
+        "platform:databases:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-540 as platform_database_query. The caller supplies database, table, catalog-validated columns, allowlisted filter operators and sort keys — never SQL. The server builds the SELECT with parameters, uses a SELECT-only role and read-only transaction, and enforces 100 rows and five seconds. Query audit stores shape but never filter values or returned rows; platform:databases:sql remains forbidden.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_query"
     },
     {
       "id": "platform.databases.create",
       "title": "Provision a managed database",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:databases:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_database_provision. Requires an idempotency key and returns a database-operation ID immediately; deploy-api persists, leases and resumes the work, while the generic operation tools expose status, events, logs, output and cancel.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_provision"
     },
     {
       "id": "platform.databases.restore",
       "title": "Restore a database from a backup",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:databases:restore"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-540 as platform_database_restore. Requires an idempotency key and an organization-bound ready file-broker SHA-256 hash; archive bytes move server-to-server and never through MCP or the model. Returns a durable database-operation ID.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_restore"
     },
     {
       "id": "platform.databases.delete",
@@ -517,7 +541,7 @@
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output: typed phase, bounded progress, cursor-paged content. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
     },
     {
       "id": "platform.operations.cancel",
@@ -527,7 +551,7 @@
         "platform:operations:cancel"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel: idempotent, valid only while the operation is cancellable, CONFLICT once it has finished; a terminal state is never rewritten."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten."
     },
     {
       "id": "cli.deploy.archive",
