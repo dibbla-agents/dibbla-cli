@@ -444,14 +444,12 @@
     {
       "id": "platform.workflows.list",
       "title": "List workflows and revisions",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:workflows:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-539 (P-0035 Part B2) on mcp-server's /platform toolset as platform_workflows_list, platform_workflow_get, platform_workflow_revisions, platform_workflow_tools and platform_workflow_validate (validate saves nothing). Read through core's slim API under the verified principal; a workflow in another organization is NOT_FOUND."
     },
     {
       "id": "platform.workflows.update",
@@ -468,14 +466,12 @@
     {
       "id": "platform.workflows.execute",
       "title": "Execute a workflow at a pinned immutable revision",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:workflows:execute"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-539 (P-0035 Part B2/B3) as platform_workflow_execute: starts the run at HEAD asynchronously with a required idempotency_key (same key + same request replays the run, a different request under the same key is IDEMPOTENCY_KEY_CONFLICT) and returns the durable operation envelope wrapping the canonical run id. Pinning a named immutable revision is a later addition."
     },
     {
       "id": "platform.files.get",
@@ -516,26 +512,22 @@
     {
       "id": "platform.operations.get",
       "title": "Poll a durable operation by its principal-bound ID",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output: typed phase, bounded progress, cursor-paged content. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
     },
     {
       "id": "platform.operations.cancel",
       "title": "Cancel a durable operation",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:operations:cancel"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel: idempotent, valid only while the operation is cancellable, CONFLICT once it has finished; a terminal state is never rewritten."
     },
     {
       "id": "cli.deploy.archive",
