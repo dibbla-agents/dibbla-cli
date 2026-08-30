@@ -252,14 +252,14 @@
     {
       "id": "platform.apps.delete",
       "title": "Delete an application",
-      "state": "not-yet-available",
+      "state": "remote-destructive",
       "scopes": [
         "platform:apps:delete"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-destructive",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-536 (P-0035 Part B) as exactly platform_app_delete_plan and platform_app_delete_execute. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, canonical app id/alias, live generation/revision, normalized permanent effects and digest to a random 192-bit request id with a 10-minute TTL. Only the same still-owner/admin human can approve or deny on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision or direct-delete tool. Execute accepts only request_id, revalidates every binding and the live revision under the app lock, atomically redeems server-side approval before one delete/audit row, and durably replays the same terminal result (or IN_PROGRESS) without a second side effect. The request id locates state but never authenticates its holder.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_delete_execute"
     },
     {
       "id": "platform.deployments.list",
