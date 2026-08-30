@@ -511,27 +511,23 @@
     },
     {
       "id": "platform.files.get",
-      "title": "Read file metadata and issue a download ticket",
-      "state": "not-yet-available",
+      "title": "Prepare a principal-bound browser download",
+      "state": "remote-read",
       "scopes": [
         "platform:files:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status. MCP accepts only opaque source_file_id and idempotency_key, creates a principal-bound transfer intent and returns safe metadata plus a Dibbla resource/fallback link. deploy-api mints the DIB-542 one-time ticket during prepare and stores only its AEAD-encrypted envelope. The same authenticated human opens console.<domain>/connector/transfers/<transfer_id>; the server redeems that ticket outside model context, replaces the envelope with an encrypted short-lived session, and gives only that browser the Dibbla-Transfer session for direct byte-plane access. No ticket, session, byte URL, presigned URL, file content or base64 enters MCP/model context, logs or audit. The random transfer_id locates state but never authorizes it, and every actor/human read rechecks organization, user, client, grant and exact operation."
     },
     {
       "id": "platform.files.put",
-      "title": "Issue an upload ticket and register a file",
-      "state": "not-yet-available",
+      "title": "Prepare a principal-bound resumable browser upload",
+      "state": "remote-write",
       "scopes": [
         "platform:files:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_upload_prepare plus platform_file_transfer_abort; platform_file_transfer_status uses platform:files:read for safe progress. Prepare accepts only name, content_type, exact content_length, content_sha256 and idempotency_key—never a byte/base64 field—and returns a principal-bound intent with safe metadata and the authenticated fallback link. The browser verifies every declared field before it redeems the already-minted encrypted ticket outside model context, resumes from the broker offset and uploads chunks directly with Dibbla-Transfer. Completion publishes only the opaque source_file_id back to MCP. Abort is idempotent and never deletes a completed file. Ticket/session plaintext and bytes are absent from the durable intent ledger, MCP results, model context, logs and audit."
     },
     {
       "id": "platform.files.delete",
