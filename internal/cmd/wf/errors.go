@@ -137,6 +137,12 @@ func renderAPIError(err error) error {
 	if body.Error != "" {
 		msg = body.Error
 	}
+	// A delete refused while runs are in progress (DIB-453) arrives as a 409
+	// whose message already says what to do next; the generic "already exists
+	// — use update" guidance would be wrong for it.
+	if apiErr.StatusCode == 409 && strings.Contains(msg, "in progress") {
+		return fmt.Errorf("%s", msg)
+	}
 	if guidance := statusGuidance(apiErr.StatusCode); guidance != "" {
 		if msg == "" {
 			return fmt.Errorf("%s", guidance)

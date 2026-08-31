@@ -82,6 +82,48 @@ var runsOutputCmd = &cobra.Command{
 	},
 }
 
+// runsPurgeCmd is the ONLY destructive operation on run data (DIB-453):
+// admin-only (the server enforces the role — this command merely surfaces
+// it), explicitly invoked, never scheduled.
+var runsPurgeCmd = &cobra.Command{
+	Use:   "purge",
+	Short: "Permanently delete run history (admin only)",
+	Long: `Permanently delete run history older than a cutoff, without deleting the
+workflow itself. Requires the admin or owner role (enforced server-side).
+Running runs are never touched; legacy orphaned events under the name are
+swept too. To delete a whole workflow including its history, use
+` + "`dibbla wf delete`" + `.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		workflow, _ := cmd.Flags().GetString("workflow")
+		before, _ := cmd.Flags().GetString("before")
+		if workflow == "" {
+			return fmt.Errorf("--workflow is required")
+		}
+		if before == "" {
+			return fmt.Errorf("--before <date> is required")
+		}
+
+		yes, _ := cmd.Flags().GetBool("yes")
+		prompt := fmt.Sprintf("PERMANENTLY delete run history of %q older than %s? This cannot be undone.", workflow, before)
+		if !confirmAction(prompt, yes) {
+			return nil
+		}
+
+		path := "/api/wf/slim/workflows/" + workflow + "/purge?format=json&before=" + before
+		resp, err := getClient().Post(path, nil)
+		if err != nil {
+			return err
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		output.Stderr("Purged %v: runs deleted %v, events deleted %v",
+			result["workflow"], result["runs_deleted"], result["events_deleted"])
+		return nil
+	},
+}
+
 // formatRunOrigin renders the run-origin stamp for the ORIGIN column, blank
 // for runs with no stamp (the common case — hand-triggered and old-SDK runs).
 // The server projects origin_kind/origin_id only when present, so their
@@ -120,8 +162,13 @@ func init() {
 	runsListCmd.Flags().StringP("workflow", "w", "", "Filter by workflow name")
 	runsListCmd.Flags().IntP("limit", "n", 50, "Max number of runs to show (server caps at 500)")
 
+	runsPurgeCmd.Flags().String("workflow", "", "Workflow name to purge run history for")
+	runsPurgeCmd.Flags().String("before", "", "Delete run data older than this date (YYYY-MM-DD, RFC3339 or unix seconds)")
+	runsPurgeCmd.Flags().Bool("yes", false, "Skip confirmation")
+
 	runsCmd.AddCommand(runsListCmd)
 	runsCmd.AddCommand(runsOutputCmd)
+	runsCmd.AddCommand(runsPurgeCmd)
 
 	// Nest runs under `dibbla wf runs ...` for consistency with `dibbla wf logs`.
 	workflowsCmd.AddCommand(runsCmd)
