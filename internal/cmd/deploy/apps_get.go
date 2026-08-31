@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -123,7 +122,7 @@ func reportAppError(stderr io.Writer, verb, alias string, err error) int {
 		// A 404 with a server code naming another cause (the org has the
 		// checks capability disabled, an endpoint is not deployed yet) would
 		// make the hint a wrong answer.
-		if statusErr.Status == 404 && (statusErr.Code == "" || strings.Contains(statusErr.Code, "NOT_FOUND")) {
+		if statusErr.Status == 404 && (statusErr.Code == "" || statusErr.Code == "NOT_FOUND") {
 			fmt.Fprintln(stderr, "  hint: run 'dibbla apps list' to see available aliases.")
 		}
 		return statusErr.ExitCode()
