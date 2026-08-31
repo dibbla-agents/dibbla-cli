@@ -137,12 +137,10 @@ func renderAPIError(err error) error {
 	if body.Error != "" {
 		msg = body.Error
 	}
-	// The soft-delete conflicts (restore name collision, purge of a live
-	// workflow, delete with runs in progress — DIB-453) arrive as 409s whose
-	// message already says what to do next; the generic "already exists — use
-	// update" guidance would be wrong for them.
-	if apiErr.StatusCode == 409 &&
-		(strings.Contains(msg, "restore") || strings.Contains(msg, "purge") || strings.Contains(msg, "in progress")) {
+	// A delete refused while runs are in progress (DIB-453) arrives as a 409
+	// whose message already says what to do next; the generic "already exists
+	// — use update" guidance would be wrong for it.
+	if apiErr.StatusCode == 409 && strings.Contains(msg, "in progress") {
 		return fmt.Errorf("%s", msg)
 	}
 	if guidance := statusGuidance(apiErr.StatusCode); guidance != "" {
