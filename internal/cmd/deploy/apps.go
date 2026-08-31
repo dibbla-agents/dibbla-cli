@@ -90,6 +90,8 @@ func init() {
 	appsCmd.AddCommand(appsUpdateCmd)
 	appsCmd.AddCommand(appsRestartCmd)
 	appsCmd.AddCommand(appsChecksCmd)
+	appsCmd.AddCommand(appsMaintenanceCmd)
+	appsCmd.AddCommand(appsProposalsCmd)
 	appsDeleteCmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation prompt")
 	appsRestartCmd.Flags().StringVarP(&restartService, "service", "s", "",
 		"Service to restart (required); regex ^[a-z][a-z0-9-]{0,29}$")

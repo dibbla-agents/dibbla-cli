@@ -336,6 +336,38 @@ file's schema and the runtime model see
 [`.claude/skills/dibbla/manifest.md` § 22](.claude/skills/dibbla/manifest.md) and
 [`.claude/skills/dibbla/platform.md` § 8.7](.claude/skills/dibbla/platform.md).
 
+### Operate the Maintenance Agent and Proposals
+
+The CLI exposes the same maintenance run, observation receipt, proposal diff,
+decision capability and audit fields as the console API. Approval eligibility
+stays server-owned; the CLI never calculates or stores it.
+
+```bash
+dibbla apps maintenance status my-app --json
+dibbla apps maintenance enable my-app --yes
+dibbla apps maintenance run my-app --follow --json
+dibbla apps maintenance run my-app --async --idempotency-key nightly-2026-08-31
+dibbla apps maintenance runs my-app --limit 25 --json
+
+dibbla apps proposals list my-app --json
+dibbla apps proposals show my-app pr_0123456789abcdef0123 --diff --json
+dibbla apps proposals approve my-app pr_0123456789abcdef0123 --yes
+dibbla apps proposals deny my-app pr_0123456789abcdef0123 --yes
+dibbla apps proposals retry my-app pr_0123456789abcdef0123 --yes
+```
+
+`maintenance run --follow --json` emits NDJSON ending in exactly one
+`type: "summary"` object with the terminal `outcome`, complete execution read
+model and `exit_code`. Reusing an idempotency key returns and follows the same
+execution; it does not start another run.
+
+Maintenance product exit codes are `0` success/found nothing, `11` finding
+recorded, `10` budget exhausted, `12` cancelled and `13` skipped concurrently.
+All maintenance and proposal commands keep the shared transport ladder: `3`
+authentication/permission, `4` not found, `5` validation, `6` conflict, `7`
+timeout and `1` technical failure. This lets automation distinguish an
+actionable finding from a failed command without parsing prose.
+
 ### View Logs
 
 ```bash
