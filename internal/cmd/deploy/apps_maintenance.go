@@ -15,16 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Maintenance product outcomes extend the shared transport ladder. A recorded
-// finding is actionable output rather than a technical failure, but it must be
-// distinguishable from found-nothing in automation.
-const (
-	exitMaintenanceSuccess           = 0
-	exitMaintenanceBudgetExhausted   = 10
-	exitMaintenanceFindingRecorded   = 11
-	exitMaintenanceCancelled         = 12
-	exitMaintenanceSkippedConcurrent = 13
-)
+// A recorded finding is actionable output rather than a technical failure,
+// but it must be distinguishable from calm or deliberately bounded outcomes.
+const exitMaintenanceFindingRecorded = 11
 
 var maintenancePollInterval = time.Second
 var maintenancePollTimeout = 35 * time.Minute
@@ -34,6 +27,7 @@ var (
 	maintenanceChangeJSON bool
 	maintenanceChangeYes  bool
 	maintenanceRunJSON    bool
+	maintenanceRunQuiet   bool
 	maintenanceRunAsync   bool
 	maintenanceRunFollow  bool
 	maintenanceRunMode    string
@@ -91,19 +85,23 @@ status changes and, with --json, stable NDJSON ending in exactly one typed
 summary object. Reuse --idempotency-key to replay the same intent and receive
 the same execution and run ids; omit it for a fresh random key.
 
-Exit codes: 0 success/found_nothing, 11 finding_recorded, 10 budget exhausted,
-12 cancelled, 13 skipped_concurrent; 3 auth/permission, 5 validation,
-6 conflict, 7 timeout and 1 technical failure.
+Exit codes: 0 found_nothing/proposed/budget_exhausted/deliberate skipped,
+11 finding_recorded; 3 auth/permission, 5 validation, 6 conflict, 7 timeout
+and 1 unexpected/run_error.
 
 Examples:
   dibbla apps maintenance run myapp --follow --json
   dibbla apps maintenance run myapp --async --idempotency-key nightly-2026-08-31
-  dibbla apps maintenance run myapp --mode check_triage --check-run <id>`,
+  dibbla apps maintenance run myapp --mode check-triage --check-run <id>`,
 	Args: cobra.ExactArgs(1),
 	Run: func(_ *cobra.Command, args []string) {
 		cfg := config.Load()
 		requireToken(cfg)
-		os.Exit(runAppsMaintenanceRunCore(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0],
+		stdout := io.Writer(os.Stdout)
+		if maintenanceRunQuiet {
+			stdout = io.Discard
+		}
+		os.Exit(runAppsMaintenanceRunCore(stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0],
 			maintenanceRunMode, maintenanceCheckRunID, maintenanceRunKey,
 			runMode(maintenanceRunAsync, maintenanceRunFollow), maintenanceRunJSON, time.Now))
 	},
@@ -129,10 +127,12 @@ func init() {
 	appsMaintenanceRunCmd.Flags().BoolVar(&maintenanceRunAsync, "async", false, "Return as soon as dispatch is accepted")
 	appsMaintenanceRunCmd.Flags().BoolVar(&maintenanceRunFollow, "follow", false, "Follow status changes to one terminal object")
 	appsMaintenanceRunCmd.Flags().BoolVar(&maintenanceRunJSON, "json", false, "Print JSON (NDJSON with --follow)")
-	appsMaintenanceRunCmd.Flags().StringVar(&maintenanceRunMode, "mode", "nightly", "Run mode: nightly or check_triage")
-	appsMaintenanceRunCmd.Flags().StringVar(&maintenanceCheckRunID, "check-run", "", "Application Check run id (required for check_triage)")
+	appsMaintenanceRunCmd.Flags().BoolVar(&maintenanceRunQuiet, "quiet", false, "Suppress output and use only the exit code")
+	appsMaintenanceRunCmd.Flags().StringVar(&maintenanceRunMode, "mode", "nightly", "Run mode: nightly or check-triage")
+	appsMaintenanceRunCmd.Flags().StringVar(&maintenanceCheckRunID, "check-run", "", "Application Check run id (required for check-triage)")
 	appsMaintenanceRunCmd.Flags().StringVar(&maintenanceRunKey, "idempotency-key", "", "Stable key to replay this run intent")
 	appsMaintenanceRunCmd.MarkFlagsMutuallyExclusive("async", "follow")
+	appsMaintenanceRunCmd.MarkFlagsMutuallyExclusive("json", "quiet")
 	appsMaintenanceRunsCmd.Flags().IntVar(&maintenanceRunsLimit, "limit", 25, "Maximum runs to request")
 	appsMaintenanceRunsCmd.Flags().BoolVar(&maintenanceRunsJSON, "json", false, "Print the raw API document")
 
@@ -216,9 +216,12 @@ func runAppsMaintenanceRunCore(stdout, stderr io.Writer, apiURL, apiToken, alias
 		return invalidAlias(stderr, alias)
 	}
 	mode = strings.TrimSpace(mode)
+	if mode == "check-triage" {
+		mode = "check_triage"
+	}
 	checkRunID = strings.TrimSpace(checkRunID)
 	if mode != "nightly" && mode != "check_triage" {
-		fmt.Fprintln(stderr, "maintenance run mode must be nightly or check_triage")
+		fmt.Fprintln(stderr, "maintenance run mode must be nightly or check-triage")
 		return 5
 	}
 	if mode == "nightly" && checkRunID != "" {
@@ -273,12 +276,8 @@ func runAppsMaintenanceRunCore(stdout, stderr io.Writer, apiURL, apiToken, alias
 
 func maintenanceDispatchExitCode(dispatch *apps.MaintenanceDispatch) int {
 	switch dispatch.Code {
-	case "dispatched", "replayed":
+	case "dispatched", "replayed", "budget_exhausted", "skipped_concurrent":
 		return 0
-	case "budget_exhausted":
-		return exitMaintenanceBudgetExhausted
-	case "skipped_concurrent":
-		return exitMaintenanceSkippedConcurrent
 	default:
 		return 1
 	}
@@ -354,28 +353,48 @@ func printMaintenanceTerminal(stdout io.Writer, execution *apps.MaintenanceRun, 
 }
 
 func maintenanceOutcome(execution *apps.MaintenanceRun) string {
-	if execution.Status == "completed" && strings.EqualFold(execution.TerminalCode, "FINDING_RECORDED") {
+	switch strings.ToUpper(execution.TerminalCode) {
+	case "NO_FINDING", "FOUND_NOTHING":
+		return "found_nothing"
+	case "FINDING_RECORDED":
 		return "finding_recorded"
+	case "PROPOSAL_CREATED", "PROPOSED":
+		return "proposed"
+	case "BUDGET_EXHAUSTED", "BUDGET_LIMIT_REACHED":
+		return "budget_exhausted"
+	case "SKIPPED_CONCURRENT":
+		return "skipped"
+	case "CANCELLED":
+		return "cancelled"
+	case "REQUIRED_TOOL_FAILED", "REQUIRED_TOOL_MISSING", "ASSESSMENT_BLOCKED":
+		return "assessment_blocked"
+	case "RUN_DEADLINE_EXCEEDED", "MAINTENANCE_EXECUTION_FAILED",
+		"MODEL_REFUSAL", "MODEL_TIMEOUT", "MALFORMED_RESULT",
+		"REQUIRED_OUTPUT_TOO_LARGE", "INVALID_OUTCOME", "MACHINE_TOKEN_INVALID",
+		"GATEWAY_CREDENTIAL_UNAVAILABLE", "GATEWAY_USAGE_UNAVAILABLE",
+		"MODEL_TRANSPORT_ERROR", "MODEL_CONFIGURATION_ERROR", "MODEL_PROVIDER_ERROR",
+		"MODEL_NETWORK_ERROR", "MODEL_RESPONSE_FORMAT_ERROR", "RUN_ERROR":
+		return "run_error"
 	}
-	if execution.Status == "completed" && execution.TerminalCode != "" {
-		return strings.ToLower(execution.TerminalCode)
+	switch execution.Status {
+	case "skipped_concurrent":
+		return "skipped"
+	case "error":
+		return "run_error"
+	case "completed":
+		// Completed is only the storage lifecycle state. Unknown reducer codes
+		// fail closed instead of becoming a green found-nothing result.
+		return "unknown_outcome"
 	}
 	return execution.Status
 }
 
 func maintenanceExitCode(execution *apps.MaintenanceRun) int {
-	switch execution.Status {
-	case "completed":
-		if strings.EqualFold(execution.TerminalCode, "FINDING_RECORDED") {
-			return exitMaintenanceFindingRecorded
-		}
-		return exitMaintenanceSuccess
-	case "budget_exhausted":
-		return exitMaintenanceBudgetExhausted
-	case "cancelled":
-		return exitMaintenanceCancelled
-	case "skipped_concurrent":
-		return exitMaintenanceSkippedConcurrent
+	switch maintenanceOutcome(execution) {
+	case "finding_recorded":
+		return exitMaintenanceFindingRecorded
+	case "found_nothing", "proposed", "budget_exhausted", "skipped", "cancelled":
+		return 0
 	default:
 		return 1
 	}
@@ -387,8 +406,6 @@ func maintenanceIcon(code int) string {
 		return platform.Icon("✅", "[OK]")
 	case exitMaintenanceFindingRecorded:
 		return platform.Icon("🔎", "[FINDING]")
-	case exitMaintenanceBudgetExhausted:
-		return platform.Icon("⚠️", "[BUDGET]")
 	default:
 		return platform.Icon("❌", "[X]")
 	}

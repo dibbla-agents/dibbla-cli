@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 )
 
 func maintenanceRunDoc(id, status, terminalCode string) map[string]any {
@@ -180,7 +182,7 @@ func TestRunAppsMaintenanceRunFollowReplayEndsInOneSummary(t *testing.T) {
 		}
 		if doc["type"] == "summary" {
 			summaries++
-			if doc["outcome"] != "no_finding" || doc["exit_code"] != float64(0) {
+			if doc["outcome"] != "found_nothing" || doc["exit_code"] != float64(0) {
 				t.Fatalf("terminal summary wrong: %#v", doc)
 			}
 		}
@@ -193,6 +195,40 @@ func TestRunAppsMaintenanceRunFollowReplayEndsInOneSummary(t *testing.T) {
 	}
 	if summaries != 1 {
 		t.Fatalf("summary count %d", summaries)
+	}
+}
+
+func TestMaintenanceTerminalOutcomeAndExitContract(t *testing.T) {
+	tests := []struct {
+		name, status, terminalCode, outcome string
+		exitCode                            int
+	}{
+		{"found nothing", "completed", "NO_FINDING", "found_nothing", 0},
+		{"proposal", "completed", "PROPOSAL_CREATED", "proposed", 0},
+		{"finding", "completed", "FINDING_RECORDED", "finding_recorded", 11},
+		{"budget", "budget_exhausted", "BUDGET_LIMIT_REACHED", "budget_exhausted", 0},
+		{"skipped", "skipped_concurrent", "", "skipped", 0},
+		{"required tool failed", "completed", "REQUIRED_TOOL_FAILED", "assessment_blocked", 1},
+		{"required tool missing", "completed", "REQUIRED_TOOL_MISSING", "assessment_blocked", 1},
+		{"model timeout", "completed", "MODEL_TIMEOUT", "run_error", 1},
+		{"storage error", "error", "", "run_error", 1},
+		{"unknown code", "completed", "FUTURE_RESULT", "unknown_outcome", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := maintenanceRunDoc("mex_contract", tt.status, tt.terminalCode)
+			encoded, _ := json.Marshal(run)
+			var execution apps.MaintenanceRun
+			if err := json.Unmarshal(encoded, &execution); err != nil {
+				t.Fatal(err)
+			}
+			if got := maintenanceOutcome(&execution); got != tt.outcome {
+				t.Fatalf("outcome %q, want %q", got, tt.outcome)
+			}
+			if got := maintenanceExitCode(&execution); got != tt.exitCode {
+				t.Fatalf("exit %d, want %d", got, tt.exitCode)
+			}
+		})
 	}
 }
 
@@ -234,5 +270,25 @@ func TestRunAppsMaintenanceRunRejectsInvalidModeWithoutRequest(t *testing.T) {
 	}
 	if api.total() != 0 {
 		t.Fatalf("invalid local input made %d requests", api.total())
+	}
+}
+
+func TestRunAppsMaintenanceRunTranslatesDocumentedCheckTriageMode(t *testing.T) {
+	var body map[string]any
+	api := newFakeChecksAPI(t, map[string]http.HandlerFunc{
+		"POST /api/deploy/deployments/myapp/maintenance-agent/runs": func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			writeJSON(w, http.StatusCreated, dispatchDoc("dispatched", "mex_triage", false))
+		},
+	})
+	var stdout, stderr bytes.Buffer
+	code := runAppsMaintenanceRunCore(&stdout, &stderr, api.url(), "tok", "myapp", "check-triage", "acr_1", "key", runModeAsync, true, time.Now)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if body["mode"] != "check_triage" || body["check_run_id"] != "acr_1" {
+		t.Fatalf("API body = %#v", body)
 	}
 }

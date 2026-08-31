@@ -361,11 +361,11 @@ dibbla apps proposals retry my-app pr_0123456789abcdef0123 --yes
 model and `exit_code`. Reusing an idempotency key returns and follows the same
 execution; it does not start another run.
 
-Maintenance product exit codes are `0` success/found nothing, `11` finding
-recorded, `10` budget exhausted, `12` cancelled and `13` skipped concurrently.
+Maintenance product exit codes are `0` for found nothing, proposed, budget
+exhausted and deliberate skips, and `11` for a recorded actionable finding.
 All maintenance and proposal commands keep the shared transport ladder: `3`
 authentication/permission, `4` not found, `5` validation, `6` conflict, `7`
-timeout and `1` technical failure. This lets automation distinguish an
+timeout and `1` unexpected or `run_error`. This lets automation distinguish an
 actionable finding from a failed command without parsing prose.
 
 ### View Logs
