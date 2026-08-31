@@ -39,36 +39,54 @@ type MaintenanceEffectiveSettings struct {
 
 // MaintenanceRun is one execution from deploy-api's maintenance read model.
 type MaintenanceRun struct {
-	ExecutionID           string     `json:"execution_id"`
-	OrganizationID        string     `json:"organization_id,omitempty"`
-	DeploymentID          string     `json:"deployment_id,omitempty"`
-	DeploymentAlias       string     `json:"deployment_alias,omitempty"`
-	Trigger               string     `json:"trigger"`
-	Mode                  string     `json:"mode"`
-	Status                string     `json:"status"`
-	TerminalCode          string     `json:"terminal_code,omitempty"`
-	RunID                 string     `json:"run_id,omitempty"`
-	WorkflowRevision      string     `json:"workflow_revision,omitempty"`
-	ConfigRevision        string     `json:"config_revision,omitempty"`
-	ReservationID         string     `json:"reservation_id,omitempty"`
-	ToolAllowlist         []string   `json:"tool_allowlist,omitempty"`
-	Model                 string     `json:"model,omitempty"`
-	TokenAllowance        int64      `json:"token_allowance,omitempty"`
-	ToolCallLimit         int        `json:"tool_call_limit,omitempty"`
-	LeaseEpoch            int64      `json:"lease_epoch,omitempty"`
-	ActorUserID           string     `json:"actor_user_id,omitempty"`
-	CheckRunID            string     `json:"check_run_id,omitempty"`
-	UsedTokens            *int64     `json:"used_tokens,omitempty"`
-	ProposalSlotAttempted bool       `json:"proposal_slot_attempted"`
-	ProposalID            string     `json:"proposal_id,omitempty"`
-	Summary               string     `json:"summary,omitempty"`
-	Fingerprint           string     `json:"fingerprint,omitempty"`
-	EvidenceRefs          []string   `json:"evidence_refs"`
-	Deduplicated          bool       `json:"deduplicated"`
-	DeadlineAt            time.Time  `json:"deadline_at"`
-	StartedAt             *time.Time `json:"started_at,omitempty"`
-	FinishedAt            *time.Time `json:"finished_at,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
+	ExecutionID           string                   `json:"execution_id"`
+	OrganizationID        string                   `json:"organization_id,omitempty"`
+	DeploymentID          string                   `json:"deployment_id,omitempty"`
+	DeploymentAlias       string                   `json:"deployment_alias,omitempty"`
+	Trigger               string                   `json:"trigger"`
+	Mode                  string                   `json:"mode"`
+	Status                string                   `json:"status"`
+	TerminalCode          string                   `json:"terminal_code,omitempty"`
+	Outcome               string                   `json:"outcome,omitempty"`
+	RunID                 string                   `json:"run_id,omitempty"`
+	WorkflowRevision      string                   `json:"workflow_revision,omitempty"`
+	ConfigRevision        string                   `json:"config_revision,omitempty"`
+	ReservationID         string                   `json:"reservation_id,omitempty"`
+	ToolAllowlist         []string                 `json:"tool_allowlist,omitempty"`
+	Model                 string                   `json:"model,omitempty"`
+	TokenAllowance        int64                    `json:"token_allowance,omitempty"`
+	ToolCallLimit         int                      `json:"tool_call_limit,omitempty"`
+	LeaseEpoch            int64                    `json:"lease_epoch,omitempty"`
+	ActorUserID           string                   `json:"actor_user_id,omitempty"`
+	CheckRunID            string                   `json:"check_run_id,omitempty"`
+	UsedTokens            *int64                   `json:"used_tokens,omitempty"`
+	ProposalSlotAttempted bool                     `json:"proposal_slot_attempted"`
+	ProposalID            string                   `json:"proposal_id,omitempty"`
+	Summary               string                   `json:"summary,omitempty"`
+	Fingerprint           string                   `json:"fingerprint,omitempty"`
+	EvidenceRefs          []string                 `json:"evidence_refs"`
+	Finding               *MaintenanceFinding      `json:"finding,omitempty"`
+	EvidenceGaps          []MaintenanceEvidenceGap `json:"evidence_gaps"`
+	Deduplicated          bool                     `json:"deduplicated"`
+	DeadlineAt            time.Time                `json:"deadline_at"`
+	StartedAt             *time.Time               `json:"started_at,omitempty"`
+	FinishedAt            *time.Time               `json:"finished_at,omitempty"`
+	CreatedAt             time.Time                `json:"created_at"`
+}
+
+type MaintenanceFinding struct {
+	Kind             string   `json:"kind"`
+	Code             string   `json:"code"`
+	Subject          string   `json:"subject"`
+	CheckFingerprint string   `json:"check_fingerprint,omitempty"`
+	EvidenceRefs     []string `json:"evidence_refs,omitempty"`
+}
+
+type MaintenanceEvidenceGap struct {
+	Tool   string `json:"tool"`
+	Code   string `json:"code"`
+	Cause  string `json:"cause"`
+	Reason string `json:"reason"`
 }
 
 // IsTerminal reports the terminal vocabulary enforced by the server store.

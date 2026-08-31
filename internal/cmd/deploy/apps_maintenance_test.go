@@ -232,6 +232,28 @@ func TestMaintenanceTerminalOutcomeAndExitContract(t *testing.T) {
 	}
 }
 
+func TestMaintenanceTerminalNamesRequiredToolsAndPreservesFinding(t *testing.T) {
+	execution := &apps.MaintenanceRun{
+		ExecutionID: "mex_detail", Status: "completed", TerminalCode: "REQUIRED_TOOL_MISSING",
+		Outcome: "assessment_blocked", Summary: "assessment blocked by mandatory evidence gaps",
+		Finding: &apps.MaintenanceFinding{Kind: "availability", Code: "HTTP_500", Subject: "GET /health returns 500"},
+		EvidenceGaps: []apps.MaintenanceEvidenceGap{{
+			Tool: "app_source_search", Code: "TOOL_NOT_CALLED", Cause: "prompt",
+			Reason: "the deployed source must be searched; the model ended before calling the advertised tool",
+		}},
+	}
+	var output bytes.Buffer
+	if code := printMaintenanceTerminal(&output, execution, nil, runModeSync, false); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	text := output.String()
+	for _, want := range []string{"assessment_blocked", "REQUIRED_TOOL_MISSING", "app_source_search", "TOOL_NOT_CALLED", "prompt", "deployed source must be searched", "HTTP_500", "GET /health returns 500"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("terminal output omitted %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestRunAppsMaintenanceRunDistinctExitCodes(t *testing.T) {
 	cases := []struct {
 		status int
