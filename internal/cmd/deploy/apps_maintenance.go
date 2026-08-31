@@ -349,6 +349,12 @@ func printMaintenanceTerminal(stdout io.Writer, execution *apps.MaintenanceRun, 
 	if execution.ProposalID != "" {
 		fmt.Fprintf(stdout, "   proposal:    %s\n", execution.ProposalID)
 	}
+	if execution.Finding != nil {
+		fmt.Fprintf(stdout, "   finding:     %s — %s\n", execution.Finding.Code, execution.Finding.Subject)
+	}
+	for _, gap := range execution.EvidenceGaps {
+		fmt.Fprintf(stdout, "   evidence gap: %s (%s, %s) — %s\n", gap.Tool, gap.Code, gap.Cause, gap.Reason)
+	}
 	return code
 }
 
