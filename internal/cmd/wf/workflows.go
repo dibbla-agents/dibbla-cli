@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
@@ -21,6 +22,9 @@ var workflowsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all workflows",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if deleted, _ := cmd.Flags().GetBool("deleted"); deleted {
+			return listDeletedWorkflows()
+		}
 		resp, err := getClient().Get("/api/wf/slim/workflows?format=json")
 		if err != nil {
 			return err
@@ -186,6 +190,66 @@ var workflowsDeleteCmd = &cobra.Command{
 			return err
 		}
 		output.Stderr("Deleted workflow %v (revisions deleted: %v)", result["name"], result["revisions_deleted"])
+		return nil
+	},
+}
+
+// listDeletedWorkflows renders soft-deleted workflows still inside their
+// 30-day restore window (DIB-453).
+func listDeletedWorkflows() error {
+	resp, err := getClient().Get("/api/wf/slim/workflows?deleted=true&format=json")
+	if err != nil {
+		return err
+	}
+	var result map[string]interface{}
+	if err := parseJSON(resp.Body, &result); err != nil {
+		return err
+	}
+	if flagOutput == "json" {
+		return output.PrintJSON(result)
+	}
+	if flagOutput == "yaml" {
+		return output.PrintYAML(result)
+	}
+	deletedList, _ := result["deleted_workflows"].([]interface{})
+	if len(deletedList) == 0 {
+		output.Stderr("No recently deleted workflows (restore window is 30 days)")
+		return nil
+	}
+	headers := []string{"NAME", "DELETED", "DELETED_BY", "REVISIONS"}
+	var rows [][]string
+	for _, d := range deletedList {
+		dw := d.(map[string]interface{})
+		name, _ := dw["name"].(string)
+		deletedBy, _ := dw["deleted_by"].(string)
+		deletedAt := ""
+		if ts, ok := dw["deleted_at"].(float64); ok {
+			deletedAt = time.Unix(int64(ts), 0).Format("2006-01-02 15:04")
+		}
+		rows = append(rows, []string{name, deletedAt, deletedBy, fmt.Sprintf("%v", dw["revisions"])})
+	}
+	output.PrintTable(headers, rows)
+	return nil
+}
+
+var workflowsRestoreCmd = &cobra.Command{
+	Use:   "restore <name>",
+	Short: "Restore a deleted workflow (restorable for 30 days after deletion)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := "/api/wf/slim/workflows/" + args[0] + "/restore?format=json"
+		if as, _ := cmd.Flags().GetString("as"); as != "" {
+			path += "&as=" + as
+		}
+		resp, err := getClient().Post(path, nil)
+		if err != nil {
+			return err
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		output.Stderr("Restored workflow %v", result["name"])
 		return nil
 	},
 }
@@ -549,6 +613,8 @@ func init() {
 	workflowsUpdateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsUpdateCmd.Flags().Bool("force", false, "Skip If-Match concurrency check and overwrite unconditionally")
 	workflowsDeleteCmd.Flags().Bool("yes", false, "Skip confirmation")
+	workflowsListCmd.Flags().Bool("deleted", false, "List deleted workflows still inside their 30-day restore window")
+	workflowsRestoreCmd.Flags().String("as", "", "Restore under a new name (when the original name has been retaken)")
 	workflowsValidateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsExecuteCmd.Flags().String("data", "", "JSON data to send")
 	workflowsExecuteCmd.Flags().StringP("file", "F", "", "JSON data file")
@@ -563,6 +629,7 @@ func init() {
 	workflowsCmd.AddCommand(workflowsCreateCmd)
 	workflowsCmd.AddCommand(workflowsUpdateCmd)
 	workflowsCmd.AddCommand(workflowsDeleteCmd)
+	workflowsCmd.AddCommand(workflowsRestoreCmd)
 	workflowsCmd.AddCommand(workflowsValidateCmd)
 	workflowsCmd.AddCommand(workflowsExecuteCmd)
 	workflowsCmd.AddCommand(workflowsURLCmd)
