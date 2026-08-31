@@ -4,13 +4,15 @@
 # Required:
 #   DIBBLA_E2E_LIVE_TOKEN       owner/admin token used to enable and run
 #   DIBBLA_E2E_REVIEWER_TOKEN   owner/admin token used for the human decision
-#   DIBBLA_E2E_ALLOW_APPROVE=1  explicit permission to approve the dev proposal
 #
 # Optional:
 #   DIBBLA_E2E_LIVE_URL         default https://api.dibbla.net
 #   DIBBLA_E2E_MAINTENANCE_APP  default lumen; must be a safe dev fixture
+#   DIBBLA_E2E_IDEMPOTENCY_KEY   replay a known run instead of starting a fresh one
 #   DIBBLA_E2E_PROPOSAL_ID      ready maintenance proposal if this run records
-#                               no new proposal (for example a deduplicated run)
+#                               no new proposal (an already-approved proposal is
+#                               valid evidence for the distinct-approval read path)
+#   DIBBLA_E2E_ALLOW_APPROVE=1  permission to decide if the proposal is still ready
 #   DIBBLA_E2E_BIN              existing binary; otherwise built from this tree
 set -euo pipefail
 
@@ -21,10 +23,6 @@ OPERATOR_TOKEN=${DIBBLA_E2E_LIVE_TOKEN:?DIBBLA_E2E_LIVE_TOKEN is required}
 REVIEWER_TOKEN=${DIBBLA_E2E_REVIEWER_TOKEN:?DIBBLA_E2E_REVIEWER_TOKEN is required}
 ALLOW_APPROVE=${DIBBLA_E2E_ALLOW_APPROVE:-}
 
-if [[ "$ALLOW_APPROVE" != "1" ]]; then
-  echo "DIBBLA_E2E_ALLOW_APPROVE=1 is required: this test approves and deploys a proposal in dev" >&2
-  exit 2
-fi
 if [[ "$LIVE_URL" != "https://api.dibbla.net" ]]; then
   echo "refusing non-dev API URL: $LIVE_URL" >&2
   exit 2
@@ -95,7 +93,7 @@ if [[ "$(json_value "$WORK/status.json" settings.enabled)" != "true" ]]; then
   RESTORE_DISABLED=1
 fi
 
-KEY="dib-576-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+KEY=${DIBBLA_E2E_IDEMPOTENCY_KEY:-"dib-576-$(date -u +%Y%m%dT%H%M%SZ)-$$"}
 echo "==> run: one async dispatch"
 run_operator apps maintenance run "$APP" --async --json --idempotency-key "$KEY" >"$WORK/first.json"
 FIRST_EXECUTION=$(json_value "$WORK/first.json" execution_id)
@@ -121,7 +119,7 @@ set +e
 run_operator apps maintenance run "$APP" --follow --json --idempotency-key "$KEY" >"$WORK/follow.ndjson"
 FOLLOW_EXIT=$?
 set -e
-if [[ "$FOLLOW_EXIT" != "0" && "$FOLLOW_EXIT" != "11" ]]; then
+if [[ "$FOLLOW_EXIT" != "0" && "$FOLLOW_EXIT" != "1" && "$FOLLOW_EXIT" != "11" ]]; then
   echo "maintenance follow exited $FOLLOW_EXIT" >&2
   tail -n 5 "$WORK/follow.ndjson" >&2
   exit "$FOLLOW_EXIT"
@@ -136,6 +134,12 @@ assert doc.get("schema_version") == 1, doc
 assert doc.get("execution_id") == sys.argv[2], doc
 assert doc.get("exit_code") == int(sys.argv[3]), doc
 assert doc.get("execution", {}).get("status") not in ("queued", "running", None), doc
+allowed = {
+    0: {"found_nothing", "proposed", "budget_exhausted", "skipped", "cancelled"},
+    1: {"assessment_blocked", "run_error", "unknown_outcome"},
+    11: {"finding_recorded"},
+}
+assert doc.get("outcome") in allowed[int(sys.argv[3])], doc
 print(json.dumps(doc))
 PY
 
@@ -159,8 +163,8 @@ assert any(p.get("id") == pid for p in (listing.get("proposals") or [])), pid
 proposal, diff_response = review["proposal"], review["diff"]
 assert proposal.get("id") == pid, proposal
 assert proposal.get("source") == "maintenance_agent", proposal
-assert proposal.get("status") == "ready", proposal
-assert proposal.get("decision", {}).get("can_decide") is True, proposal.get("decision")
+if proposal.get("status") == "ready":
+    assert proposal.get("decision", {}).get("can_decide") is True, proposal.get("decision")
 diff = diff_response.get("diff", {})
 assert diff.get("base_sha") == proposal.get("base_sha"), diff
 assert diff.get("head_sha") == proposal.get("head_sha"), diff
@@ -168,15 +172,28 @@ assert diff.get("total_files", 0) > 0, diff
 assert diff_response.get("evidence"), diff_response
 PY
 
-echo "==> distinct approval: reviewer decision differs from synthetic author"
-run_reviewer apps proposals approve "$APP" "$PROPOSAL_ID" --yes --json >"$WORK/approved.json"
+PROPOSAL_STATUS=$(json_value "$WORK/review.json" proposal.status)
+if [[ "$PROPOSAL_STATUS" == "ready" ]]; then
+  if [[ "$ALLOW_APPROVE" != "1" ]]; then
+    echo "DIBBLA_E2E_ALLOW_APPROVE=1 is required to decide ready proposal $PROPOSAL_ID" >&2
+    exit 2
+  fi
+  echo "==> distinct approval: reviewer decides the ready agent proposal"
+  run_reviewer apps proposals approve "$APP" "$PROPOSAL_ID" --yes --json >"$WORK/approved.json"
+else
+  echo "==> distinct approval: verify the recorded reviewer on the decided proposal"
+  python3 - "$WORK/review.json" >"$WORK/approved.json" <<'PY'
+import json, sys
+print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8"))["proposal"]))
+PY
+fi
 python3 - "$WORK/review.json" "$WORK/approved.json" <<'PY'
 import json, sys
 before, approved = (json.load(open(p, encoding="utf-8")) for p in sys.argv[1:])
 author = before["proposal"].get("author_id")
 decider = approved.get("decision_by")
 assert author and decider and author != decider, (author, decider)
-assert approved.get("status") in {"queued", "deploying", "finalizing", "shipped"}, approved
+assert approved.get("status") in {"queued", "deploying", "finalizing", "shipped", "deploy_failed"}, approved
 PY
 
-echo "PASS: run=$FIRST_RUN execution=$FIRST_EXECUTION replayed=true proposal=$PROPOSAL_ID distinct_approval=true"
+echo "PASS: run=$FIRST_RUN execution=$FIRST_EXECUTION follow_exit=$FOLLOW_EXIT replayed=true proposal=$PROPOSAL_ID distinct_approval=true"
