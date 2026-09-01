@@ -373,6 +373,81 @@ backlog to drain.
 
 ---
 
+## 8.8. Maintenance agent — the runtime model
+
+An opt-in overnight agent per app. It reads the app's logs, the source that
+shipped, and recent application-check history, then leaves one of three typed
+answers: nothing to report, a recorded finding, or a concrete code **proposal**
+that a *different* human must approve. The agent never writes `main`, never
+approves itself, and never carries a user token.
+
+Commands: `dibbla apps maintenance status|enable|disable|run|runs` and
+`dibbla apps proposals list|show|approve|deny|retry`. Flag-level detail is in
+[reference.md](reference.md).
+
+### Two switches, both off by default
+
+1. **Org capability.** Feature-gated per organization. When it is off, every
+   maintenance call is a `404` with `MAINTENANCE_AGENT_NOT_FOUND` (CLI exit 4).
+   That is the rollout, not a missing app — do not send the user to `apps list`.
+2. **Per-app enablement.** `dibbla apps maintenance enable <alias>` (owner/admin)
+   turns this app on. Shipping code does not start anything. `disable` stops new
+   runs and keeps history readable.
+
+If a user reports "I asked for a run and nothing happens", check these two
+switches in that order.
+
+### Budget
+
+Maintenance draws from the organization's **shared Application Check token
+pool**. A run that hits the ceiling terminalises as `budget_exhausted`
+(`BUDGET_EXHAUSTED` / `BUDGET_LIMIT_REACHED`) and the CLI exits **0**. That is
+the ceiling working, not an agent failure and not a finding about the app. Do
+not map it to `run_error`.
+
+### Run contract
+
+`dibbla apps maintenance run <alias>` starts one execution. Reuse
+`--idempotency-key` to replay the same intent; a second call with the same key
+returns and follows the original execution (`replayed: true`) instead of
+starting another run and spending again.
+
+`--follow --json` is NDJSON ending in exactly one `type: "summary"` object with
+`outcome` and `exit_code`. Sync `--json` is one document with the same fields
+next to `execution`.
+
+Product exits: `0` for `found_nothing` / `proposed` / `budget_exhausted` /
+`skipped` / `cancelled`; `11` for `finding_recorded`; `1` for `run_error` /
+`assessment_blocked` / `unknown_outcome`. Transport keeps `3/4/5/6/7/1`.
+
+The execution read model is the observation receipt: `summary`, `fingerprint`,
+`evidence_refs`, `proposal_id`, `deduplicated`, `used_tokens`. A known
+fingerprint can revalidate without pretending the night was empty.
+
+`--mode check-triage` requires `--check-run`; `nightly` (the default) rejects
+that flag. Unknown modes are exit 5 with zero requests.
+
+### Proposals and four-eyes
+
+A proposal is a server-owned change in the app's deploy queue. Show renders the
+API `decision` object (`can_decide`, `reason`, `message`); the CLI never
+computes eligibility. Approve/deny/retry POST to the decision endpoint. The
+maintenance author cannot approve its own proposal. At most one proposal per
+app per day: a second finding is recorded, it does not open a second change.
+
+`--diff --json` emits one `type: "proposal_review"` document whose `proposal`
+and `diff` fields are the unmodified API documents.
+
+### What it never does
+
+- Deploy on its own.
+- Carry a user API token. The run uses a short-lived workload identity bound
+  to this app, execution and lease.
+- Publish raw logs, credential diffs or customer data in a result document.
+- Spend past the shared budget as a policy.
+
+---
+
 ## 9. Public URL & access control
 
 - Default public URL: `https://<alias>.dibbla.com`.
