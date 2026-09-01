@@ -167,6 +167,25 @@ Inspect and run an app's **application checks** — the assertions in `dibbla-ch
 -   **Errors:** the org capability being off is a `404` with `APPLICATION_CHECKS_DISABLED` (exit 4). If a user says "I added the file and nothing happens", check the org capability first and the per-app `enable` second.
 -   **Example:** `dibbla apps checks run myapp --check home-page` — **CI:** `dibbla apps checks run myapp --quiet || exit $?`
 
+#### `apps maintenance`
+
+Inspect, enable and run an app's **maintenance agent** — an opt-in overnight look at logs, source and check history. It never deploys on its own. The alias is always positional.
+
+-   **`apps maintenance status <alias> [--json]`** — effective settings and the latest run. Org capability off is `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit **4**), not a missing alias.
+-   **`apps maintenance enable|disable <alias> [--yes]`** — per-app switch. Requires owner/admin. Shipping code does not start anything; this command does.
+-   **`apps maintenance run <alias> [--async|--follow] [--quiet|--json] [--mode nightly|check-triage] [--check-run <id>] [--idempotency-key <key>]`** — start one run. **Product exits:** `0` found_nothing/proposed/budget_exhausted/skipped/cancelled, `11` finding_recorded. Transport keeps `1/3/4/5/6/7`. `--follow --json` is NDJSON with exactly one terminal `summary`. Reusing `--idempotency-key` replays the original execution.
+-   **`apps maintenance runs <alias> [--limit N] [--json]`** — history, newest first, with summary/fingerprint/proposal when present.
+-   **Example:** `dibbla apps maintenance run myapp --follow --json`
+
+#### `apps proposals`
+
+List, inspect and decide the app's **change queue**. Eligibility is the API `decision` object — the CLI never computes who may approve. The maintenance author cannot approve its own proposal.
+
+-   **`apps proposals list <alias> [--json]`** — empty queue is exit 0.
+-   **`apps proposals show <alias> <proposal-id> [--diff] [--json]`** — `--diff --json` is one `type: proposal_review` document with unmodified `proposal` and `diff` API objects.
+-   **`apps proposals approve|deny|retry <alias> <proposal-id> [--yes]`** — POST to the server-owned decision endpoint. Typed conflict (e.g. `PROPOSAL_NOT_READY`) is exit 6.
+-   **Example:** `dibbla apps proposals show myapp pr_0123456789abcdef0123 --diff --json`
+
 #### `dibbla-checks.yaml` (the file those commands operate on)
 
 Lives at the app root beside `dibbla.yaml`, and is promoted into an immutable, content-addressed snapshot by a **successful** deploy — editing it in the repo changes nothing until the next deploy. `version: 1`, then `checks:` (1–100), each with `id` (`^[a-z][a-z0-9-]*$`), `name`, **`description`** and `kind`, plus optional `schedule: nightly` (the only value; no raw cron), `failure_threshold` (default 2), `cooldown` (default 30m) and `run_deadline` (default 2m). Unknown keys are a rejected file — and so is a **missing** one: `description` is required on every check in all four kinds, and a file without it is rejected at deploy time, before the build, with `APPLICATION_CHECKS_DESCRIPTION_REQUIRED` naming the check that lacks it.

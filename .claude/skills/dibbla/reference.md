@@ -726,6 +726,94 @@ dibbla apps checks run myapp --follow --json | jq -c 'select(.type=="summary")'
 
 ---
 
+## apps maintenance
+
+Operate an app's maintenance agent. Alias is always positional. The runtime
+model — two switches, shared token pool, typed outcomes, four-eyes — is
+[platform.md § 8.8](platform.md).
+
+**Exit codes are the product outcome.** `run` exits 0 for
+found_nothing/proposed/budget_exhausted/skipped/cancelled, 11 for
+finding_recorded, 1 for run_error/assessment_blocked/unknown_outcome. Transport
+keeps 3 auth, 4 not found (`MAINTENANCE_AGENT_NOT_FOUND` included — not "unknown
+alias"), 5 validation, 6 conflict, 7 timeout.
+
+### apps maintenance status
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps maintenance status <alias>` |
+| **Flags** | `--json` — print the raw API document (unknown fields preserved) |
+| **Output** | enabled/disabled, deployment id, model, overnight cadence, last run id/status/terminal code |
+
+### apps maintenance enable / disable
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps maintenance enable <alias>` / `dibbla apps maintenance disable <alias>` |
+| **Flags** | `-y`, `--yes` — skip confirmation. `--json` — raw acknowledgement |
+| **Requires** | owner/admin. The write carries the server's `app_version` |
+| **Errors** | org off → 404 `MAINTENANCE_AGENT_NOT_FOUND` exit 4. Concurrent edit → 409 exit 6 |
+| **Non-interactive** | Without a TTY and without `--yes`: exit 5, zero requests |
+
+### apps maintenance run
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps maintenance run <alias>` |
+| **Flags** | `--async` \| `--follow` — mutually exclusive. `-q`/`--quiet` \| `--json` — mutually exclusive. `--mode nightly\|check-triage` (default nightly). `--check-run <id>` required for check-triage, rejected on nightly. `--idempotency-key <key>` — reuse to replay the same execution |
+| **Output** | Default: poll to terminal, print outcome + summary/fingerprint/proposal. `--follow --json`: NDJSON with `execution_created`, `execution_status` lines, exactly one terminal `summary` carrying `outcome` + `exit_code`. Sync `--json`: one document with those fields next to `execution` |
+| **Replay** | Same key → `replayed: true`, original execution_id, no second spend |
+
+**Examples:**
+```bash
+dibbla apps maintenance run myapp --follow --json | jq -c 'select(.type=="summary")'
+dibbla apps maintenance run myapp --async --idempotency-key nightly-2026-09-01
+```
+
+### apps maintenance runs
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps maintenance runs <alias>` |
+| **Flags** | `--limit <N>` 1–100 (default 25; out of range exit 5). `--json` — raw API page |
+
+---
+
+## apps proposals
+
+Review and decide deployment proposals. Approval eligibility is **never**
+derived by the CLI: `show` renders the API `decision` object;
+approve/deny/retry post to the server-owned endpoint.
+
+### apps proposals list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps proposals list <alias>` |
+| **Flags** | `--json` — raw API document |
+| **Notes** | Empty queue is exit 0 |
+
+### apps proposals show
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps proposals show <alias> <proposal-id>` |
+| **Flags** | `--diff` — include the exact server-generated diff and evidence. `--json` |
+| **JSON** | `--json` alone: proposal API document. `--diff --json`: `{"schema_version":1,"type":"proposal_review","proposal":{…},"diff":{…}}` with unmodified API objects |
+| **Validation** | proposal id must match `pr_[a-zA-Z0-9_-]{1,128}` (exit 5, zero requests) |
+
+### apps proposals approve / deny / retry
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps proposals approve\|deny\|retry <alias> <proposal-id>` |
+| **Flags** | `-y`, `--yes`. `--json` — proposal document after the decision |
+| **Errors** | typed conflict e.g. `PROPOSAL_NOT_READY` → exit 6. Author approving own maintenance proposal is refused by the server |
+| **Non-interactive** | Without a TTY and without `--yes`: exit 5, zero requests |
+
+---
+
 ## logs
 
 Print runtime logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes and exits. **This is the primary way to debug a deployed app without redeploying** — when a deploy succeeds but the app 500s, errors out, or behaves unexpectedly, run `dibbla logs <app>` first rather than adding `console.log` and redeploying.
@@ -1445,6 +1533,8 @@ Alias: `fn`.
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port, login guard |
 | Apps | `dibbla apps delete <alias>` | Delete deployment |
+| Apps | `dibbla apps maintenance status\|enable\|run\|runs <alias>` | Maintenance agent |
+| Apps | `dibbla apps proposals list\|show\|approve\|deny\|retry` | Change queue |
 | Db | `dibbla db list [-q]` | List databases |
 | Db | `dibbla db create [name]` | Create database |
 | Db | `dibbla db delete <name>` | Delete database |
