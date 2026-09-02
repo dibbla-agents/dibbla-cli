@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/platformcontract"
 )
 
 // uploadServer is the platform's byte route: it accepts a chunk only at the
@@ -244,5 +246,36 @@ func TestPushBytesRefusesAnImpossiblePlan(t *testing.T) {
 	_, err := pushBytes(io.Discard, writeTemp(t, bytes.Repeat([]byte("q"), 32)), "tok", view)
 	if err == nil || !strings.Contains(err.Error(), "cannot be chunked") {
 		t.Fatalf("impossible plan: %v", err)
+	}
+}
+
+// The scope this command tells a user to ask for is read from the vendored
+// contract, not written in the source. A scope rename would otherwise leave
+// the advice pointing at something the issuer no longer knows.
+func TestUploadScopeRequestComesFromTheContract(t *testing.T) {
+	got := uploadScopeRequest()
+	if got == "" || !strings.Contains(got, ":files:") || !strings.Contains(got, ":identity:") {
+		t.Fatalf("scope request = %q", got)
+	}
+	// Every scope named must exist in the registry.
+	for _, name := range strings.Fields(got) {
+		if _, ok := platformcontract.LookupScope(name); !ok {
+			t.Fatalf("%q is not a scope the contract defines", name)
+		}
+	}
+	// And it must be exactly what the capability this command drives requires.
+	var want []string
+	for _, c := range platformcontract.Capabilities() {
+		if c.ID == uploadCapability {
+			want = c.Scopes
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("the contract has no row for the capability this command drives")
+	}
+	for _, name := range want {
+		if !strings.Contains(got, name) {
+			t.Fatalf("scope request %q omits %q, which %s requires", got, name, uploadCapability)
+		}
 	}
 }

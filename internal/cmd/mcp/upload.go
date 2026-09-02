@@ -29,12 +29,49 @@ import (
 	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/platformcontract"
 )
 
 // errChunkInterrupted is a chunk whose outcome the client does not know: the
 // request left, and no answer came back. It is not a failure — it is the state
 // the resume protocol exists for.
 var errChunkInterrupted = errors.New("the connection dropped mid-chunk")
+
+// uploadCapability is the contract row this command drives. The scope it needs
+// is read from that row rather than written here — the same rule the rest of
+// this CLI follows, and the reason a scope rename cannot leave the advice in
+// these errors pointing at a scope that no longer exists.
+const uploadCapability = "platform.files.put"
+
+// uploadScopeRequest is the --login scope a grant needs to move bytes. An
+// error that names the problem without naming the fix is half an error, so
+// this is what the failures below print.
+func uploadScopeRequest() string {
+	scopes := []string{}
+	for _, c := range platformcontract.Capabilities() {
+		if c.ID == uploadCapability {
+			scopes = append(scopes, c.Scopes...)
+		}
+	}
+	if len(scopes) == 0 {
+		// The vendored contract is verified at build time, so this is
+		// unreachable; degrade to the identity scope rather than print an
+		// empty --scope the user would have to guess at.
+		return identityScope()
+	}
+	return strings.Join(append([]string{identityScope()}, scopes...), " ")
+}
+
+// identityScope is the one scope every grant carries, taken from the
+// capability that defines it.
+func identityScope() string {
+	for _, c := range platformcontract.Capabilities() {
+		if c.ID == "platform.identity.whoami" && len(c.Scopes) > 0 {
+			return c.Scopes[0]
+		}
+	}
+	return ""
+}
 
 // chunkBytes is what one PUT carries. Small enough that a dropped connection
 // costs little, large enough that a 50 MB archive is a handful of requests.
@@ -94,7 +131,7 @@ func runPlatformUpload(w io.Writer, path string) error {
 	}
 	fmt.Fprintf(w, "Intent:    %s %s  (transfer %s)\n", platform.Icon("✅", "[OK]"), view.Status, view.TransferID)
 	if view.Upload == nil {
-		return fmt.Errorf("this grant prepared the intent but got no upload plan — the bytes would have to go through a browser at %s. Re-run `dibbla mcp platform --login` for a grant with platform:files:write, or open that link", view.FallbackURL)
+		return fmt.Errorf("this grant prepared the intent but got no upload plan, so the bytes would have to go through a browser at %s.\nTo upload from here instead, get a grant that may write files:\n  dibbla mcp platform --login --scope %q\nA write scope is never granted by default — tick it on the consent page", view.FallbackURL, uploadScopeRequest())
 	}
 
 	final, err := pushBytes(w, path, token, view)
@@ -305,7 +342,7 @@ func uploadAdvice(status int, raw []byte) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("the platform rejected the token mid-upload (HTTP 401): %s — run `dibbla mcp platform --login` and retry", text)
 	case http.StatusForbidden:
-		return fmt.Errorf("this grant does not cover file uploads (HTTP 403): %s — it needs platform:files:write", text)
+		return fmt.Errorf("this grant does not cover file uploads (HTTP 403): %s\nRun `dibbla mcp platform --login --scope %q` and tick the write scope on the consent page", text, uploadScopeRequest())
 	case http.StatusNotFound:
 		return fmt.Errorf("the transfer is gone, or the grant behind it was revoked mid-upload (HTTP 404): %s", text)
 	case http.StatusGone:
