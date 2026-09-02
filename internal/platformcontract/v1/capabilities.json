@@ -199,7 +199,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-530 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_whoami"
+      "mcp_tool": "platform_whoami",
+      "production": "live"
     },
     {
       "id": "platform.apps.list",
@@ -211,7 +212,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_apps_list"
+      "mcp_tool": "platform_apps_list",
+      "production": "live"
     },
     {
       "id": "platform.apps.get",
@@ -223,7 +225,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_get"
+      "mcp_tool": "platform_app_get",
+      "production": "live"
     },
     {
       "id": "platform.apps.update",
@@ -235,7 +238,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-535 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset: the safe configuration update — non-secret environment variables by name (merge, never replace), replicas, cpu and memory within plan; no port, login policy, OAuth scopes or free JSON, and a secret-shaped name or value is refused. Under the same idempotency ledger as restart.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_config_update"
+      "mcp_tool": "platform_app_config_update",
+      "production": "live"
     },
     {
       "id": "platform.apps.restart",
@@ -247,7 +251,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-535 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset: rolling restart of an application or one named service, under an idempotency key that deploy-api's durable ledger honours (same key + same request → same answer, no second side effect; changed request → conflict; keys never alias across actor, organization or client). Requires platform:apps:restart; platform:apps:write never substitutes.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_restart"
+      "mcp_tool": "platform_app_restart",
+      "production": "live"
     },
     {
       "id": "platform.apps.delete",
@@ -271,7 +276,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployments family: platform_deployments_list (history from the app's Dibbla-managed main branch, one commit per deploy, plus live status), platform_deployment_get (one revision) and platform_deployment_logs (the current deployment's bounded log window; needs platform:logs:read as well). Read only: no start, no rollback. Listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_deployments_list"
+      "mcp_tool": "platform_deployments_list",
+      "production": "live"
     },
     {
       "id": "platform.deployment_proposals.create",
@@ -307,7 +313,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_logs"
+      "mcp_tool": "platform_app_logs",
+      "production": "live"
     },
     {
       "id": "platform.secrets.list",
@@ -319,7 +326,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secrets_list"
+      "mcp_tool": "platform_secrets_list",
+      "production": "live"
     },
     {
       "id": "platform.secrets.set",
@@ -331,7 +339,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool. A set on an existing name rotates it; routine write with an idempotency key.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_set"
+      "mcp_tool": "platform_secret_set",
+      "production": "live"
     },
     {
       "id": "platform.secrets.delete",
@@ -343,7 +352,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_delete"
+      "mcp_tool": "platform_secret_delete",
+      "production": "live"
     },
     {
       "id": "platform.databases.list",
@@ -355,7 +365,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-540 as platform_databases_list with cursor pagination. Returns only organization-owned name, PostgreSQL version, linked app, creation time, size, table count and phase; never DSN, host, user, password or secret material.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_databases_list"
+      "mcp_tool": "platform_databases_list",
+      "production": "live"
     },
     {
       "id": "platform.databases.get",
@@ -367,7 +378,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-540 as platform_database_get. Returns the same explicit metadata allowlist as list after organization ownership validation; no schema, row data or credentials.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_get"
+      "mcp_tool": "platform_database_get",
+      "production": "live"
     },
     {
       "id": "platform.databases.status",
@@ -379,7 +391,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-540 as platform_database_status. Returns provisioning, ready, restoring or failed with only the bounded database metadata allowlist.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_status"
+      "mcp_tool": "platform_database_status",
+      "production": "live"
     },
     {
       "id": "platform.databases.rows.query",
@@ -391,7 +404,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-540 as platform_database_rows_query and intentionally absent from tools/list under metadata-only platform:databases:read. The caller supplies one database, one public base table, explicit catalog-validated columns, typed eq|in|lt|lte|gt|gte|is_null filters, at most one order_by, cursor and limit — never SQL, schema, join, view, CTE, function, expression, offset or wildcard. The server builds one parametrized SELECT with a SELECT-only role and read-only transaction, and enforces 100 rows, two seconds and 256 KiB. Audit stores actor and shape but never filter or cell values.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_rows_query"
+      "mcp_tool": "platform_database_rows_query",
+      "production": "live"
     },
     {
       "id": "platform.databases.create",
@@ -403,7 +417,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-540 as platform_database_provision(name, app_alias?, idempotency_key). Returns a durable database_provision operation immediately; identical normalized retries replay it and changed payloads conflict. Deploy-api persists, leases and resumes the work, while the generic operation tools expose status, events, logs, output and cancel.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_provision"
+      "mcp_tool": "platform_database_provision",
+      "production": "live"
     },
     {
       "id": "platform.databases.restore",
@@ -439,7 +454,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as platform_storage_buckets_list and platform_storage_bucket_get. Both return only tenant-owned bucket name, quota, used bytes, object count, optional deployment, four secret names, creation time and status; credentials, endpoints, MinIO details, policies and object contents cannot enter the response. Platform and connector buckets are absent from this surface.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_buckets_list"
+      "mcp_tool": "platform_storage_buckets_list",
+      "production": "live"
     },
     {
       "id": "platform.storage.create",
@@ -451,7 +467,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_provision. A required idempotency key binds the actor, organization, client, target and payload; exact retry replays, changed payload conflicts. The control plane creates the hard quota, lifecycle rule, bucket-scoped service account and four STORAGE_<NAME>_* secrets atomically from the caller's perspective, and never returns credential material.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_bucket_provision"
+      "mcp_tool": "platform_storage_bucket_provision",
+      "production": "live"
     },
     {
       "id": "platform.storage.rotate",
@@ -463,7 +480,8 @@
       "auth": "oauth",
       "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous, idempotent platform_storage_bucket_rotate under the narrow rotate scope. The old credential is invalidated, the two credential secrets are replaced and every service in a bound deployment must accept a restart before success; there is no no_restart input. Organization-global buckets report that restart is not applicable. Credential material is never returned.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_bucket_rotate"
+      "mcp_tool": "platform_storage_bucket_rotate",
+      "production": "live"
     },
     {
       "id": "platform.storage.delete",
@@ -485,7 +503,8 @@
         "platform:workflows:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B2) on mcp-server's /platform toolset as platform_workflows_list, platform_workflow_get, platform_workflow_revisions, platform_workflow_tools and platform_workflow_validate (validate saves nothing). Read through core's slim API under the verified principal; a workflow in another organization is NOT_FOUND."
+      "note": "Shipped by DIB-539 (P-0035 Part B2) on mcp-server's /platform toolset as platform_workflows_list, platform_workflow_get, platform_workflow_revisions, platform_workflow_tools and platform_workflow_validate (validate saves nothing). Read through core's slim API under the verified principal; a workflow in another organization is NOT_FOUND.",
+      "production": "live"
     },
     {
       "id": "platform.workflows.update",
@@ -507,7 +526,8 @@
         "platform:workflows:execute"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B2/B3) as platform_workflow_execute: starts the run at HEAD asynchronously with a required idempotency_key (same key + same request replays the run, a different request under the same key is IDEMPOTENCY_KEY_CONFLICT) and returns the durable operation envelope wrapping the canonical run id. Pinning a named immutable revision is a later addition."
+      "note": "Shipped by DIB-539 (P-0035 Part B2/B3) as platform_workflow_execute: starts the run at HEAD asynchronously with a required idempotency_key (same key + same request replays the run, a different request under the same key is IDEMPOTENCY_KEY_CONFLICT) and returns the durable operation envelope wrapping the canonical run id. Pinning a named immutable revision is a later addition.",
+      "production": "live"
     },
     {
       "id": "platform.files.get",
@@ -517,7 +537,8 @@
         "platform:files:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status. MCP accepts only opaque source_file_id and idempotency_key, creates a principal-bound transfer intent and returns safe metadata plus a Dibbla resource/fallback link. deploy-api mints the DIB-542 one-time ticket during prepare and stores only its AEAD-encrypted envelope. The same authenticated human opens console.<domain>/connector/transfers/<transfer_id>; the server redeems that ticket outside model context, replaces the envelope with an encrypted short-lived session, and gives only that browser the Dibbla-Transfer session for direct byte-plane access. No ticket, session, byte URL, presigned URL, file content or base64 enters MCP/model context, logs or audit. One opaque core UUID is the transfer_id reused unchanged by broker, deploy-api, MCP and UI; it locates state but never authorizes it. Crash recovery may atomically replace encrypted ticket/session material server-side for that same active transfer, but never creates a second ID, leaves two credentials valid or returns a credential to MCP/model context. Every actor/human read rechecks organization, user, client, grant and exact operation."
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status. MCP accepts only opaque source_file_id and idempotency_key, creates a principal-bound transfer intent and returns safe metadata plus a Dibbla resource/fallback link. deploy-api mints the DIB-542 one-time ticket during prepare and stores only its AEAD-encrypted envelope. The same authenticated human opens console.<domain>/connector/transfers/<transfer_id>; the server redeems that ticket outside model context, replaces the envelope with an encrypted short-lived session, and gives only that browser the Dibbla-Transfer session for direct byte-plane access. No ticket, session, byte URL, presigned URL, file content or base64 enters MCP/model context, logs or audit. One opaque core UUID is the transfer_id reused unchanged by broker, deploy-api, MCP and UI; it locates state but never authorizes it. Crash recovery may atomically replace encrypted ticket/session material server-side for that same active transfer, but never creates a second ID, leaves two credentials valid or returns a credential to MCP/model context. Every actor/human read rechecks organization, user, client, grant and exact operation.",
+      "production": "live"
     },
     {
       "id": "platform.files.put",
@@ -549,7 +570,8 @@
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND.",
+      "production": "live"
     },
     {
       "id": "platform.operations.cancel",
@@ -559,7 +581,8 @@
         "platform:operations:cancel"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten."
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten.",
+      "production": "live"
     },
     {
       "id": "cli.deploy.archive",
