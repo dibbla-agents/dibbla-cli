@@ -195,3 +195,54 @@ func TestIdempotencyKeysAreFreshPerRun(t *testing.T) {
 		t.Fatalf("keys %q %q", a, b)
 	}
 }
+
+// The broker refuses a non-final chunk below its multipart minimum. A client
+// that ignores the minimum and picks its own preferred size gets a refusal it
+// cannot act on, so the plan's minimum wins over the preference.
+func TestPushBytesHonoursTheMinimumChunk(t *testing.T) {
+	// Larger than the client's own preferred chunk, so the assertion is that
+	// the plan's minimum wins rather than that the two happen to agree.
+	minChunk := int64(chunkBytes) + (2 << 20)
+	content := bytes.Repeat([]byte("z"), int(minChunk)+1024)
+	var sizes []int
+	srv := &uploadServer{t: t, dropAt: -1, total: int64(len(content))}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := int(r.ContentLength)
+		final := len(srv.written)+n >= len(content)
+		if !final && int64(n) < minChunk {
+			t.Errorf("non-final chunk of %d bytes is below the %d minimum", n, minChunk)
+		}
+		sizes = append(sizes, n)
+		srv.handler().ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	// A plan whose minimum is larger than this client's preferred chunk.
+	view := &transferView{TransferID: "t", Status: "issued", Upload: &uploadPlan{
+		URL: server.URL, Method: http.MethodPut, OffsetHeader: "Upload-Offset",
+		MinChunkBytes: minChunk, MaxChunkBytes: 64 << 20,
+	}}
+	final, err := pushBytes(io.Discard, writeTemp(t, content), "tok", view)
+	if err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	if final.Status != "completed" || !bytes.Equal(srv.written, content) {
+		t.Fatalf("final = %+v, %d bytes", final, len(srv.written))
+	}
+	if len(sizes) != 2 || int64(sizes[0]) != minChunk {
+		t.Fatalf("chunk sizes %v; want the minimum first, then the remainder", sizes)
+	}
+}
+
+// A plan whose minimum exceeds its maximum cannot be satisfied; say so instead
+// of sending a chunk that is certain to be refused.
+func TestPushBytesRefusesAnImpossiblePlan(t *testing.T) {
+	view := &transferView{TransferID: "t", Status: "issued", Upload: &uploadPlan{
+		URL: "http://127.0.0.1:1", Method: http.MethodPut, OffsetHeader: "Upload-Offset",
+		MinChunkBytes: 10 << 20, MaxChunkBytes: 1 << 20,
+	}}
+	_, err := pushBytes(io.Discard, writeTemp(t, bytes.Repeat([]byte("q"), 32)), "tok", view)
+	if err == nil || !strings.Contains(err.Error(), "cannot be chunked") {
+		t.Fatalf("impossible plan: %v", err)
+	}
+}

@@ -44,9 +44,13 @@ const chunkBytes = 8 << 20
 // contract: where to PUT, which header carries the offset, and how large a
 // chunk may be. It holds no credential — the caller presents its own token.
 type uploadPlan struct {
-	URL           string `json:"url"`
-	Method        string `json:"method"`
-	OffsetHeader  string `json:"offset_header"`
+	URL          string `json:"url"`
+	Method       string `json:"method"`
+	OffsetHeader string `json:"offset_header"`
+	// MinChunkBytes is the smallest chunk that is not the last one — the
+	// broker's multipart part size. Sending less is refused, so this is not
+	// advice, it is the shape a chunked upload has to have.
+	MinChunkBytes int64  `json:"min_chunk_bytes"`
 	MaxChunkBytes int64  `json:"max_chunk_bytes"`
 	ExpiresAt     string `json:"expires_at"`
 }
@@ -185,9 +189,18 @@ func pushBytes(w io.Writer, path, token string, view *transferView) (*transferVi
 	}
 	defer f.Close()
 
-	size := chunkBytes
-	if view.Upload.MaxChunkBytes > 0 && view.Upload.MaxChunkBytes < int64(size) {
-		size = int(view.Upload.MaxChunkBytes)
+	size := int64(chunkBytes)
+	if max := view.Upload.MaxChunkBytes; max > 0 && max < size {
+		size = max
+	}
+	// A non-final chunk below the broker's minimum is refused outright, so the
+	// minimum wins over the preferred size. Only the last chunk may be smaller,
+	// and it is short simply because the file ends.
+	if min := view.Upload.MinChunkBytes; min > size {
+		if view.Upload.MaxChunkBytes > 0 && min > view.Upload.MaxChunkBytes {
+			return nil, fmt.Errorf("the platform asks for chunks of at least %d bytes but accepts at most %d — this upload cannot be chunked", min, view.Upload.MaxChunkBytes)
+		}
+		size = min
 	}
 	client := &http.Client{Timeout: 10 * time.Minute}
 	buf := make([]byte, size)
