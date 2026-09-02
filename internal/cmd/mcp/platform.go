@@ -27,6 +27,7 @@ var (
 	platformCheck  bool
 	platformLogout bool
 	platformUpload string
+	platformScope  string
 )
 
 var platformCmd = &cobra.Command{
@@ -64,6 +65,8 @@ func init() {
 		"revoke the stored grant server-side and forget it")
 	platformCmd.Flags().StringVar(&platformUpload, "upload", "",
 		"upload a file to the platform over the connector and print its file id")
+	platformCmd.Flags().StringVar(&platformScope, "scope", "",
+		"with --login: the scopes to ask consent for (default: the read scopes)")
 	platformCmd.MarkFlagsMutuallyExclusive("login", "check", "logout", "upload")
 }
 
@@ -93,12 +96,20 @@ grant.
   dibbla mcp platform --upload FILE      prepare an upload intent and move the
                                          bytes from this process, resuming from
                                          the committed offset if the link drops
+  dibbla mcp platform --login \
+    --scope "..."                        ask consent for more than the read
+                                         scopes; a write scope is never granted
+                                         by default and has to be ticked on the
+                                         consent page
 
 --upload is what an MCP client with a filesystem does, run by hand: the file
 bytes never enter a tool call, and the only credential involved is the access
 token this machine already holds. It needs a grant with platform:files:write.
 A client without a filesystem uses the same intent and hands its console link
 to the human who has the file instead.
+
+A write scope is never a consent default: --login without --scope stores a
+read-only grant, and the consent page shows each write scope as a box you tick.
 
 The grant --login stores belongs to the active context (see dibbla context)
 and is never written to a config file. --check refreshes an expired access
@@ -220,6 +231,7 @@ func runPlatformLogin(w io.Writer) error {
 	ctxName := grantContextName()
 	opts := platformoauth.AuthorizeOptions{
 		ClientID: platformClientID(),
+		Scope:    strings.TrimSpace(platformScope),
 		OpenURL: func(u string) {
 			if auth.HasGraphicalSession() {
 				fmt.Fprintf(w, "%s Opening the browser for consent...\n", platform.Icon("🌐", "[>]"))
