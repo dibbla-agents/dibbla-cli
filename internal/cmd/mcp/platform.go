@@ -26,6 +26,7 @@ var (
 	platformLogin  bool
 	platformCheck  bool
 	platformLogout bool
+	platformUpload string
 )
 
 var platformCmd = &cobra.Command{
@@ -43,6 +44,8 @@ var platformCmd = &cobra.Command{
 			return runPlatformLogin(w)
 		case platformCheck:
 			return runPlatformCheck(w)
+		case platformUpload != "":
+			return runPlatformUpload(w, platformUpload)
 		default:
 			return runPlatform(w, platformClient)
 		}
@@ -59,7 +62,9 @@ func init() {
 		"verify the connection end to end: discovery, token status, initialize, and platform_whoami")
 	platformCmd.Flags().BoolVar(&platformLogout, "logout", false,
 		"revoke the stored grant server-side and forget it")
-	platformCmd.MarkFlagsMutuallyExclusive("login", "check", "logout")
+	platformCmd.Flags().StringVar(&platformUpload, "upload", "",
+		"upload a file to the platform over the connector and print its file id")
+	platformCmd.MarkFlagsMutuallyExclusive("login", "check", "logout", "upload")
 }
 
 // platformLong renders the help text. The capability boundary at the end —
@@ -85,6 +90,15 @@ grant.
   dibbla mcp platform --check            prove the chain: discovery, token
                                          status, initialize, platform_whoami
   dibbla mcp platform --logout           revoke the grant and forget it
+  dibbla mcp platform --upload FILE      prepare an upload intent and move the
+                                         bytes from this process, resuming from
+                                         the committed offset if the link drops
+
+--upload is what an MCP client with a filesystem does, run by hand: the file
+bytes never enter a tool call, and the only credential involved is the access
+token this machine already holds. It needs a grant with platform:files:write.
+A client without a filesystem uses the same intent and hands its console link
+to the human who has the file instead.
 
 The grant --login stores belongs to the active context (see dibbla context)
 and is never written to a config file. --check refreshes an expired access
