@@ -604,10 +604,60 @@ is a tool call rather than a shell command.
 
 The unit is the **contract row**, not the command. Several CLI commands may map
 to one capability (`apps checks enable` and `apps checks disable` are two
-commands and one row), and one capability may be delivered by several tools —
-every destructive operation is a read-only **plan** followed by an **execute**
-that carries a human's approval. So do not look for a tool per command; look for
-the capability.
+commands and one row), and — far more often — **one tool delivers several
+capabilities**. A full write grant lists **30 tools** for everything the
+platform can do. So do not look for a tool per command; look for the flow, and
+then for the parameter that names your step of it.
+
+### The map: which tool owns which flow
+
+A tool is a flow and a desired state. `alias`, `name` or another identifier
+chooses the zoom level; `view`, `action`, `kind`, `depth` or `resource` chooses
+the step.
+
+| You want to | Tool | The parameter that says which step |
+|---|---|---|
+| Know who and where you are, and which organizations you belong to | `platform_whoami` | — |
+| See what you can build with: templates, workflow functions, providers | `platform_catalog` | `kind` |
+| List apps, read one, read its maintenance settings and runs | `platform_apps` | omit `alias` to list; `view: maintenance` |
+| Read an app's logs | `platform_app_logs` | — |
+| See an app's checks, or what they found | `platform_app_checks` | `view: definitions` \| `history` |
+| Run checks now, or one maintenance run | `platform_app_run` | `kind: checks` \| `maintenance` |
+| Change env vars, resources, or scheduled maintenance | `platform_app_config_update` | `maintenance_enabled` |
+| Restart | `platform_app_restart` | — |
+| Turn an app's checks runtime on or off | `platform_app_checks_set_enabled` | — |
+| List databases, read one, see its phase | `platform_databases` | omit `name` to list |
+| Read rows | `platform_database_rows_query` | — |
+| Create a database | `platform_database_provision` | — |
+| List buckets or read one | `platform_storage_buckets` | omit `name` to list |
+| Create a bucket or rotate its credential | `platform_storage_bucket_write` | `action` |
+| List secret names | `platform_secrets` | — |
+| Store, rotate or remove a secret | `platform_secret_write` | `action: set` \| `delete` |
+| Read deployment history, one revision, or the running deploy's logs | `platform_deployments` | `sha`, `view: logs` |
+| Check a `dibbla.yaml`, or preview what it would apply | `platform_deployment_preflight` | `depth: validate` \| `preview` |
+| Deploy | `platform_deployment_start` | — |
+| Propose a deploy, follow it, approve, deny or retry it | `platform_deployment_proposals` | `action` |
+| List workflows, read one, its revisions, or its HTTP surface | `platform_workflows` | omit `name` to list; `view` |
+| Check a workflow definition without saving it | `platform_workflow_validate` | — |
+| Create, replace or roll back a workflow | `platform_workflow_apply` | `definition` or `revision` |
+| Start a workflow | `platform_workflow_execute` | — |
+| Follow anything long-running | `platform_operation` | `view: status` \| `events` \| `logs` \| `output` |
+| Stop it | `platform_operation_cancel` | — |
+| Move a file in or out | `platform_file_transfer` | `action` |
+| Tell Dibbla what is working and what is not | `platform_feedback` | `action` |
+| Destroy something irreversibly | `platform_destructive_plan` → human approval → `platform_destructive_execute` | `resource` |
+
+Two things this table does not say, and both matter:
+
+- **You see only what your grant carries.** A tool whose scope you lack is not
+  listed at all, and on a merged tool the `action`/`view`/`kind`/`resource` enum
+  shows only the steps your scopes allow. An action you cannot see is not
+  missing; it is not yours.
+- **Approval has no tool.** `platform_destructive_plan` returns a console URL
+  and an expiring `request_id`; a human opens that URL and approves; only then
+  does `platform_destructive_execute` work. No sequence of tool calls adds up to
+  an approval, and asking a user to paste the `request_id` back is not one
+  either.
 
 ### What is deliberately *not* remote, and why
 
@@ -619,7 +669,7 @@ something on the caller's own machine that no remote call can reach:
 |---|---|---|
 | `cli.deploy.archive` | `deploy` | Reads the caller's filesystem to build the upload archive. The **deploy itself** is remote (`platform.deployments.start`); only the archiving is local. |
 | `cli.run` | `run` | Executes commands on the caller's machine. |
-| `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`). |
+| `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`, which is `platform_deployment_preflight`). |
 | `cli.credentials.reveal` | `secrets get`, `storage credentials`, `db connect` | Returns credential material in plaintext. Keeping credentials out of a model's context window is an invariant, not a precaution. |
 | `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting one secret at a time *is* remote. |
 | `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
@@ -630,9 +680,10 @@ something on the caller's own machine that no remote call can reach:
 | `cli.ai_gateway`, `cli.mcp_client_config` | `ai …`, `mcp …` | Answers about the calling machine's environment and its agent's config file. |
 | `cli.admin` | `admin reconcile` | Gated by `DIBBLA_ADMIN_TOKEN`, an operator marker that lives outside the OAuth grant model entirely. |
 
-Anything else that is not reachable yet is a `not-yet-available` row with an
-owner and a work item — never silence. The authoritative, always-current table
-is the [platform capability contract](https://docs.dibbla.com/reference/platform-contract).
+There is nothing else. Every other CLI capability is reachable through
+`/platform` today; a gap would be a `not-yet-available` row with an owner and a
+work item, never silence, and there are none. The authoritative, always-current
+table is the [platform capability contract](https://docs.dibbla.com/reference/platform-contract).
 
 **This is enforced, not documented.** `dibbla-cli` fails its own build when a
 command has no capability row, and `app-hosting-service` fails its own build
