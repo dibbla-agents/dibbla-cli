@@ -583,3 +583,58 @@ These are application-side concerns. For the security review before deploy, run 
 - [ ] `.dibblaignore` covers build outputs and any large generated files.
 - [ ] App tolerates an ephemeral local filesystem; persistent state lives in Postgres or external storage.
 - [ ] Pre-deploy security review (`guardrails.md`) completed and `REVIEW.md` written before deploying.
+
+---
+
+## 13. `/platform` — doing the same things without a terminal
+
+Everything in this file describes the CLI. The same platform is reachable over
+MCP at the OAuth-protected `/platform` endpoint, and the rule binding the two is
+one sentence:
+
+> **What a signed-in human can do with the `dibbla` CLI, an OAuth grant with the
+> right scope can do through `/platform`.**
+
+Connect a client with `dibbla mcp platform` (writes the MCP client config and
+runs the OAuth login). Then the same work — deploy, restart, configure, set
+secrets, provision a database or bucket, apply a workflow, run checks, delete —
+is a tool call rather than a shell command.
+
+### Parity is measured in capabilities, not in tools
+
+The unit is the **contract row**, not the command. Several CLI commands may map
+to one capability (`apps checks enable` and `apps checks disable` are two
+commands and one row), and one capability may be delivered by several tools —
+every destructive operation is a read-only **plan** followed by an **execute**
+that carries a human's approval. So do not look for a tool per command; look for
+the capability.
+
+### What is deliberately *not* remote, and why
+
+These are not gaps. Each is a `local-only` row in the platform capability
+contract with a technical reason, and the reason is always the same shape —
+something on the caller's own machine that no remote call can reach:
+
+| Contract row | Commands | Why it can never be remote |
+|---|---|---|
+| `cli.deploy.archive` | `deploy` | Reads the caller's filesystem to build the upload archive. The **deploy itself** is remote (`platform.deployments.start`); only the archiving is local. |
+| `cli.run` | `run` | Executes commands on the caller's machine. |
+| `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`). |
+| `cli.credentials.reveal` | `secrets get`, `storage credentials`, `db connect` | Returns credential material in plaintext. Keeping credentials out of a model's context window is an invariant, not a precaution. |
+| `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting one secret at a time *is* remote. |
+| `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
+| `cli.clone` | `clone` | Writes a git working copy locally. Reading the same source remotely is `platform.files.get`. |
+| `cli.scaffold` | `create go-worker`, `template install`, `skills install` | Materialises files in a directory on the caller's machine. |
+| `cli.login`, `cli.context`, `cli.org.select` | `login`, `logout`, `context …`, `org use/clear` | The OS keyring, a TTY, and local config. Remotely, who you are and which org you act as are fixed by the grant — a model-controlled context or org switch is forbidden outright. |
+| `cli.update` | `update`, `uninstall` | Replaces a binary on the caller's machine. |
+| `cli.ai_gateway`, `cli.mcp_client_config` | `ai …`, `mcp …` | Answers about the calling machine's environment and its agent's config file. |
+| `cli.admin` | `admin reconcile` | Gated by `DIBBLA_ADMIN_TOKEN`, an operator marker that lives outside the OAuth grant model entirely. |
+
+Anything else that is not reachable yet is a `not-yet-available` row with an
+owner and a work item — never silence. The authoritative, always-current table
+is the [platform capability contract](https://docs.dibbla.com/reference/platform-contract).
+
+**This is enforced, not documented.** `dibbla-cli` fails its own build when a
+command has no capability row, and `app-hosting-service` fails its own build
+when a row claims a tool that is not in `tools/list`. A command added without a
+decision cannot reach a release.

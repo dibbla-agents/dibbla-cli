@@ -356,9 +356,22 @@ type Capability struct {
 	Auth       string   `json:"auth,omitempty"`
 	MCPToolset string   `json:"mcp_toolset,omitempty"`
 	MCPTool    string   `json:"mcp_tool,omitempty"`
+	MCPTools   []string `json:"mcp_tools,omitempty"`
 	Reason     string   `json:"reason,omitempty"`
 	Note       string   `json:"note,omitempty"`
 	Source     string   `json:"source,omitempty"`
+	Owner      string   `json:"owner,omitempty"`
+	TrackedBy  string   `json:"tracked_by,omitempty"`
+	// CLICommands are the dibbla-cli commands this one capability covers, as
+	// full command paths without the `dibbla` root ("apps checks run").
+	//
+	// PARITY IS MEASURED IN CAPABILITIES, NOT IN COMMANDS (P-0035 Part F,
+	// DIB-676). Several commands may name one row — `apps create`, `apps
+	// update` and `apps scale` would be three commands and one capability —
+	// and a command that has both a local half and a remote one is named by
+	// both rows. What the gate checks is coverage, never a 1:1 mapping, which
+	// is what stops the rule from punishing consolidation.
+	CLICommands []string `json:"cli_commands,omitempty"`
 }
 
 // Capability states, as the contract spells them.
@@ -371,8 +384,23 @@ const (
 	StateNotYetAvailable   = "not-yet-available"
 )
 
+// Parity is the contract's parity dimension: how "kan i CLI = kan i MCP" is
+// measured, and the tool budget a full write grant must stay within. The
+// budget is enforced where tools/list actually exists (app-hosting-service);
+// it is carried here because the contract is one document, not three.
+type Parity struct {
+	CLIRoot              string   `json:"cli_root"`
+	Rule                 string   `json:"rule"`
+	CoveredStates        []string `json:"covered_states"`
+	CommandGranularity   string   `json:"command_granularity"`
+	MaxToolsFullWrite    int      `json:"max_tools_full_write"`
+	TargetToolsFullWrite int      `json:"tool_budget_target"`
+	ToolBudgetNote       string   `json:"tool_budget_note"`
+}
+
 type capabilitiesDoc struct {
 	ContractVersion string       `json:"contract_version"`
+	Parity          Parity       `json:"parity"`
 	Capabilities    []Capability `json:"capabilities"`
 }
 
@@ -411,4 +439,38 @@ func CapabilitiesInState(state string) []Capability {
 		}
 	}
 	return out
+}
+
+// ParityRules returns the contract's parity dimension.
+func ParityRules() Parity {
+	doc, err := loadCapabilities()
+	if err != nil {
+		return Parity{}
+	}
+	return doc.Parity
+}
+
+// CoversCLICommand reports whether any capability names the given command path
+// in a state that counts as coverage, and returns the row that does. A command
+// covered only by a state outside parity.covered_states is not covered.
+func CoversCLICommand(path string) (Capability, bool) {
+	doc, err := loadCapabilities()
+	if err != nil {
+		return Capability{}, false
+	}
+	covered := map[string]bool{}
+	for _, s := range doc.Parity.CoveredStates {
+		covered[s] = true
+	}
+	for _, c := range doc.Capabilities {
+		if !covered[c.State] {
+			continue
+		}
+		for _, cmd := range c.CLICommands {
+			if cmd == path {
+				return c, true
+			}
+		}
+	}
+	return Capability{}, false
 }

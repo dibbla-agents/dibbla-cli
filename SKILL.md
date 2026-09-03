@@ -595,6 +595,35 @@ Three read-only endpoints expose the same data surfaced by the console's Version
 
 Prefer `dibbla clone` over shelling out to `git clone` by hand — it resolves the canonical clone URL via `/vcs/info`, so it keeps working if the git host moves.
 
+## Working through `/platform` instead of the CLI
+
+The same platform is reachable over MCP at the OAuth-protected `/platform`
+endpoint. The rule binding the two surfaces: **what a signed-in human can do
+with the `dibbla` CLI, an OAuth grant with the right scope can do through
+`/platform`.** Connect a client with `dibbla mcp platform`, and deploying,
+restarting, configuring, setting secrets, provisioning databases and buckets,
+applying workflows, running checks and deleting are tool calls rather than shell
+commands.
+
+Two things to know before looking for a tool:
+
+- **Parity is measured in capabilities, not in tools.** Several commands may map
+  to one capability, and one capability may be delivered by several tools — every
+  destructive operation is a read-only *plan* followed by an *execute* that
+  carries a human's approval. Do not expect a tool per command.
+- **What is not remote is written down.** The exceptions are `local-only` rows in
+  the platform capability contract, each with a technical reason: building the
+  deploy archive, running a local pipeline, revealing a credential in plaintext,
+  reading a `.env` file, dumping a database through the caller's `pg_dump`,
+  cloning to disk, scaffolding files, the keyring, the local context and org
+  selection, updating the binary. See `.claude/skills/dibbla/platform.md` § 13
+  for the full table, and
+  <https://docs.dibbla.com/reference/platform-contract> for the authoritative
+  one.
+
+The rule is enforced rather than described: `dibbla-cli` fails its own build when
+a command has no capability row.
+
 ## Pre-deploy guardrails
 
 Before calling `dibbla deploy`, you MUST review the application code and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.

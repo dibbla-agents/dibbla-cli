@@ -280,6 +280,24 @@
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
+    },
+    {
+      "name": "platform:workflows:delete",
+      "class": "destructive",
+      "summary": "Delete a workflow, or permanently purge its run history. Separate from platform:workflows:write because a broad write must never reach a deletion.",
+      "granted_by_first_public_toolset": false,
+      "reserved_reason": "Reserved by DIB-704: dibbla wf delete and wf runs purge have no /platform tool yet, and the scope is defined now so a broad workflow write can never be read as covering them.",
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:feedback:write",
+      "class": "write",
+      "summary": "Send, list and withdraw the caller’s own product feedback.",
+      "granted_by_first_public_toolset": false,
+      "reserved_reason": "Reserved by DIB-704: dibbla feedback has no /platform tool yet, and feedback is the caller’s own record rather than an organization resource, so it does not fall under any existing scope.",
+      "consent_default": false,
+      "static_token_eligible": false
     }
   ]
 }

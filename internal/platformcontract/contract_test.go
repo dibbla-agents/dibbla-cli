@@ -219,10 +219,10 @@ func TestVerifyFallsOnEveryDirectionOfDrift(t *testing.T) {
 // the canonicalisation broke, and that is the case this test exists for.
 func TestCanonicalDigestMatchesTheCheckedInConstants(t *testing.T) {
 	const (
-		scopesDigest       = "sha256:f1d4be427a251ace368a7f2d96096b64a441ad3ef85176aea0ce3b3d19a4db42"
+		scopesDigest       = "sha256:64e2bab2548b52990c06c06f3ca9d673a8957c7b16777abcbb4458e2ab6b7926"
 		errorsDigest       = "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d"
-		capabilitiesDigest = "sha256:694454ebcdfa5d824c0747d3c8c2cfd4064d2f2e757b9a64519b6e67bc2babc0"
-		contractDigest     = "sha256:c5f6a451c8809bd8e684e563c2cc062ab372684ce31b710e9c18b70d8a7796d8"
+		capabilitiesDigest = "sha256:0f1c3810834646611039046565de990ea1ebedf46a1c0b6a3e46cac016d1b770"
+		contractDigest     = "sha256:e6bbcd5af2b7182ce2d8257c92f1bc6282b2980b41eee235f2a1c87a27263bc2"
 	)
 	want := map[string]string{
 		"v1/scopes.json":       scopesDigest,
@@ -295,6 +295,8 @@ func TestRegistryNamesEveryScopeExplicitly(t *testing.T) {
 		"platform:files:delete",               //contract-pinned: hand-written inventory
 		"platform:operations:read",            //contract-pinned: hand-written inventory
 		"platform:operations:cancel",          //contract-pinned: hand-written inventory
+		"platform:workflows:delete",           //contract-pinned: hand-written inventory
+		"platform:feedback:write",             //contract-pinned: hand-written inventory
 	}
 
 	var got []string
