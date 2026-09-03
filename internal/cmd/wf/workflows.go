@@ -168,6 +168,91 @@ last in sync. Use --force to skip this check and overwrite unconditionally.`,
 	},
 }
 
+// `wf apply` is create-or-update as ONE command, and it is the same shape the
+// connector's platform_workflow_apply gives an agent (DIB-674). Before it,
+// telling the two apart was the caller's job: `create` fails with 409 on a
+// workflow that exists and `update` fails with 404 on one that does not, so
+// every script that maintained a workflow either guessed or ran `get` first.
+// Which one it turned out to be is reported, not hidden.
+var workflowsApplyCmd = &cobra.Command{
+	Use:   "apply <name>",
+	Short: "Create the workflow, or replace it if it already exists",
+	Long: `Create or replace a workflow from a file, in one command.
+
+The file is the COMPLETE workflow in the slim format: what it does not
+contain is removed. The name in the path decides which workflow is
+written; a name inside the file is ignored, so the same file can be
+applied under two names.
+
+An existing workflow is replaced with the same If-Match concurrency check
+` + "`wf update`" + ` uses, and --force skips it the same way.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath == "" {
+			return fmt.Errorf("--file (-f) is required")
+		}
+		force, _ := cmd.Flags().GetBool("force")
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("reading file: %w", err)
+		}
+		var body map[string]interface{}
+		if err := parseFileContent(data, &body); err != nil {
+			return err
+		}
+		if body == nil {
+			return fmt.Errorf("%s does not contain a workflow definition", filePath)
+		}
+		name := args[0]
+		body["name"] = name
+
+		client := getClient()
+		// One GET decides create or update AND supplies the ETag the update
+		// needs, so apply costs no more round trips than update already did.
+		existing, err := client.Get("/api/wf/slim/workflows/" + name + "?format=json")
+		if err != nil {
+			if apiErr, ok := err.(*apiclient.APIError); !ok || apiErr.StatusCode != 404 {
+				return err
+			}
+			resp, cerr := client.Post("/api/wf/slim/workflows?include_result=true&format=json", body)
+			if cerr != nil {
+				return cerr
+			}
+			var result map[string]interface{}
+			if perr := parseJSON(resp.Body, &result); perr != nil {
+				return perr
+			}
+			output.Stderr("Created workflow %v (revision: %v)", result["name"], result["revision"])
+			printWarnings(result)
+			return printResult(result, "workflow")
+		}
+
+		headers := map[string]string{}
+		if !force {
+			if etag := existing.Headers.Get("ETag"); etag != "" {
+				headers["If-Match"] = etag
+			}
+		}
+		resp, err := client.PutWithHeaders("/api/wf/slim/workflows/"+name+"?include_result=true&format=json", body, headers)
+		if err != nil {
+			if apiErr, ok := err.(*apiclient.APIError); ok && apiErr.StatusCode == 412 {
+				output.Stderr("Conflict: workflow %q was modified by another writer since it was read.", name)
+				output.Stderr("Re-fetch with `dibbla wf get %s` and reapply your changes, or pass --force to overwrite.", name)
+				return err
+			}
+			return err
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		output.Stderr("Updated workflow %v", result["name"])
+		printWarnings(result)
+		return printResult(result, "workflow")
+	},
+}
+
 var workflowsDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Delete a workflow",
@@ -548,6 +633,8 @@ func init() {
 	workflowsCreateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsUpdateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsUpdateCmd.Flags().Bool("force", false, "Skip If-Match concurrency check and overwrite unconditionally")
+	workflowsApplyCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
+	workflowsApplyCmd.Flags().Bool("force", false, "Skip If-Match concurrency check and overwrite unconditionally")
 	workflowsDeleteCmd.Flags().Bool("yes", false, "Skip confirmation")
 	workflowsValidateCmd.Flags().StringP("file", "f", "", "Workflow definition file (YAML/JSON)")
 	workflowsExecuteCmd.Flags().String("data", "", "JSON data to send")
@@ -562,6 +649,7 @@ func init() {
 	workflowsCmd.AddCommand(workflowsGetCmd)
 	workflowsCmd.AddCommand(workflowsCreateCmd)
 	workflowsCmd.AddCommand(workflowsUpdateCmd)
+	workflowsCmd.AddCommand(workflowsApplyCmd)
 	workflowsCmd.AddCommand(workflowsDeleteCmd)
 	workflowsCmd.AddCommand(workflowsValidateCmd)
 	workflowsCmd.AddCommand(workflowsExecuteCmd)
