@@ -294,14 +294,14 @@
     {
       "id": "platform.deployments.start",
       "title": "Start a deployment",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:deployments:execute"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-671 (P-0035 Part B) and extended by DIB-679, as platform_deployment_start(alias, exactly one of archive{name, content_length, content_sha256} or source{repo, ref}, deploy options, idempotency_key). ONE call owns the whole sequence, from either source; the source is a parameter and never a second tool. With an archive, the call mints the principal-bound upload intent itself and answers with an operation id and the structured upload field a client process pushes the archive to; the deploy starts when the last chunk lands, and an interrupted upload resumes against the same intent without creating a second deploy. With repo and ref, no bytes move at all: the application may only name the repository it is already linked to, the ref is pinned to a commit sha by the call, and the platform fetches that commit itself with its own credential — which is what makes the path work from a cloud sandbox whose network reaches the provider's MCP servers and GitHub but not this origin. No credential, token or byte reaches MCP, model context, logs or audit on either path. A ref that does not exist, a repository the application is not linked to and a repository in another tenant are ONE absence answer. The build never holds the MCP call open; the generic operation tools expose status, bounded build logs, events, output (the app's URL on success, the CLI's own build error on failure) and cancel. Organization deployment governance is obeyed, not bypassed: immediate rolls out, while admin_four_eyes, member_four_eyes and admin_checkpoint instead create a pending deploy whose effective model and console decision path are named in the output, and whose console page shows the repository, ref and commit sha behind a git-sourced candidate. There is no approve, deny, apply, close or retry tool — CanDecide in deploy-api refuses the author regardless of role, and a test pins tools/list against one ever appearing.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_deployment_start"
     },
     {
       "id": "platform.logs.read",
@@ -423,26 +423,26 @@
     {
       "id": "platform.databases.restore",
       "title": "Restore a database from a backup",
-      "state": "remote-async",
+      "state": "remote-destructive",
       "scopes": [
         "platform:databases:restore"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_restore(name, source_file_id, idempotency_key). The opaque source_file_id binds a ready immutable hash- and size-bound file object in the same organization; transfer IDs, hashes, tickets, sessions and bytes are never restore identities. Restore is create-only and returns a durable database_restore operation immediately.",
+      "note": "Reclassified from remote-async to remote-destructive by DIB-673 (P-0035 Part F) and rebuilt as platform_database_restore_plan and platform_database_restore_execute; the direct platform_database_restore tool and its deploy-api route are gone, because a second way in would be a way around the confirmation. The reason is what restore does, not what it is called: loading a dump into a database that already exists drops and recreates every object the dump defines, so the data held today is replaced and Dibbla cannot bring it back — the same semantics as `dibbla db restore`, which is the parity this row satisfies. The plan is read-only and names the database, how many tables and bytes are about to be overwritten, and the source file by opaque source_file_id — never a transfer id, hash, ticket, session or bytes — or states plainly that nothing is overwritten when the target does not exist yet. A human approves on the same CSRF-protected console page as every other destructive capability. Execute accepts only request_id, re-reads database and source and refuses either having changed, and returns a durable operation immediately because a large dump outlives one call; the operation records the confirmation it was redeemed under, and the confirmation records the operation, so the audit reads in both directions. The confirmation, not an idempotency key, is what makes one approved intent produce one restore.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_restore"
+      "mcp_tool": "platform_database_restore_execute"
     },
     {
       "id": "platform.databases.delete",
       "title": "Delete a managed database",
-      "state": "not-yet-available",
+      "state": "remote-destructive",
       "scopes": [
         "platform:databases:delete"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-destructive",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_database_delete_plan and platform_database_delete_execute, on the same machinery as app and bucket deletion and with no shortcut of its own. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, the canonical database identity and a digest of its live metadata — size, table count, bound application — to a random request id with a 10-minute TTL, and enumerates what disappears: every table and byte, the dedicated PostgreSQL role and its credentials, the ownership record, the injected DATABASE_URL_<NAME> secret and the application left without a database. Only the same still-owner/admin human decides on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision and no direct delete. Execute accepts only request_id, re-reads the live metadata and refuses a database that changed after planning, atomically claims the approval before the single drop, and durably replays the same terminal result. A database in another organization is absent in both directions, because ownership — not the request — resolves the name.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_database_delete_execute"
     },
     {
       "id": "platform.storage.list",
@@ -531,13 +531,13 @@
     },
     {
       "id": "platform.files.get",
-      "title": "Prepare a principal-bound browser download",
+      "title": "Prepare a principal-bound download of a file or an app's own source",
       "state": "remote-read",
       "scopes": [
         "platform:files:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status. MCP accepts only opaque source_file_id and idempotency_key, creates a principal-bound transfer intent and returns safe metadata plus a Dibbla resource/fallback link. deploy-api mints the DIB-542 one-time ticket during prepare and stores only its AEAD-encrypted envelope. The same authenticated human opens console.<domain>/connector/transfers/<transfer_id>; the server redeems that ticket outside model context, replaces the envelope with an encrypted short-lived session, and gives only that browser the Dibbla-Transfer session for direct byte-plane access. No ticket, session, byte URL, presigned URL, file content or base64 enters MCP/model context, logs or audit. One opaque core UUID is the transfer_id reused unchanged by broker, deploy-api, MCP and UI; it locates state but never authorizes it. Crash recovery may atomically replace encrypted ticket/session material server-side for that same active transfer, but never creates a second ID, leaves two credentials valid or returns a credential to MCP/model context. Every actor/human read rechecks organization, user, client, grant and exact operation.",
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status; DIB-672 (Part F) adds an agent-redeemed second path over the same machinery and a second origin. Prepare accepts EITHER an opaque source_file_id OR an application alias with an optional revision — never both, never a byte or base64 field — and returns a principal-bound intent with safe metadata, the authenticated fallback link and, for a grant that can read, a principal-bound download URL on this resource's own origin. The application origin is the parity with `dibbla clone`: deploy-api cuts a gzipped tar of that app's Dibbla-managed repository at the named or latest deployed revision, bounded by the same archive limit a deploy obeys, ingests it into the DIB-542 broker under the caller's own binding and mints an ordinary download over the opaque file identity that comes back, so the intent declares the exact content_length and content_sha256 before a byte moves. An app in another organization, an app the caller cannot reach, an installation with version control off and a revision that does not exist are one answer: absent. That URL is never a presigned storage URL and the term is not a synonym for one: it is principal-bound, the caller authenticates, and no storage host is named. Who redeems the one-time ticket is the only difference between the two paths. Browser-mediated: the same authenticated human opens console.<domain>/connector/transfers/<transfer_id>, the server redeems the ticket outside model context and gives only that browser the Dibbla-Transfer session. Agent-redeemed: the client process GETs <resource-origin>/platform/v1/file-transfers/<transfer_id>/bytes with its own platform access token for the same grant; the first range redeems the ticket server-side and the server serves a bounded window, answering 206 with the window it served. A resume names the byte the CLIENT actually reached: only the receiver knows how much of an interrupted range it kept, so any range inside the file is served for as long as the intent lives, and the recorded offset is a high-water mark rather than a cursor a caller must match. Both paths share one transfer_id, one intent ledger and the uncached live-grant check that stops the next range after a revoke. Ticket/session plaintext, broker credentials, presigned storage URLs and file bytes are absent from the durable intent ledger, MCP results, model context, logs and audit; audit keeps correlation id, principal and operation.",
       "production": "live"
     },
     {
@@ -553,14 +553,14 @@
     {
       "id": "platform.files.delete",
       "title": "Delete a file",
-      "state": "not-yet-available",
+      "state": "remote-destructive",
       "scopes": [
         "platform:files:delete"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-destructive",
-      "owner": "P-0035 Part B",
-      "note": "Scope and eventual state are fixed by P-0035 Part A so the contract can be reviewed before the tool exists. Part A exposes no /platform tool."
+      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_file_delete_plan and platform_file_delete_execute. A file is named by its opaque source_file_id and never by a content hash, transfer id, ticket or session: the content hash is a dedup key shared across organizations, so it is not an identity. Plan is read-only, quotes name, size, content hash and status, and says what stops working — every capability that names the file, including database restore and file download — while stating that the content-addressed blob is deliberately left in place because it is shared with every other record holding the same bytes. The approval boundary is deploy-api's one confirmation ledger even though the records live in the broker, so there is a single audit to read and a single shape to review. Execute accepts only request_id, refuses a file renamed or replaced after planning, is single-use, durably replays its terminal result, and answers absent for another organization in both directions. No byte, object key or storage host can appear on this surface.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_file_delete_execute"
     },
     {
       "id": "platform.operations.get",

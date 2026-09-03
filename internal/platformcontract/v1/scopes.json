@@ -83,9 +83,8 @@
     {
       "name": "platform:deployments:execute",
       "class": "narrow-write",
-      "summary": "Start a deployment. RESERVED: defined here so it can never be silently conflated with platform:apps:write, but not granted by the first public toolset.",
-      "granted_by_first_public_toolset": false,
-      "reserved_reason": "P-0035 A3 reserves deployment execution until the build/egress enforcement in Part B exists.",
+      "summary": "Start a deployment: upload a source archive through a principal-bound intent and deploy it. Never substitutes for platform:apps:write, and never carries the authority to approve a deployment that this organization's governance held for review.",
+      "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
     },
@@ -139,8 +138,8 @@
     },
     {
       "name": "platform:databases:restore",
-      "class": "narrow-write",
-      "summary": "Create a new database from an organization-bound ready immutable file object as a durable operation. Deliberately not implied by platform:databases:write.",
+      "class": "destructive",
+      "summary": "Restore a database from an organization-bound ready immutable file object. Destructive: an existing database of that name is overwritten. Requires a bound confirmation in addition to the scope, and is deliberately not implied by platform:databases:write.",
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
