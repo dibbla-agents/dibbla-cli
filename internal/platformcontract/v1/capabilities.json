@@ -304,6 +304,30 @@
       "mcp_tool": "platform_deployment_start"
     },
     {
+      "id": "platform.manifests.validate",
+      "title": "Validate a dibbla.yaml manifest remotely",
+      "state": "remote-read",
+      "scopes": [
+        "platform:deployments:preflight"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_manifest_validate(alias, manifest, env, profiles, no_public). The manifest travels as text — the same file the caller is about to deploy, never a build archive — and deploy-api answers with the same structured findings the platform's own deploy path produces: the schema rules `dibbla manifest validate` checks locally plus the server-only ones (env-aware resolution, quota limits, multi-public detection), each as {code, path, detail}. Validation is a pure function of caller input and org quotas: nothing is built, applied or stored, and no application state is read, so there is no app to be absent — a bad alias is the only lookup-shaped refusal.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_manifest_validate"
+    },
+    {
+      "id": "platform.deployments.preview",
+      "title": "Preview what a deployment would change",
+      "state": "remote-read",
+      "scopes": [
+        "platform:deployments:preflight"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_deployment_preview(alias, manifest, env, profiles, no_public), answering the same document the CLI's `dibbla preview` renders: the resolved services (image or build, port, replicas, cpu, memory, environment), skipped services with their reason, the public service, warnings and errors. Nothing is built or applied; nothing is read from the application except the org's quota ceilings, and the tool is annotated read-only. A preview that reports errors is an answer, not a failed call — the document carries valid: false with located findings.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_deployment_preview"
+    },
+    {
       "id": "platform.logs.read",
       "title": "Read a bounded application log window",
       "state": "remote-read",
@@ -315,6 +339,54 @@
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_app_logs",
       "production": "live"
+    },
+    {
+      "id": "platform.checks.list",
+      "title": "List an application's checks",
+      "state": "remote-read",
+      "scopes": [
+        "platform:checks:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_list(alias): the check definitions (id, kind, schedule, classification) and the runtime's enabled state — the same document `dibbla apps checks list` renders. An app with checks enabled org-wide but no dibbla-checks.yaml answers configured: false with zero definitions, and that is an answer, not an error. An app in another organization is absent, in both directions.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_checks_list"
+    },
+    {
+      "id": "platform.checks.history",
+      "title": "Read an application's check run history",
+      "state": "remote-read",
+      "scopes": [
+        "platform:checks:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_history(alias, check_id, since, limit): past runs newest first, one check's page or every configured check merged, with each run's outcome, code and bounded summary. The CLI's product exit codes have no meaning over MCP; the outcomes are translated in place (pass, fail, error, indeterminate, canceled, skipped_concurrent — each with its meaning in the result) rather than handed over as numbers to scrape.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_checks_history"
+    },
+    {
+      "id": "platform.checks.run",
+      "title": "Run an application's checks now",
+      "state": "remote-async",
+      "scopes": [
+        "platform:checks:execute"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_run(alias, check_id, wait_seconds). It starts one manual execution of the app's already-defined checks — there is no way to run a check the application does not define — and waits a bounded time (default 300s, max 600s) for the terminal outcome, translated like history's: pass means every check held, fail names the check and its bounded reason without secrets or internal hostnames, error means the probe itself broke, indeterminate means it could not decide, and skipped_concurrent means another run holds the app's lease. Past the wait bound the call returns the still-running execution id and the caller reads the outcome from platform_app_checks_history. The one thing it deliberately does not do is hold the call open past its bound or invent an outcome it has not seen.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_checks_run"
+    },
+    {
+      "id": "platform.checks.settings",
+      "title": "Enable or disable an application's scheduled checks",
+      "state": "remote-write",
+      "scopes": [
+        "platform:checks:write"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_set_enabled(alias, enabled, idempotency_key): the CLI's `apps checks enable|disable` — it starts or stops the nightly schedule while preserving definitions and history, requires owner or admin (deploy-api enforces the role on the actor's own identity), and carries an idempotency key like every other /platform write.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_checks_set_enabled"
     },
     {
       "id": "platform.secrets.list",
@@ -611,7 +683,7 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Validates a file on the caller's disk with no platform round-trip.",
+      "reason": "The local walk reads a file on the caller's disk with no platform round-trip. The server-side validation of the same manifest — the deploy path's own parse, env-aware resolution and quota rules — is a different capability: platform.manifests.validate.",
       "source": "dibbla-cli/internal/cmd/manifestcmd/validate.go:24-42"
     },
     {

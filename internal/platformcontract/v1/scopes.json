@@ -14,7 +14,8 @@
       "platform:storage:delete",
       "platform:workflows:execute",
       "platform:files:delete",
-      "platform:operations:cancel"
+      "platform:operations:cancel",
+      "platform:checks:execute"
     ],
     "forbidden_scope_patterns": [
       "^platform:secrets:read-value$",
@@ -89,12 +90,44 @@
       "static_token_eligible": false
     },
     {
+      "name": "platform:deployments:preflight",
+      "class": "read",
+      "summary": "Validate a dibbla.yaml manifest and preview what a deployment would resolve to, without building or applying anything. Pure inspection: it changes no state and reads none.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
       "name": "platform:logs:read",
       "class": "read",
       "summary": "Read bounded application log windows.",
       "granted_by_first_public_toolset": true,
       "consent_default": true,
       "static_token_eligible": true
+    },
+    {
+      "name": "platform:checks:read",
+      "class": "read",
+      "summary": "Read an application's checks: definitions, runtime enablement and run history.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": true,
+      "static_token_eligible": true
+    },
+    {
+      "name": "platform:checks:write",
+      "class": "write",
+      "summary": "Enable or disable an application's scheduled checks.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:checks:execute",
+      "class": "narrow-write",
+      "summary": "Run an application's defined checks now. Deliberately not implied by platform:checks:write, and it can only run checks the application already defines.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
     },
     {
       "name": "platform:secrets:metadata:read",
