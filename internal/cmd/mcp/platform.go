@@ -115,6 +115,17 @@ The grant --login stores belongs to the active context (see dibbla context)
 and is never written to a config file. --check refreshes an expired access
 token automatically; a revoked grant is reported as such with the fix.
 
+THE SHAPE OF THE TOOLSET. A full write grant lists 30 tools for everything the
+platform can do, so there is no tool per command. A tool is a flow, and the
+step is a parameter: platform_apps lists your applications when you omit the
+alias and reads one when you name it, platform_operation takes a view of
+status/events/logs/output, platform_file_transfer and
+platform_deployment_proposals take an action, and every irreversible change is
+platform_destructive_plan with a resource, a human's approval in the console,
+and then platform_destructive_execute. A grant sees only the tools its scopes
+carry, and on a merged tool only the steps its scopes allow — an action you
+cannot see is not missing, it is not yours.
+
 `)
 	local := platformcontract.CapabilitiesInState(platformcontract.StateLocalOnly)
 	if len(local) > 0 {

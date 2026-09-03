@@ -605,12 +605,20 @@ restarting, configuring, setting secrets, provisioning databases and buckets,
 applying workflows, running checks and deleting are tool calls rather than shell
 commands.
 
-Two things to know before looking for a tool:
+Three things to know before looking for a tool:
 
-- **Parity is measured in capabilities, not in tools.** Several commands may map
-  to one capability, and one capability may be delivered by several tools — every
-  destructive operation is a read-only *plan* followed by an *execute* that
-  carries a human's approval. Do not expect a tool per command.
+- **Parity is measured in capabilities, not in tools.** Several commands map to
+  one capability, and — more often — one tool delivers several capabilities. A
+  full write grant lists **30 tools** for the whole platform, so do not expect a
+  tool per command. Every destructive operation is still a read-only *plan*
+  followed by an *execute* that carries a human's approval.
+- **A tool is a flow, and the step is a parameter.** `platform_apps` lists your
+  apps when you omit `alias` and reads one when you name it; `platform_operation`
+  takes a `view` of `status`, `events`, `logs` or `output`;
+  `platform_file_transfer` takes an `action`; `platform_destructive_plan` takes
+  the `resource` to destroy. If you cannot find a tool for something, look for
+  the parameter on the tool that owns the flow — see
+  `.claude/skills/dibbla/platform.md` § 13 for the map.
 - **What is not remote is written down.** The exceptions are `local-only` rows in
   the platform capability contract, each with a technical reason: building the
   deploy archive, running a local pipeline, revealing a credential in plaintext,
@@ -622,7 +630,9 @@ Two things to know before looking for a tool:
   one.
 
 The rule is enforced rather than described: `dibbla-cli` fails its own build when
-a command has no capability row.
+a command has no capability row, and `app-hosting-service` fails its own when a
+row names a tool that is not in `tools/list` — or when the surface grows past
+its 30-tool budget.
 
 ## Pre-deploy guardrails
 

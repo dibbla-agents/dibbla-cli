@@ -40,9 +40,9 @@
       "not-yet-available"
     ],
     "command_granularity": "leaf",
-    "max_tools_full_write": 59,
+    "max_tools_full_write": 30,
     "tool_budget_target": 30,
-    "tool_budget_note": "A full write grant must not show more tools than max_tools_full_write. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused. tool_budget_target is where P-0035 Part F says the surface belongs — every tool definition costs the agent context before it has done anything — and the way there is to merge families, never to raise the ceiling. DIB-704 takes the surface from the ceiling to the target, and does it before /platform writing opens in prod: while the write tools exist only in dev, renaming them breaks no real client."
+    "tool_budget_note": "A full write grant must not show more tools than max_tools_full_write. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused. tool_budget_target is where P-0035 Part F says the surface belongs — every tool definition costs the agent context before it has done anything. DIB-704 took it from 59 to the target by merging families: one destructive pair for every irreversible capability instead of seven, one read tool per resource instead of a list tool and a get tool, and a parameter wherever the difference between two tools was which step of the same flow they named. The surface now sits exactly on its target, so the next capability is a parameter on a tool that is already listed, or it is a decision to take one away."
   },
   "capabilities": [
     {
@@ -229,9 +229,9 @@
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. DIB-704 merged listing and reading one application into platform_apps: omit alias for the list, name one for the application.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_apps_list",
+      "mcp_tool": "platform_apps",
       "production": "live",
       "cli_commands": [
         "apps list"
@@ -245,9 +245,9 @@
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. DIB-704 merged this with the list into platform_apps; naming an alias is what asks for one application.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_get",
+      "mcp_tool": "platform_apps",
       "production": "live",
       "cli_commands": [
         "apps get"
@@ -293,11 +293,11 @@
         "platform:apps:delete"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-536 (P-0035 Part B) as exactly platform_app_delete_plan and platform_app_delete_execute. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, canonical app id/alias, live generation/revision, normalized permanent effects and digest to a random 192-bit request id with a 10-minute TTL. Only the same still-owner/admin human can approve or deny on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision or direct-delete tool. Execute accepts only request_id, revalidates every binding and the live revision under the app lock, atomically redeems server-side approval before one delete/audit row, and durably replays the same terminal result (or IN_PROGRESS) without a second side effect. The request id locates state but never authenticates its holder.",
+      "note": "Shipped by DIB-536 (P-0035 Part B) as exactly platform_app_delete_plan and platform_app_delete_execute. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, canonical app id/alias, live generation/revision, normalized permanent effects and digest to a random 192-bit request id with a 10-minute TTL. Only the same still-owner/admin human can approve or deny on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision or direct-delete tool. Execute accepts only request_id, revalidates every binding and the live revision under the app lock, atomically redeems server-side approval before one delete/audit row, and durably replays the same terminal result (or IN_PROGRESS) without a second side effect. The request id locates state but never authenticates its holder. DIB-704 merged every destructive pair into platform_destructive_plan / platform_destructive_execute; resource=app is this row. The plan → human approval → execute shape is unchanged, and the resource enum shows only what the grant's scopes carry.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_delete_execute",
+      "mcp_tool": "platform_destructive_execute",
       "mcp_tools": [
-        "platform_app_delete_plan"
+        "platform_destructive_plan"
       ],
       "cli_commands": [
         "apps delete"
@@ -311,14 +311,10 @@
         "platform:deployments:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployments family: platform_deployments_list (history from the app's Dibbla-managed main branch, one commit per deploy, plus live status), platform_deployment_get (one revision) and platform_deployment_logs (the current deployment's bounded log window; needs platform:logs:read as well). Read only: no start, no rollback. Listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployments family: platform_deployments_list (history from the app's Dibbla-managed main branch, one commit per deploy, plus live status), platform_deployment_get (one revision) and platform_deployment_logs (the current deployment's bounded log window; needs platform:logs:read as well). Read only: no start, no rollback. Listed in tools/list only for a grant holding the scope, and refused server-side otherwise. DIB-704 merged the list, one revision and the current deployment's logs into platform_deployments.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_deployments_list",
+      "mcp_tool": "platform_deployments",
       "production": "live",
-      "mcp_tools": [
-        "platform_deployment_get",
-        "platform_deployment_logs"
-      ],
       "cli_commands": [
         "logs"
       ]
@@ -331,9 +327,9 @@
         "platform:deployment-proposals:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployment_proposals family: platform_deployment_proposal_create (a branch in the caller's push namespace, pinned at its head; title and description; an Idempotency-Key that replays to the same proposal; no environment variables, no secret values, no build options) and, under the same scope — the registry defines it as 'create and inspect' — platform_deployment_proposals_list, _get and _events. There is no approve, deny, apply, close or retry tool; the decision stays in the console (P-0034), and a test pins tools/list against one ever appearing.",
+      "note": "Shipped by DIB-537 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset as the deployment_proposals family: platform_deployment_proposal_create (a branch in the caller's push namespace, pinned at its head; title and description; an Idempotency-Key that replays to the same proposal; no environment variables, no secret values, no build options) and, under the same scope — the registry defines it as 'create and inspect' — platform_deployment_proposals_list, _get and _events. There is no approve, deny, apply, close or retry tool; the decision stays in the console (P-0034), and a test pins tools/list against one ever appearing. DIB-704 merged the whole proposal queue into platform_deployment_proposals; action=create is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_deployment_proposal_create"
+      "mcp_tool": "platform_deployment_proposals"
     },
     {
       "id": "platform.deployments.start",
@@ -358,13 +354,9 @@
         "platform:deployments:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-537/DIB-669 (P-0035 Part B) as platform_deployment_proposals_list, platform_deployment_proposal_get and platform_deployment_proposal_events. Reads only: the proposal, the governance model it was raised under, its decision state and its event trail. Deciding a proposal is a separate capability and is not reachable here — a four-eyes approval is a second human principal, never the proposer’s own grant.",
+      "note": "Shipped by DIB-537/DIB-669 (P-0035 Part B) as platform_deployment_proposals_list, platform_deployment_proposal_get and platform_deployment_proposal_events. Reads only: the proposal, the governance model it was raised under, its decision state and its event trail. Deciding a proposal is a separate capability and is not reachable here — a four-eyes approval is a second human principal, never the proposer’s own grant. DIB-704 merged the whole proposal queue into platform_deployment_proposals; actions list, get and events are this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_deployment_proposals_list",
-      "mcp_tools": [
-        "platform_deployment_proposal_get",
-        "platform_deployment_proposal_events"
-      ],
+      "mcp_tool": "platform_deployment_proposals",
       "cli_commands": [
         "apps proposals list",
         "apps proposals show"
@@ -378,9 +370,9 @@
         "platform:deployments:preflight"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_manifest_validate(alias, manifest, env, profiles, no_public). The manifest travels as text — the same file the caller is about to deploy, never a build archive — and deploy-api answers with the same structured findings the platform's own deploy path produces: the schema rules `dibbla manifest validate` checks locally plus the server-only ones (env-aware resolution, quota limits, multi-public detection), each as {code, path, detail}. Validation is a pure function of caller input and org quotas: nothing is built, applied or stored, and no application state is read, so there is no app to be absent — a bad alias is the only lookup-shaped refusal.",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_manifest_validate(alias, manifest, env, profiles, no_public). The manifest travels as text — the same file the caller is about to deploy, never a build archive — and deploy-api answers with the same structured findings the platform's own deploy path produces: the schema rules `dibbla manifest validate` checks locally plus the server-only ones (env-aware resolution, quota limits, multi-public detection), each as {code, path, detail}. Validation is a pure function of caller input and org quotas: nothing is built, applied or stored, and no application state is read, so there is no app to be absent — a bad alias is the only lookup-shaped refusal. DIB-704 merged validation and preview into platform_deployment_preflight; depth=validate is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_manifest_validate"
+      "mcp_tool": "platform_deployment_preflight"
     },
     {
       "id": "platform.deployments.preview",
@@ -390,9 +382,9 @@
         "platform:deployments:preflight"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_deployment_preview(alias, manifest, env, profiles, no_public), answering the same document the CLI's `dibbla preview` renders: the resolved services (image or build, port, replicas, cpu, memory, environment), skipped services with their reason, the public service, warnings and errors. Nothing is built or applied; nothing is read from the application except the org's quota ceilings, and the tool is annotated read-only. A preview that reports errors is an answer, not a failed call — the document carries valid: false with located findings.",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_deployment_preview(alias, manifest, env, profiles, no_public), answering the same document the CLI's `dibbla preview` renders: the resolved services (image or build, port, replicas, cpu, memory, environment), skipped services with their reason, the public service, warnings and errors. Nothing is built or applied; nothing is read from the application except the org's quota ceilings, and the tool is annotated read-only. A preview that reports errors is an answer, not a failed call — the document carries valid: false with located findings. DIB-704 merged validation and preview into platform_deployment_preflight; depth=preview is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_deployment_preview",
+      "mcp_tool": "platform_deployment_preflight",
       "cli_commands": [
         "preview"
       ]
@@ -421,9 +413,9 @@
         "platform:checks:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_list(alias): the check definitions (id, kind, schedule, classification) and the runtime's enabled state — the same document `dibbla apps checks list` renders. An app with checks enabled org-wide but no dibbla-checks.yaml answers configured: false with zero definitions, and that is an answer, not an error. An app in another organization is absent, in both directions.",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_list(alias): the check definitions (id, kind, schedule, classification) and the runtime's enabled state — the same document `dibbla apps checks list` renders. An app with checks enabled org-wide but no dibbla-checks.yaml answers configured: false with zero definitions, and that is an answer, not an error. An app in another organization is absent, in both directions. DIB-704 merged the definitions and the run history into platform_app_checks; view=definitions is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_checks_list",
+      "mcp_tool": "platform_app_checks",
       "cli_commands": [
         "apps checks list"
       ]
@@ -436,9 +428,9 @@
         "platform:checks:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_history(alias, check_id, since, limit): past runs newest first, one check's page or every configured check merged, with each run's outcome, code and bounded summary. The CLI's product exit codes have no meaning over MCP; the outcomes are translated in place (pass, fail, error, indeterminate, canceled, skipped_concurrent — each with its meaning in the result) rather than handed over as numbers to scrape.",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_history(alias, check_id, since, limit): past runs newest first, one check's page or every configured check merged, with each run's outcome, code and bounded summary. The CLI's product exit codes have no meaning over MCP; the outcomes are translated in place (pass, fail, error, indeterminate, canceled, skipped_concurrent — each with its meaning in the result) rather than handed over as numbers to scrape. DIB-704 merged this with the definitions into platform_app_checks; view=history is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_checks_history",
+      "mcp_tool": "platform_app_checks",
       "cli_commands": [
         "apps checks history"
       ]
@@ -451,9 +443,9 @@
         "platform:checks:execute"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_run(alias, check_id, wait_seconds). It starts one manual execution of the app's already-defined checks — there is no way to run a check the application does not define — and waits a bounded time (default 300s, max 600s) for the terminal outcome, translated like history's: pass means every check held, fail names the check and its bounded reason without secrets or internal hostnames, error means the probe itself broke, indeterminate means it could not decide, and skipped_concurrent means another run holds the app's lease. Past the wait bound the call returns the still-running execution id and the caller reads the outcome from platform_app_checks_history. The one thing it deliberately does not do is hold the call open past its bound or invent an outcome it has not seen.",
+      "note": "Shipped by DIB-675 (P-0035 Del F) as platform_app_checks_run(alias, check_id, wait_seconds). It starts one manual execution of the app's already-defined checks — there is no way to run a check the application does not define — and waits a bounded time (default 300s, max 600s) for the terminal outcome, translated like history's: pass means every check held, fail names the check and its bounded reason without secrets or internal hostnames, error means the probe itself broke, indeterminate means it could not decide, and skipped_concurrent means another run holds the app's lease. Past the wait bound the call returns the still-running execution id and the caller reads the outcome from platform_app_checks_history. The one thing it deliberately does not do is hold the call open past its bound or invent an outcome it has not seen. DIB-704 renamed the tool to platform_app_run (kind=checks), which also starts a maintenance run.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_app_checks_run",
+      "mcp_tool": "platform_app_run",
       "cli_commands": [
         "apps checks run"
       ]
@@ -484,7 +476,7 @@
       "auth": "oauth",
       "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secrets_list",
+      "mcp_tool": "platform_secrets",
       "production": "live",
       "cli_commands": [
         "secrets list"
@@ -498,9 +490,9 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool. A set on an existing name rotates it; routine write with an idempotency key.",
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool. A set on an existing name rotates it; routine write with an idempotency key. DIB-704 merged setting and deleting a secret into platform_secret_write; action=set is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_set",
+      "mcp_tool": "platform_secret_write",
       "production": "live",
       "cli_commands": [
         "secrets set"
@@ -514,9 +506,9 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion.",
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion. DIB-704 merged setting and deleting a secret into platform_secret_write; action=delete is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_delete",
+      "mcp_tool": "platform_secret_write",
       "production": "live",
       "cli_commands": [
         "secrets delete"
@@ -530,9 +522,9 @@
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_databases_list with cursor pagination. Returns only organization-owned name, PostgreSQL version, linked app, creation time, size, table count and phase; never DSN, host, user, password or secret material.",
+      "note": "Shipped by DIB-540 as platform_databases_list with cursor pagination. Returns only organization-owned name, PostgreSQL version, linked app, creation time, size, table count and phase; never DSN, host, user, password or secret material. DIB-704 merged listing and reading one database into platform_databases: omit name for the list.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_databases_list",
+      "mcp_tool": "platform_databases",
       "production": "live",
       "cli_commands": [
         "db list"
@@ -546,9 +538,9 @@
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_get. Returns the same explicit metadata allowlist as list after organization ownership validation; no schema, row data or credentials.",
+      "note": "Shipped by DIB-540 as platform_database_get. Returns the same explicit metadata allowlist as list after organization ownership validation; no schema, row data or credentials. DIB-704 merged the list, the metadata and the phase into platform_databases; naming a database is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_get",
+      "mcp_tool": "platform_databases",
       "production": "live"
     },
     {
@@ -559,9 +551,9 @@
         "platform:databases:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-540 as platform_database_status. Returns provisioning, ready, restoring or failed with only the bounded database metadata allowlist.",
+      "note": "Shipped by DIB-540 as platform_database_status. Returns provisioning, ready, restoring or failed with only the bounded database metadata allowlist. DIB-704 merged the phase into platform_databases, which always reports it; a separate tool said the same thing twice.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_status",
+      "mcp_tool": "platform_databases",
       "production": "live"
     },
     {
@@ -601,11 +593,11 @@
         "platform:databases:restore"
       ],
       "auth": "oauth",
-      "note": "Reclassified from remote-async to remote-destructive by DIB-673 (P-0035 Part F) and rebuilt as platform_database_restore_plan and platform_database_restore_execute; the direct platform_database_restore tool and its deploy-api route are gone, because a second way in would be a way around the confirmation. The reason is what restore does, not what it is called: loading a dump into a database that already exists drops and recreates every object the dump defines, so the data held today is replaced and Dibbla cannot bring it back — the same semantics as `dibbla db restore`, which is the parity this row satisfies. The plan is read-only and names the database, how many tables and bytes are about to be overwritten, and the source file by opaque source_file_id — never a transfer id, hash, ticket, session or bytes — or states plainly that nothing is overwritten when the target does not exist yet. A human approves on the same CSRF-protected console page as every other destructive capability. Execute accepts only request_id, re-reads database and source and refuses either having changed, and returns a durable operation immediately because a large dump outlives one call; the operation records the confirmation it was redeemed under, and the confirmation records the operation, so the audit reads in both directions. The confirmation, not an idempotency key, is what makes one approved intent produce one restore.",
+      "note": "Reclassified from remote-async to remote-destructive by DIB-673 (P-0035 Part F) and rebuilt as platform_database_restore_plan and platform_database_restore_execute; the direct platform_database_restore tool and its deploy-api route are gone, because a second way in would be a way around the confirmation. The reason is what restore does, not what it is called: loading a dump into a database that already exists drops and recreates every object the dump defines, so the data held today is replaced and Dibbla cannot bring it back — the same semantics as `dibbla db restore`, which is the parity this row satisfies. The plan is read-only and names the database, how many tables and bytes are about to be overwritten, and the source file by opaque source_file_id — never a transfer id, hash, ticket, session or bytes — or states plainly that nothing is overwritten when the target does not exist yet. A human approves on the same CSRF-protected console page as every other destructive capability. Execute accepts only request_id, re-reads database and source and refuses either having changed, and returns a durable operation immediately because a large dump outlives one call; the operation records the confirmation it was redeemed under, and the confirmation records the operation, so the audit reads in both directions. The confirmation, not an idempotency key, is what makes one approved intent produce one restore. DIB-704 merged every destructive pair into platform_destructive_plan / platform_destructive_execute; resource=database_restore is this row, and it is the one that also names a source_file_id.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_restore_execute",
+      "mcp_tool": "platform_destructive_execute",
       "mcp_tools": [
-        "platform_database_restore_plan"
+        "platform_destructive_plan"
       ],
       "cli_commands": [
         "db restore"
@@ -619,11 +611,11 @@
         "platform:databases:delete"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_database_delete_plan and platform_database_delete_execute, on the same machinery as app and bucket deletion and with no shortcut of its own. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, the canonical database identity and a digest of its live metadata — size, table count, bound application — to a random request id with a 10-minute TTL, and enumerates what disappears: every table and byte, the dedicated PostgreSQL role and its credentials, the ownership record, the injected DATABASE_URL_<NAME> secret and the application left without a database. Only the same still-owner/admin human decides on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision and no direct delete. Execute accepts only request_id, re-reads the live metadata and refuses a database that changed after planning, atomically claims the approval before the single drop, and durably replays the same terminal result. A database in another organization is absent in both directions, because ownership — not the request — resolves the name.",
+      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_database_delete_plan and platform_database_delete_execute, on the same machinery as app and bucket deletion and with no shortcut of its own. Plan is read-only and binds the owner/admin OAuth subject, organization, client, grant, exact scope, role, the canonical database identity and a digest of its live metadata — size, table count, bound application — to a random request id with a 10-minute TTL, and enumerates what disappears: every table and byte, the dedicated PostgreSQL role and its credentials, the ownership record, the injected DATABASE_URL_<NAME> secret and the application left without a database. Only the same still-owner/admin human decides on the CSRF-protected console.<domain>/connector/approvals/<request_id> page; MCP exposes no decision and no direct delete. Execute accepts only request_id, re-reads the live metadata and refuses a database that changed after planning, atomically claims the approval before the single drop, and durably replays the same terminal result. A database in another organization is absent in both directions, because ownership — not the request — resolves the name. DIB-704 merged every destructive pair into platform_destructive_plan / platform_destructive_execute; resource=database is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_database_delete_execute",
+      "mcp_tool": "platform_destructive_execute",
       "mcp_tools": [
-        "platform_database_delete_plan"
+        "platform_destructive_plan"
       ],
       "cli_commands": [
         "db delete"
@@ -637,13 +629,10 @@
         "platform:storage:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as platform_storage_buckets_list and platform_storage_bucket_get. Both return only tenant-owned bucket name, quota, used bytes, object count, optional deployment, four secret names, creation time and status; credentials, endpoints, MinIO details, policies and object contents cannot enter the response. Platform and connector buckets are absent from this surface.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as platform_storage_buckets_list and platform_storage_bucket_get. Both return only tenant-owned bucket name, quota, used bytes, object count, optional deployment, four secret names, creation time and status; credentials, endpoints, MinIO details, policies and object contents cannot enter the response. Platform and connector buckets are absent from this surface. DIB-704 merged listing and reading one bucket into platform_storage_buckets: omit name for the list.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_buckets_list",
+      "mcp_tool": "platform_storage_buckets",
       "production": "live",
-      "mcp_tools": [
-        "platform_storage_bucket_get"
-      ],
       "cli_commands": [
         "storage list",
         "storage info"
@@ -657,9 +646,9 @@
         "platform:storage:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_provision. A required idempotency key binds the actor, organization, client, target and payload; exact retry replays, changed payload conflicts. The control plane creates the hard quota, lifecycle rule, bucket-scoped service account and four STORAGE_<NAME>_* secrets atomically from the caller's perspective, and never returns credential material.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous platform_storage_bucket_provision. A required idempotency key binds the actor, organization, client, target and payload; exact retry replays, changed payload conflicts. The control plane creates the hard quota, lifecycle rule, bucket-scoped service account and four STORAGE_<NAME>_* secrets atomically from the caller's perspective, and never returns credential material. DIB-704 merged provisioning and rotating into platform_storage_bucket_write; action=provision is this row, and the action enum shows only what the grant's scopes carry.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_bucket_provision",
+      "mcp_tool": "platform_storage_bucket_write",
       "production": "live",
       "cli_commands": [
         "storage create"
@@ -673,9 +662,9 @@
         "platform:storage:rotate"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous, idempotent platform_storage_bucket_rotate under the narrow rotate scope. The old credential is invalidated, the two credential secrets are replaced and every service in a bound deployment must accept a restart before success; there is no no_restart input. Organization-global buckets report that restart is not applicable. Credential material is never returned.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as synchronous, idempotent platform_storage_bucket_rotate under the narrow rotate scope. The old credential is invalidated, the two credential secrets are replaced and every service in a bound deployment must accept a restart before success; there is no no_restart input. Organization-global buckets report that restart is not applicable. Credential material is never returned. DIB-704 merged provisioning and rotating into platform_storage_bucket_write; action=rotate is this row, and a rotate-only grant is offered that action alone.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_bucket_rotate",
+      "mcp_tool": "platform_storage_bucket_write",
       "production": "live",
       "cli_commands": [
         "storage rotate"
@@ -689,11 +678,11 @@
         "platform:storage:delete"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as exactly platform_storage_bucket_delete_plan and platform_storage_bucket_delete_execute. The 10-minute random request binds owner/admin subject, organization, client, grant, role, exact scope, bucket identity, current credential-free metadata, normalized force-delete effects and digest. Only the same authenticated human approves in the CSRF-protected console; MCP has no decision, direct-delete or force tool. Execute accepts only request_id, revalidates metadata, atomically claims once, then force-deletes all objects, bucket, service account, ownership and four secrets while concurrent/retried calls receive IN_PROGRESS or the same terminal result. Platform and connector buckets never enter this surface.",
+      "note": "Shipped by DIB-541 (P-0035 Part B / P-0026) as exactly platform_storage_bucket_delete_plan and platform_storage_bucket_delete_execute. The 10-minute random request binds owner/admin subject, organization, client, grant, role, exact scope, bucket identity, current credential-free metadata, normalized force-delete effects and digest. Only the same authenticated human approves in the CSRF-protected console; MCP has no decision, direct-delete or force tool. Execute accepts only request_id, revalidates metadata, atomically claims once, then force-deletes all objects, bucket, service account, ownership and four secrets while concurrent/retried calls receive IN_PROGRESS or the same terminal result. Platform and connector buckets never enter this surface. DIB-704 merged every destructive pair into platform_destructive_plan / platform_destructive_execute; resource=storage_bucket is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_storage_bucket_delete_execute",
+      "mcp_tool": "platform_destructive_execute",
       "mcp_tools": [
-        "platform_storage_bucket_delete_plan"
+        "platform_destructive_plan"
       ],
       "cli_commands": [
         "storage delete"
@@ -707,14 +696,11 @@
         "platform:workflows:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B2) on mcp-server's /platform toolset as platform_workflows_list, platform_workflow_get, platform_workflow_revisions, platform_workflow_tools and platform_workflow_validate (validate saves nothing). Read through core's slim API under the verified principal; a workflow in another organization is NOT_FOUND.",
+      "note": "Shipped by DIB-539 (P-0035 Part B2) on mcp-server's /platform toolset as platform_workflows_list, platform_workflow_get, platform_workflow_revisions, platform_workflow_tools and platform_workflow_validate (validate saves nothing). Read through core's slim API under the verified principal; a workflow in another organization is NOT_FOUND. DIB-704 merged the list, one workflow, its revisions and its HTTP surface into platform_workflows; the function registry moved to platform_catalog and validation stayed its own tool because it takes a whole definition rather than a name.",
       "production": "live",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_workflows_list",
+      "mcp_tool": "platform_workflows",
       "mcp_tools": [
-        "platform_workflow_get",
-        "platform_workflow_revisions",
-        "platform_workflow_tools",
         "platform_workflow_validate"
       ],
       "cli_commands": [
@@ -758,9 +744,9 @@
         "platform:workflows:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-674 (P-0035 Part F) as platform_workflow_restore(name, revision, idempotency_key), the second and last tool this capability adds. Revisions are the history of applies rather than a separate editing model: platform_workflow_revisions lists them and this puts one back as HEAD. A restore snapshots what it replaces before it runs, so it is itself reversible, and it carries the same required idempotency key as an apply. HEAD is refused as a revision id — restoring HEAD onto HEAD is not a thing a caller means. A workflow or revision in another organization answers the same absence a name that never existed answers.",
+      "note": "Shipped by DIB-674 (P-0035 Part F) as platform_workflow_restore(name, revision, idempotency_key), the second and last tool this capability adds. Revisions are the history of applies rather than a separate editing model: platform_workflow_revisions lists them and this puts one back as HEAD. A restore snapshots what it replaces before it runs, so it is itself reversible, and it carries the same required idempotency key as an apply. HEAD is refused as a revision id — restoring HEAD onto HEAD is not a thing a caller means. A workflow or revision in another organization answers the same absence a name that never existed answers. DIB-704 merged restoring into platform_workflow_apply: naming a revision instead of a definition is applying one the workflow already had.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_workflow_restore",
+      "mcp_tool": "platform_workflow_apply",
       "cli_commands": [
         "revisions restore"
       ]
@@ -789,10 +775,10 @@
         "platform:files:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status; DIB-672 (Part F) adds an agent-redeemed second path over the same machinery and a second origin. Prepare accepts EITHER an opaque source_file_id OR an application alias with an optional revision — never both, never a byte or base64 field — and returns a principal-bound intent with safe metadata, the authenticated fallback link and, for a grant that can read, a principal-bound download URL on this resource's own origin. The application origin is the parity with `dibbla clone`: deploy-api cuts a gzipped tar of that app's Dibbla-managed repository at the named or latest deployed revision, bounded by the same archive limit a deploy obeys, ingests it into the DIB-542 broker under the caller's own binding and mints an ordinary download over the opaque file identity that comes back, so the intent declares the exact content_length and content_sha256 before a byte moves. An app in another organization, an app the caller cannot reach, an installation with version control off and a revision that does not exist are one answer: absent. That URL is never a presigned storage URL and the term is not a synonym for one: it is principal-bound, the caller authenticates, and no storage host is named. Who redeems the one-time ticket is the only difference between the two paths. Browser-mediated: the same authenticated human opens console.<domain>/connector/transfers/<transfer_id>, the server redeems the ticket outside model context and gives only that browser the Dibbla-Transfer session. Agent-redeemed: the client process GETs <resource-origin>/platform/v1/file-transfers/<transfer_id>/bytes with its own platform access token for the same grant; the first range redeems the ticket server-side and the server serves a bounded window, answering 206 with the window it served. A resume names the byte the CLIENT actually reached: only the receiver knows how much of an interrupted range it kept, so any range inside the file is served for as long as the intent lives, and the recorded offset is a high-water mark rather than a cursor a caller must match. Both paths share one transfer_id, one intent ledger and the uncached live-grant check that stops the next range after a revoke. Ticket/session plaintext, broker credentials, presigned storage URLs and file bytes are absent from the durable intent ledger, MCP results, model context, logs and audit; audit keeps correlation id, principal and operation.",
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_download_prepare plus platform_file_transfer_status; DIB-672 (Part F) adds an agent-redeemed second path over the same machinery and a second origin. Prepare accepts EITHER an opaque source_file_id OR an application alias with an optional revision — never both, never a byte or base64 field — and returns a principal-bound intent with safe metadata, the authenticated fallback link and, for a grant that can read, a principal-bound download URL on this resource's own origin. The application origin is the parity with `dibbla clone`: deploy-api cuts a gzipped tar of that app's Dibbla-managed repository at the named or latest deployed revision, bounded by the same archive limit a deploy obeys, ingests it into the DIB-542 broker under the caller's own binding and mints an ordinary download over the opaque file identity that comes back, so the intent declares the exact content_length and content_sha256 before a byte moves. An app in another organization, an app the caller cannot reach, an installation with version control off and a revision that does not exist are one answer: absent. That URL is never a presigned storage URL and the term is not a synonym for one: it is principal-bound, the caller authenticates, and no storage host is named. Who redeems the one-time ticket is the only difference between the two paths. Browser-mediated: the same authenticated human opens console.<domain>/connector/transfers/<transfer_id>, the server redeems the ticket outside model context and gives only that browser the Dibbla-Transfer session. Agent-redeemed: the client process GETs <resource-origin>/platform/v1/file-transfers/<transfer_id>/bytes with its own platform access token for the same grant; the first range redeems the ticket server-side and the server serves a bounded window, answering 206 with the window it served. A resume names the byte the CLIENT actually reached: only the receiver knows how much of an interrupted range it kept, so any range inside the file is served for as long as the intent lives, and the recorded offset is a high-water mark rather than a cursor a caller must match. Both paths share one transfer_id, one intent ledger and the uncached live-grant check that stops the next range after a revoke. Ticket/session plaintext, broker credentials, presigned storage URLs and file bytes are absent from the durable intent ledger, MCP results, model context, logs and audit; audit keeps correlation id, principal and operation. DIB-704 merged the four transfer steps into platform_file_transfer; action=prepare_download is this row.",
       "production": "live",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_file_download_prepare"
+      "mcp_tool": "platform_file_transfer"
     },
     {
       "id": "platform.files.put",
@@ -802,13 +788,9 @@
         "platform:files:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_upload_prepare plus platform_file_transfer_abort; DIB-670 (Part F) adds an agent-redeemed second path over the same machinery. Direction-bound platform_file_transfer_status requires platform:files:write for the caller's own upload and platform:files:read for a download; download prepare always requires platform:files:read. Prepare accepts only name, content_type, exact content_length, content_sha256 and idempotency_key—never a byte/base64 field—and returns a principal-bound intent with safe metadata, the authenticated fallback link and, for a grant that can write, a principal-bound upload URL on this resource's own origin. That URL is never a presigned storage URL and the term is not a synonym for one: it is principal-bound, and the caller authenticates. Who redeems the one-time ticket is the only difference between the two paths. Browser-mediated: the authenticated human opens the console page, whose browser verifies every declared field, redeems the encrypted ticket outside model context and uploads chunks with Dibbla-Transfer. Agent-redeemed: the client process PUTs bounded chunks to <resource-origin>/platform/v1/file-transfers/<transfer_id>/bytes with Upload-Offset, authenticating with its own platform access token for the same grant; the first chunk redeems the ticket server-side. The URL carries no signature, ticket or session—it locates one transfer and the token decides—so a redeemed, expired or foreign-principal redemption is refused as absent, and it is a structured field the client acts on rather than prose the model repeats. Both paths share one transfer_id, one intent ledger, one resume offset and the uncached live-grant check that stops the next chunk after a revoke. Declared length or sha256 that does not hold ends the intent and produces no file. Completion publishes only the opaque source_file_id back to MCP. Abort is idempotent and never deletes a completed file. Ticket/session plaintext, presigned storage URLs and bytes are absent from the durable intent ledger, MCP results, model context, logs and audit.",
+      "note": "Shipped by DIB-543 (P-0035 Part B4) as platform_file_upload_prepare plus platform_file_transfer_abort; DIB-670 (Part F) adds an agent-redeemed second path over the same machinery. Direction-bound platform_file_transfer_status requires platform:files:write for the caller's own upload and platform:files:read for a download; download prepare always requires platform:files:read. Prepare accepts only name, content_type, exact content_length, content_sha256 and idempotency_key—never a byte/base64 field—and returns a principal-bound intent with safe metadata, the authenticated fallback link and, for a grant that can write, a principal-bound upload URL on this resource's own origin. That URL is never a presigned storage URL and the term is not a synonym for one: it is principal-bound, and the caller authenticates. Who redeems the one-time ticket is the only difference between the two paths. Browser-mediated: the authenticated human opens the console page, whose browser verifies every declared field, redeems the encrypted ticket outside model context and uploads chunks with Dibbla-Transfer. Agent-redeemed: the client process PUTs bounded chunks to <resource-origin>/platform/v1/file-transfers/<transfer_id>/bytes with Upload-Offset, authenticating with its own platform access token for the same grant; the first chunk redeems the ticket server-side. The URL carries no signature, ticket or session—it locates one transfer and the token decides—so a redeemed, expired or foreign-principal redemption is refused as absent, and it is a structured field the client acts on rather than prose the model repeats. Both paths share one transfer_id, one intent ledger, one resume offset and the uncached live-grant check that stops the next chunk after a revoke. Declared length or sha256 that does not hold ends the intent and produces no file. Completion publishes only the opaque source_file_id back to MCP. Abort is idempotent and never deletes a completed file. Ticket/session plaintext, presigned storage URLs and bytes are absent from the durable intent ledger, MCP results, model context, logs and audit. DIB-704 merged the four transfer steps into platform_file_transfer; actions prepare_upload, status and abort are this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_file_upload_prepare",
-      "mcp_tools": [
-        "platform_file_transfer_abort",
-        "platform_file_transfer_status"
-      ]
+      "mcp_tool": "platform_file_transfer"
     },
     {
       "id": "platform.files.delete",
@@ -818,11 +800,11 @@
         "platform:files:delete"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_file_delete_plan and platform_file_delete_execute. A file is named by its opaque source_file_id and never by a content hash, transfer id, ticket or session: the content hash is a dedup key shared across organizations, so it is not an identity. Plan is read-only, quotes name, size, content hash and status, and says what stops working — every capability that names the file, including database restore and file download — while stating that the content-addressed blob is deliberately left in place because it is shared with every other record holding the same bytes. The approval boundary is deploy-api's one confirmation ledger even though the records live in the broker, so there is a single audit to read and a single shape to review. Execute accepts only request_id, refuses a file renamed or replaced after planning, is single-use, durably replays its terminal result, and answers absent for another organization in both directions. No byte, object key or storage host can appear on this surface.",
+      "note": "Shipped by DIB-673 (P-0035 Part F) as exactly platform_file_delete_plan and platform_file_delete_execute. A file is named by its opaque source_file_id and never by a content hash, transfer id, ticket or session: the content hash is a dedup key shared across organizations, so it is not an identity. Plan is read-only, quotes name, size, content hash and status, and says what stops working — every capability that names the file, including database restore and file download — while stating that the content-addressed blob is deliberately left in place because it is shared with every other record holding the same bytes. The approval boundary is deploy-api's one confirmation ledger even though the records live in the broker, so there is a single audit to read and a single shape to review. Execute accepts only request_id, refuses a file renamed or replaced after planning, is single-use, durably replays its terminal result, and answers absent for another organization in both directions. No byte, object key or storage host can appear on this surface. DIB-704 merged every destructive pair into platform_destructive_plan / platform_destructive_execute; resource=file is this row.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_file_delete_execute",
+      "mcp_tool": "platform_destructive_execute",
       "mcp_tools": [
-        "platform_file_delete_plan"
+        "platform_destructive_plan"
       ]
     },
     {
@@ -833,15 +815,10 @@
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND.",
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND. DIB-704 merged status, events, logs and output into platform_operation; `view` chooses between them.",
       "production": "live",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_operation_status",
-      "mcp_tools": [
-        "platform_operation_events",
-        "platform_operation_logs",
-        "platform_operation_output"
-      ],
+      "mcp_tool": "platform_operation",
       "cli_commands": [
         "workflows logs",
         "workflows runs list",
@@ -1048,15 +1025,14 @@
     {
       "id": "platform.apps.maintenance.read",
       "title": "Read an app’s maintenance settings and runs",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla apps maintenance status|runs has no /platform tool. Reserved for DIB-704, which settles which family it joins rather than giving maintenance three tools of its own.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps",
+      "note": "`dibbla apps maintenance status|runs` is platform_apps with view=maintenance: whether scheduled maintenance is on for the application, whether that was decided for the app or inherited from the organization, and its most recent runs. Maintenance is a property of an application, not an authority beside it, so it is a view of the apps read tool rather than a family of its own — which is why DIB-704 could add three capabilities here without adding a tool.",
       "cli_commands": [
         "apps maintenance status",
         "apps maintenance runs"
@@ -1065,15 +1041,14 @@
     {
       "id": "platform.apps.maintenance.settings",
       "title": "Enable or disable an app’s scheduled maintenance",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:apps:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla apps maintenance enable|disable has no /platform tool. Reserved for DIB-704. The scope is the app write scope because maintenance is a property of the app, not an authority of its own.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "`dibbla apps maintenance enable|disable` is the maintenance_enabled field of platform_app_config_update. The scope is the app write scope because a maintenance setting is app configuration, decided by the same authority as its replicas. It may be given alone or together with the other changes.",
       "cli_commands": [
         "apps maintenance enable",
         "apps maintenance disable"
@@ -1082,15 +1057,14 @@
     {
       "id": "platform.apps.maintenance.run",
       "title": "Start one maintenance run",
-      "state": "not-yet-available",
+      "state": "remote-async",
       "scopes": [
         "platform:apps:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-async",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla apps maintenance run has no /platform tool. Reserved for DIB-704. A run is long, so its eventual state is remote-async: a durable operation ID that is polled, never an MCP call held open.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_run",
+      "note": "`dibbla apps maintenance run` is platform_app_run with kind=maintenance. It returns as soon as the run is dispatched and is followed with platform_apps view=maintenance, because a maintenance run outlives one call. It requires an idempotency_key: the run spends the organization's model budget, so a retry must not spend it twice.",
       "cli_commands": [
         "apps maintenance run"
       ]
@@ -1098,15 +1072,14 @@
     {
       "id": "platform.deployment_proposals.decide",
       "title": "Approve, deny or retry a deployment proposal",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:deployment-proposals:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla apps proposals approve|deny|retry has no /platform tool. Reserved for DIB-704. Four-eyes is the hard part and it is a property of the deciding principal, not of the surface: under admin_four_eyes and member_four_eyes the decider must be a different human from the proposer, so an agent may only ever carry a decision its own grant is entitled to make, and never the proposer’s.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_deployment_proposals",
+      "note": "`dibbla apps proposals approve|deny|retry` are actions of platform_deployment_proposals. DIB-537 refused an agent the power to approve, and what makes it safe now is not a rule in the connector but the one deploy-api already enforces: under admin_four_eyes and member_four_eyes the decider must be a different human from the proposal's author, checked against the acting user id, and an agent-authored proposal always needs an owner or admin other than its author. The connected agent acts as one identified human, so it can only ever carry a decision that human is entitled to make — never its own proposal's. A governance refusal is returned as FORBIDDEN naming the rule.",
       "cli_commands": [
         "apps proposals approve",
         "apps proposals deny",
@@ -1116,15 +1089,17 @@
     {
       "id": "platform.workflows.delete",
       "title": "Delete a workflow",
-      "state": "not-yet-available",
+      "state": "remote-destructive",
       "scopes": [
         "platform:workflows:delete"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-destructive",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla wf delete has no /platform tool. Reserved for DIB-704, behind the same plan → human approval → execute shape as every other destructive row.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_destructive_execute",
+      "mcp_tools": [
+        "platform_destructive_plan"
+      ],
+      "note": "`dibbla wf delete` is resource=workflow on platform_destructive_plan / platform_destructive_execute, behind the same plan → human approval → execute shape as every other irreversible capability. The plan says how many revisions and runs go with the definition, because that is the sentence the human approves.",
       "cli_commands": [
         "workflows delete"
       ]
@@ -1132,15 +1107,17 @@
     {
       "id": "platform.workflows.runs.purge",
       "title": "Permanently purge workflow run history",
-      "state": "not-yet-available",
+      "state": "remote-destructive",
       "scopes": [
         "platform:workflows:delete"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-destructive",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla wf runs purge has no /platform tool. Reserved for DIB-704. Purging run history destroys the audit trail of past executions, so it is destructive even though it removes no workflow.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_destructive_execute",
+      "mcp_tools": [
+        "platform_destructive_plan"
+      ],
+      "note": "`dibbla wf runs purge` is resource=workflow_runs on the destructive pair, and it is a separate resource from platform.workflows.delete on purpose: it leaves the workflow running and destroys only the record of what it did. Purging an audit trail is destructive even though nothing stops working, and a human approving it must not be shown the sentence for deleting the whole workflow. It is the one resource that also takes a `before` cutoff; runs started on or after it are kept, and running ones are never touched.",
       "cli_commands": [
         "workflows runs purge"
       ]
@@ -1148,15 +1125,14 @@
     {
       "id": "platform.workflows.publish",
       "title": "Read a workflow’s HTTP surface and console URL",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:workflows:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla wf api-docs|url has no /platform tool. Reserved for DIB-704 — most likely as fields on the workflow the read family already returns rather than as two tools.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_workflows",
+      "note": "`dibbla wf api-docs|url` is platform_workflows with view=api: the HTTP endpoint an api node is reachable at, its inputs, and the console URL. Two commands, one question — how is this workflow reached from outside Dibbla — so one view rather than two tools.",
       "cli_commands": [
         "workflows api-docs",
         "workflows url"
@@ -1165,15 +1141,14 @@
     {
       "id": "platform.workflows.functions",
       "title": "Browse the workflow function and provider registry",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:workflows:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla functions list|get|providers has no /platform tool. platform_workflow_tools answers the neighbouring question — which tools a given agent node may use — and is not the same registry. Reserved for DIB-704.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_catalog",
+      "note": "`dibbla functions list|get|providers` are kinds of platform_catalog: workflow_functions, workflow_function and workflow_function_providers. DIB-676 recorded a suspicion that this was a different registry from the one platform_workflow_tools read; it was not — both are the slim API's /functions — so DIB-704 gave the registry one honest name and folded the old tool into it.",
       "cli_commands": [
         "functions list",
         "functions get",
@@ -1183,15 +1158,14 @@
     {
       "id": "platform.identity.organizations",
       "title": "List the organizations the caller belongs to",
-      "state": "not-yet-available",
+      "state": "remote-read",
       "scopes": [
         "platform:identity:read"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla org list has no /platform tool. platform_whoami answers who the caller is in the acting organization, not which organizations exist for them. Reserved for DIB-704; the acting organization itself stays fixed by the grant (cli.org.select).",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_whoami",
+      "note": "`dibbla org list` is the organizations field of platform_whoami. It is identity rather than organization data: the grant still acts in one organization and nowhere else, and nothing in the list can be acted on. It exists because it is the only way an agent can tell 'this application does not exist' apart from 'this application is in another organization you can reach, which needs its own authorization' — and the second answer is a different next step for the person.",
       "cli_commands": [
         "org list"
       ]
@@ -1199,15 +1173,14 @@
     {
       "id": "platform.feedback",
       "title": "Send, list and withdraw the caller’s own product feedback",
-      "state": "not-yet-available",
+      "state": "remote-write",
       "scopes": [
         "platform:feedback:write"
       ],
       "auth": "oauth",
-      "eventual_state": "remote-write",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla feedback and its list|delete subcommands have no /platform tool. Reserved for DIB-704.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_feedback",
+      "note": "`dibbla feedback` and its list|delete subcommands are the actions of platform_feedback. The list is the organization's feedback and only the author can withdraw a message, which is what feedback-service enforces; the connector adds no rule of its own. Feedback reaches Dibbla's own team, so the tool's description tells the agent to pass on what the user actually asked it to and nothing else.",
       "cli_commands": [
         "feedback",
         "feedback list",
@@ -1217,13 +1190,14 @@
     {
       "id": "platform.templates.list",
       "title": "List the available project templates",
-      "state": "not-yet-available",
-      "scopes": [],
+      "state": "remote-read",
+      "scopes": [
+        "platform:identity:read"
+      ],
       "auth": "oauth",
-      "eventual_state": "remote-read",
-      "owner": "P-0035 Part F",
-      "tracked_by": "DIB-704",
-      "note": "dibbla template list fetches the template manifest over the network and caches it locally; installing from it is local-only (cli.scaffold), but listing it is a plain remote read with no /platform tool. Reserved for DIB-704. No scope is named because the catalogue is not organization data — which authority it should sit under is part of that story.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_catalog",
+      "note": "`dibbla template list` is platform_catalog with kind=templates. DIB-676 left the authority open because the catalogue is not organization data; DIB-704 settled it on the identity read scope every grant already holds, since naming a wider one for a public list would be asking for something this does not need. Installing from the catalogue stays local-only (cli.scaffold): the files land on the caller's filesystem. Reading it is a plain remote read, and the agent needs it because naming a template that does not exist is the failure it prevents.",
       "cli_commands": [
         "template list"
       ]
