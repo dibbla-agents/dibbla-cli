@@ -615,7 +615,7 @@ Three things to know before looking for a tool:
 - **A tool is a flow, and the step is a parameter.** `platform_apps` lists your
   apps when you omit `alias` and reads one when you name it; `platform_operation`
   takes a `view` of `status`, `events`, `logs` or `output`;
-  `platform_file_transfer` takes an `action`; `platform_destructive_plan` takes
+  `platform_files` takes an `action`; `platform_destructive_plan` takes
   the `resource` to destroy. If you cannot find a tool for something, look for
   the parameter on the tool that owns the flow — see
   `.claude/skills/dibbla/platform.md` § 13 for the map.
