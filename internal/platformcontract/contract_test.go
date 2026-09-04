@@ -221,8 +221,8 @@ func TestCanonicalDigestMatchesTheCheckedInConstants(t *testing.T) {
 	const (
 		scopesDigest       = "sha256:50f37019fe6438340fa853359025dfd2e37581391596e8d0049c278d4fb3113f"
 		errorsDigest       = "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d"
-		capabilitiesDigest = "sha256:5f55e02bb0d6eee4c422fa2a5956b132499d9e7913c2ceb9f36185621a75cef5"
-		contractDigest     = "sha256:6b031ce9739795d50e00b28f5ec15761d488701e66f7e2c1d1a253eb5d7e8c2d"
+		capabilitiesDigest = "sha256:6dd41301a2802366a7eeb590f6aa4547f0e04121c71500a79cfe5e587d5fd517"
+		contractDigest     = "sha256:2c92ea1afd6632f8f85ab0c3b9fc2927a7ddf0a2f4b7db8809dec611e3076dee"
 	)
 	want := map[string]string{
 		"v1/scopes.json":       scopesDigest,

@@ -643,7 +643,8 @@ the step.
 | Start a workflow | `platform_workflow_execute` | — |
 | Follow anything long-running | `platform_operation` | `view: status` \| `events` \| `logs` \| `output` |
 | Stop it | `platform_operation_cancel` | — |
-| Move a file in or out | `platform_file_transfer` | `action` |
+| Read the files of a running app | `platform_files` | `action: glob` \| `grep` \| `read` |
+| Move a file in or out | `platform_files` | `action: prepare_upload` \| `prepare_download` \| `status` \| `abort` |
 | Tell Dibbla what is working and what is not | `platform_feedback` | `action` |
 | Destroy something irreversibly | `platform_destructive_plan` → human approval → `platform_destructive_execute` | `resource` |
 
