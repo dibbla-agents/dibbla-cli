@@ -3,7 +3,7 @@
   "files": {
     "v1/scopes.json": "sha256:50f37019fe6438340fa853359025dfd2e37581391596e8d0049c278d4fb3113f",
     "v1/errors.json": "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d",
-    "v1/capabilities.json": "sha256:6dd41301a2802366a7eeb590f6aa4547f0e04121c71500a79cfe5e587d5fd517"
+    "v1/capabilities.json": "sha256:cb5ce0a4b342c04c8741b05adbf5e36fdd8de7d60f9e4c88a101d8119957c173"
   },
-  "contract_digest": "sha256:2c92ea1afd6632f8f85ab0c3b9fc2927a7ddf0a2f4b7db8809dec611e3076dee"
+  "contract_digest": "sha256:27d906b9aa6f57dc68650709c5d1d6fa2894fba8eec939297597dfc27e575e5f"
 }
