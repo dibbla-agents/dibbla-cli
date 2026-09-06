@@ -8,6 +8,41 @@ when_to_use: Trigger on Dockerfile/.dibblaignore/deploy-readiness, build-time vs
 
 The `dibbla` CLI scaffolds projects and manages **applications**, **databases**, **secrets**, and **workflows** on the Dibbla platform. Deployed apps are available at `https://<alias>.dibbla.com`.
 
+## This skill is about the CLI. There is a second skill for the connector.
+
+Dibbla is reachable two ways, and they have **separate skills**. Packaging the
+wrong one is the mistake this section exists to prevent.
+
+- **This skill — `dibbla`.** The command-line program. It assumes a shell, a
+  filesystem and a CLI signed in on that machine. Everything below is written
+  as commands to run.
+- **The connector skill — `dibbla-platform`.** The Dibbla MCP connector at
+  `https://mcp.dibbla.com/platform`, used by claude.ai, Claude Cowork, Claude
+  Code, Codex CLI and ChatGPT. It is written for an agent that has tool calls
+  and **may have no shell at all**: it covers connecting and consent, reading a
+  running app's source and patching it without a filesystem, the durable
+  operations long work returns, and the databases, storage, secrets and
+  workflows tools. It gives no `dibbla` commands, because an agent connected
+  over the connector often cannot run one. It is versioned with the platform
+  capability contract, not with a CLI release, and it is served by the
+  connector itself — it does not ship in this binary and is not published to
+  `dibbla-agents/skills`.
+
+**Pick by what the surface has, not by what the task is.** An agent with a
+shell and a signed-in CLI is in this skill's territory. An agent whose only
+Dibbla access is the `platform_*` tools needs the connector skill; handing it
+this one gives it 6900 lines of commands it cannot run.
+
+Both can be true at once. When an agent has both, the connector is the default
+for anything on the platform, and this skill takes over for the work that is
+genuinely local — packing a directory into an upload archive, cloning an app's
+repository, scaffolding onto disk, running a task pipeline, dumping a database
+to a file, bulk-loading a `.env`, and printing a credential to a terminal.
+Those are local because one end of them is the caller's own machine, which
+nothing remote can reach.
+
+For what the connector can do at all, see [platform.md](platform.md) §0.
+
 ## Prerequisites
 
 **Install the CLI** if it isn't already on the user's `PATH`:
