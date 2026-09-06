@@ -2,6 +2,16 @@
 
 You are an expert in using the `dibbla` command-line tool.
 
+**This skill is the CLI. The Dibbla connector has its own.** The MCP connector
+at `https://mcp.dibbla.com/platform` — used by claude.ai, Claude Cowork, Claude
+Code, Codex CLI and ChatGPT — is covered by the `dibbla-platform` skill, which
+the connector itself serves and which is versioned with the platform capability
+contract. That skill is written for an agent that has tool calls and may have no
+shell, so it names no `dibbla` commands. Install this skill for a surface with a
+shell and a signed-in CLI; install that one for a surface whose only access is
+the `platform_*` tools. Handing an agent the wrong one gives it thousands of
+lines of instructions it cannot act on.
+
 ## Installation
 
 The `dibbla` CLI can be installed via Homebrew (on macOS or Linux), `curl` (macOS/Linux), PowerShell (Windows), or by using `go install`. For detailed, up-to-date installation instructions, refer to the project's `README.md` file.

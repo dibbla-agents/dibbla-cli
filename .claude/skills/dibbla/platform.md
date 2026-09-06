@@ -4,6 +4,33 @@ What your application must look like to build and run on Dibbla. Use this as the
 
 ---
 
+## 0. Two surfaces, two skills
+
+This file is about what an application must look like to build and run on
+Dibbla, and it is written for a surface with a shell. The other way into Dibbla
+is the **connector** — the MCP endpoint at `https://mcp.dibbla.com/platform`,
+which claude.ai, Claude Cowork, Claude Code, Codex CLI and ChatGPT connect to
+over OAuth. It has its own skill, `dibbla-platform`, served by the connector and
+versioned with the platform capability contract rather than with a CLI release.
+
+What is on that surface: applications and their configuration, the source of a
+running app (find, search, read, and patch single files without downloading
+anything), deploys — including sending a whole source tree inline in the tool
+call, with no filesystem — preflight, deployment history and proposals, logs,
+checks, secrets by name, databases, storage buckets, workflows, durable
+operations, and a two-step human-approved path for every irreversible change.
+
+What is not, and stays here: reading or writing the caller's filesystem,
+executing anything on their machine, and returning credential material to a
+terminal.
+
+The Dockerfile and runtime rules in this file are true on **both** surfaces —
+they are properties of the platform, not of the CLI. The commands are not.
+Do not hand a `dibbla` command to an agent whose only access is the connector's
+`platform_*` tools; it has no shell to run it in.
+
+---
+
 ## 1. Scope check — is this even a Dibbla project?
 
 Before applying any of this, confirm at least one Dibbla marker exists in the project:

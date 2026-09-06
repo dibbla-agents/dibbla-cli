@@ -30,6 +30,27 @@ and commit the regenerated files alongside the source edits. The
 runs on every PR that touches skill files and fails the build if `go
 generate` would change anything — meaning someone forgot this step.
 
+## The connector skill is a different artifact, in a different repo
+
+`dibbla-platform` — the skill for the Dibbla MCP connector — is **not** in this
+repo and is not published by any workflow here. It lives in
+`app-hosting-service/mcp-server/skillset/dibbla-platform/`, is embedded into
+mcp-server by `go:embed`, and is released the way the server is released: it
+ships with the image, and its version is the vendored platform capability
+contract's version (`platformcontract.ContractVersion()`), not a `dibbla-cli`
+tag. A test in that package fails the build if the frontmatter version and the
+contract disagree.
+
+Two consequences for edits here:
+
+- **Do not add connector material to the CLI skill.** An agent on the connector
+  often has no shell; a `dibbla` command is not an instruction it can follow.
+  What belongs here is the boundary — written in `.claude/skills/dibbla/SKILL.md`
+  and `platform.md` §0 — so that whoever packages a skill picks the right one.
+- **Platform facts that are true on both surfaces** (Dockerfile shape, runtime
+  contract, manifest semantics) live here *and* are restated in the connector
+  skill in its own terms. They are properties of the platform. Commands are not.
+
 ## Skill publishing contract
 
 `.github/workflows/publish-skill.yml` mirrors the embedded skill
