@@ -97,7 +97,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Inputs     | `inputs set <wf> <node> <input> <value>` |
 | Tools      | `tools add <wf> <agent> <tool>`, `tools remove` |
 | Revisions  | `revisions list <wf>`, `revisions create`, `revisions restore` |
-| Functions  | `functions list`, `functions get <server> <name>` |
+| Functions  | `functions list`, `functions get <server> <name>`; `functions exposed`, `functions expose <server> <name> [--min-role viewer\|developer\|admin\|owner] [--disabled]`, `functions unexpose <server> <name> [-y]` (admin/owner) — expose a registered function as a tool on the `/platform/tools` MCP connector for members at or above the min role; `functions invocations [--server --function --source --user --since -n]`, `functions invocation <id> [--logs]` — every call through the connector is a **tool invocation**, not a run |
 
 ## Agent guidelines
 

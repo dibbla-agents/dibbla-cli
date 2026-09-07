@@ -2,8 +2,10 @@ package wf
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -68,15 +70,6 @@ func runRunLogs(cmd *cobra.Command, args []string) error {
 // and `dibbla wf execute --follow`, which captures the runId from the
 // async-execute response and then tails.
 func runLogsByID(cmd *cobra.Command, runID string) error {
-	cfg := config.Load()
-	if !cfg.HasToken() {
-		fmt.Fprintf(os.Stderr, "%s Error: API token is required. Run `dibbla login` or set DIBBLA_API_TOKEN.\n", platform.Icon("❌", "[X]"))
-		os.Exit(1)
-	}
-
-	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
 	// When invoked from `wf execute --follow` the logsFlagXxx package globals
 	// are at their zero values (cobra only binds them when the user passes
 	// `wf logs ...` directly). Pick safe defaults that work for both paths.
@@ -102,7 +95,36 @@ func runLogsByID(cmd *cobra.Command, runID string) error {
 		opts.Since = time.Now().Add(-logsFlagSince)
 	}
 
-	body, err := applogs.StreamRun(ctx, cfg.APIURL, cfg.APIToken, runID, opts)
+	return tailLogStream(cmd, fmt.Sprintf("run %q", runID),
+		func(ctx context.Context, cfg *config.Config) (io.ReadCloser, error) {
+			return applogs.StreamRun(ctx, cfg.APIURL, cfg.APIToken, runID, opts)
+		})
+}
+
+// logStreamOpener opens one NDJSON log stream against the configured API.
+type logStreamOpener func(ctx context.Context, cfg *config.Config) (io.ReadCloser, error)
+
+// tailLogStream prints one run-shaped NDJSON log stream to stdout, honouring
+// --json / --no-color and stopping at the server's run_completed sentinel.
+// Runs and tool invocations (DIB-764) share it: they differ only in which
+// endpoint is opened, which is what `open` decides. `what` names the subject
+// in the not-found message ("run \"abc\"", "invocation \"abc\"").
+func tailLogStream(cmd *cobra.Command, what string, open logStreamOpener) error {
+	cfg := config.Load()
+	if !cfg.HasToken() {
+		fmt.Fprintf(os.Stderr, "%s Error: API token is required. Run `dibbla login` or set DIBBLA_API_TOKEN.\n", platform.Icon("❌", "[X]"))
+		os.Exit(1)
+	}
+
+	parent := cmd.Context()
+	if parent == nil {
+		// cobra sets a context on Execute; a direct RunE call has none.
+		parent = context.Background()
+	}
+	ctx, cancel := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	body, err := open(ctx, cfg)
 	if err != nil {
 		var httpErr *applogs.HTTPError
 		if errors.As(err, &httpErr) {
@@ -110,7 +132,7 @@ func runLogsByID(cmd *cobra.Command, runID string) error {
 			case 401, 403:
 				return fmt.Errorf("not authorized — check your API token (got %d)", httpErr.Status)
 			case 404:
-				return fmt.Errorf("run %q not found in your organization", runID)
+				return fmt.Errorf("%s not found in your organization", what)
 			}
 		}
 		return err

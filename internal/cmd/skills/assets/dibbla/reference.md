@@ -1500,6 +1500,51 @@ Alias: `fn`.
 
 **Agent guidance:** since the field-types fix, `fn get` is the **trusted source of truth** for input/output types. Older cached output (or pre-fix workflow YAML files saved to disk) may report everything as `string`; treat post-fix `fn get` as authoritative, and reach for the function source at `go-toolserver/functions/<name>/function.go` if `fn get` and a workflow's hardcoded type still disagree. Mismatched types fail at runtime with `cannot unmarshal X into Go struct field Inputs.Y of type Z`.
 
+
+### functions exposed
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions exposed` |
+| **Output** | Table: NAME, SERVER, MIN ROLE, ENABLED, REGISTERED (default); JSON/YAML with `-o` |
+| **Behavior** | Lists the organization's function exposures — the functions members can call as tools on the `/platform/tools` MCP connector. REGISTERED `false` means the function's worker is not connected right now; the exposure stays and the tool is offered again when it registers. |
+
+### functions expose
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions expose <server> <name> [--min-role viewer\|developer\|admin\|owner] [--disabled]` |
+| **Arguments** | `server` (required), `name` (required) — a function currently in `functions list` |
+| **Flags** | `--min-role` — lowest organization role that may call the tool (default `viewer`, i.e. any member; there is no `member` role) |
+| | `--disabled` — record the exposure but do not offer the tool yet |
+| **Role** | admin or owner (enforced server-side) |
+| **Behavior** | Upsert: running it again on an exposed function updates its min role and enabled state. Prints the resulting exposure. Refusals: `_`-prefixed and `data_source_*` functions cannot be exposed (400); an unregistered function is 404; the 101st enabled exposure is refused (409 `EXPOSURE_LIMIT`, exit 6) — unexpose one first. |
+
+### functions unexpose
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions unexpose <server> <name> [-y]` |
+| **Role** | admin or owner |
+| **Behavior** | Removes the exposure; members lose the tool at their next tool listing. Recorded invocations are kept. Prompts unless `--yes`. To hide the tool without forgetting the policy, use `expose … --disabled` instead. |
+
+### functions invocations
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions invocations [--server <s>] [--function <name>] [--source mcp\|api\|cli] [--user <id>] [--since <RFC3339\|unix>] [-n <N>]` |
+| **Output** | Table: ID, WHEN, FUNCTION (`server/name`), SOURCE, USER, STATUS, DURATION, ERROR (default, newest first); JSON/YAML with `-o` |
+| **Behavior** | Every call to an exposed function — through the MCP connector or the API — is recorded as a **tool invocation**, a sibling of a workflow run that never appears in `wf runs list`. ERROR shows the failure summary, or the error code when there is none. |
+
+### functions invocation
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions invocation <id> [--logs]` |
+| **Output** | YAML (default) or JSON with `-o json`: caller, source, status, duration, input/output sizes and digests, result preview |
+| **Flags** | `--logs` — also print the log lines the function emitted during the call, in the same format as `dibbla wf logs` |
+
+**Agent guidance:** exposing is a policy decision for an admin, not a step in workflow authoring — a function does not need to be exposed to be used in a workflow. Reach for `fn exposed` / `fn invocations` when someone asks "which of our functions can agents call directly" or "who called this tool, and what happened".
 ---
 
 ---
@@ -1568,3 +1613,8 @@ Alias: `fn`.
 | Revisions | `dibbla revisions restore <wf> <id>` | Restore revision |
 | Functions | `dibbla functions list` | List available functions |
 | Functions | `dibbla functions get <server> <name>` | Get function details |
+| Functions | `dibbla functions exposed` | List functions exposed as MCP tools |
+| Functions | `dibbla functions expose <server> <name> [--min-role <role>] [--disabled]` | Expose a function as an MCP tool (admin) |
+| Functions | `dibbla functions unexpose <server> <name> [-y]` | Stop exposing a function (admin) |
+| Functions | `dibbla functions invocations [filters]` | List calls made to exposed functions |
+| Functions | `dibbla functions invocation <id> [--logs]` | Show one call, optionally with its logs |
