@@ -211,7 +211,7 @@ func TestVerifyFallsOnEveryDirectionOfDrift(t *testing.T) {
 // a re-vendoring would replace. If the Go canonicalisation drifted from
 // Python's, those comparisons would move together and stay green. These
 // constants were copied out of architecture/docs/contract/contract.lock by
-// hand on 2026-08-29; they are what the canonical verifier produced, and they
+// hand on 2026-08-29 and refreshed for DIB-764 on 2026-09-07; they are what the canonical verifier produced, and they
 // are the same four literals app-hosting-service and dibbla-docs pin.
 //
 // If this falls right after a re-vendoring, the constants are stale — replace
@@ -219,10 +219,10 @@ func TestVerifyFallsOnEveryDirectionOfDrift(t *testing.T) {
 // the canonicalisation broke, and that is the case this test exists for.
 func TestCanonicalDigestMatchesTheCheckedInConstants(t *testing.T) {
 	const (
-		scopesDigest       = "sha256:50f37019fe6438340fa853359025dfd2e37581391596e8d0049c278d4fb3113f"
+		scopesDigest       = "sha256:e16adeb69f0e73d12c57b9f2b2982667257a69517e02b8a61cc423ef4d40ade3"
 		errorsDigest       = "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d"
-		capabilitiesDigest = "sha256:0bd2778a2d785b8a202190d4d70a3ff09a6aaa4716be1403347937c0a57406c4"
-		contractDigest     = "sha256:a2c7ec91f8bd0bd9e306fe826eac1a057719f83e15cdad09b2c00e08198a4e9c"
+		capabilitiesDigest = "sha256:93907a07fafec7cbc8aa7c516fcf3d7af60ae547357b5dc160df2d116b850295"
+		contractDigest     = "sha256:7d48a904c039c6007b85c778e72c24957a46805eac73fe6eeb25e80174a407ed"
 	)
 	want := map[string]string{
 		"v1/scopes.json":       scopesDigest,
@@ -297,6 +297,7 @@ func TestRegistryNamesEveryScopeExplicitly(t *testing.T) {
 		"platform:operations:cancel",          //contract-pinned: hand-written inventory
 		"platform:workflows:delete",           //contract-pinned: hand-written inventory
 		"platform:feedback:write",             //contract-pinned: hand-written inventory
+		"platform:tools:execute",              //contract-pinned: hand-written inventory
 	}
 
 	var got []string
