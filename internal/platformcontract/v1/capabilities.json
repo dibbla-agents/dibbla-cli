@@ -40,9 +40,9 @@
       "not-yet-available"
     ],
     "command_granularity": "leaf",
-    "max_tools_full_write": 30,
-    "tool_budget_target": 30,
-    "tool_budget_note": "A full write grant must not show more tools than max_tools_full_write. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused. tool_budget_target is where P-0035 Part F says the surface belongs — every tool definition costs the agent context before it has done anything. DIB-704 took it from 59 to the target by merging families: one destructive pair for every irreversible capability instead of seven, one read tool per resource instead of a list tool and a get tool, and a parameter wherever the difference between two tools was which step of the same flow they named. The surface now sits exactly on its target, so the next capability is a parameter on a tool that is already listed, or it is a decision to take one away."
+    "max_tools_full_write": 31,
+    "tool_budget_target": 31,
+    "tool_budget_note": "A full write grant must not show more AGENT-VISIBLE tools than max_tools_full_write. Agent-visible is the whole measurement: a tool declared app-only (_meta.ui.visibility: [\"app\"], listed in a row's mcp_app_only_tools) is reachable only by this server's own MCP Apps card, never appears in the model's context and therefore costs the agent nothing — it is outside the count, not an allowance inside it. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused UNLESS the raise itself is a decision written here. There has been one. tool_budget_target is where P-0035 Part F says the surface belongs — every agent-visible tool definition costs the agent context before it has done anything. DIB-704 took it from 59 to 30 by merging families: one destructive pair for every irreversible capability instead of seven, one read tool per resource instead of a list tool and a get tool, and a parameter wherever the difference between two tools was which step of the same flow they named. DIB-753 raised it to 31 for platform_app_card, and this is the motivation the raise was allowed on: a render tool is not a data tool. Every other capability answers what is true about the platform and could be merged into a family that answers the same question; this one draws a surface for a human inside the chat, and merging it into platform_apps would make the honest read of an application also a request to display something — the one thing the budget's own rule (a parameter is cheaper than a tool) cannot buy. The surface sits exactly on its target again, so the next capability is a parameter on a tool that is already listed, an app-only tool, or it is a decision to take one away."
   },
   "capabilities": [
     {
@@ -251,6 +251,24 @@
       "production": "live",
       "cli_commands": [
         "apps get"
+      ]
+    },
+    {
+      "id": "platform.apps.card",
+      "title": "Show one application as a live card inside a chat host",
+      "state": "remote-read",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-753 (epic DIB-748) as the connector's first MCP Apps surface (SEP-1865, ratified 2026-01-26): platform_app_card answers with the application's name, URL, status and the steps of the deploy that is producing it, and points at a ui:// resource whose HTML a rendering host draws inline. THE RENDER TOOL IS SEPARATE FROM THE DATA TOOLS on purpose (OpenAI's own recommendation): platform_apps and platform_deployments keep answering the question 'what is true', and this row answers 'show it to the customer'. The card is self-contained — every byte of it is in the resource and every value comes from a tool call, because Claude blocks all external origins from an app iframe until Anthropic's security review lands (claude-ai-mcp #40); the nested live preview is DIB-754's, not this row's. The ui:// URI carries a digest of the card, because a host caches the resource per connector and otherwise serves an old card across a redeploy (measured in DIB-751, not read in documentation). While the deploy runs, the card refreshes itself through platform_app_card_state, an app-only tool (_meta.ui.visibility: [\"app\"]) the model never sees and can never call; it is declared in mcp_app_only_tools below and is therefore outside the tool budget, and it is registered only for a client that declared the io.modelcontextprotocol/ui extension, so an agent on a host without MCP Apps is not offered a tool it could not use. Both tools need platform:apps:read and NOTHING NEW: the build steps come from the same deployment operation platform_operation already reads, and are included only for a grant that also holds platform:operations:read — a narrower grant gets the card without them rather than an error. A host without the extension gets the whole answer as text from the same call, which is what makes Codex CLI and Claude Code degrade instead of fail.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_card",
+      "mcp_tools": [
+        "platform_app_card_state"
+      ],
+      "mcp_app_only_tools": [
+        "platform_app_card_state"
       ]
     },
     {
