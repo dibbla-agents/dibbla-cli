@@ -1,6 +1,6 @@
 # Dibbla Go SDK (`sdk-go`)
 
-The Go SDK at `github.com/dibbla-agents/sdk-go` is how Go workers register **functions** and **jobs** with the Dibbla workflow runtime. A worker is a long-lived process that opens a gRPC connection to the platform, declares what it can do, and handles incoming events. The platform's workflow registry is the single source of truth — once your worker is connected, its functions become callable from any workflow YAML by `(server, function)` pair, and its jobs run as **pipeline jobs** — a pipeline (on a cron schedule, or via a pipeline webhook) makes the platform dispatch a `job_trigger` gRPC event to the worker. There is no `job_trigger` workflow-YAML node type.
+The Go SDK at `github.com/dibbla-agents/sdk-go` is how Go workers register **functions** and **jobs** with the Dibbla workflow runtime. A worker is a long-lived process that opens a gRPC connection to the platform, declares what it can do, and handles incoming events. The platform's workflow registry is the single source of truth — once your worker is connected, its functions become callable from any workflow YAML by `(server, function)` pair, and its jobs run as **pipeline jobs** — a pipeline (on a cron schedule, or via a pipeline webhook) makes the platform dispatch a `job_trigger` gRPC event to the worker. There is no `job_trigger` workflow-YAML node type. Pipelines — the schedule, the concurrency policy and the `pipeline.run.*` alerts that make a scheduled batch worth trusting — are their own subject: see [pipelines.md](pipelines.md).
 
 This doc covers building workers. For the workflow side (calling registered functions from YAML, validator errors, the agent+tools pattern), see [workflows.md](workflows.md). For deploying the worker as a Dibbla app, see [platform.md](platform.md).
 
@@ -10,6 +10,7 @@ This doc covers building workers. For the workflow side (calling registered func
 |---|---|
 | Add a new function to the workflow function registry | **SDK** — `sdk.NewSimpleFunction` (this is the one for your own module; `sdk.NewFunction` is in-repo-only — see §5.2) |
 | Run a long-running background job that reports progress to the dashboard | **SDK** — `jobs.JobHandler` + `server.RegisterJob` |
+| Run that job every night, and be told when it breaks or stops running | **SDK** for the job + a **pipeline** for the schedule and the alerts — see [pipelines.md](pipelines.md) |
 | Call third-party APIs using a workflow user's OAuth tokens (Google/Microsoft/GitHub) | **SDK** — advanced `Function[In, Out]` with `gs.OAuth` (in-repo workers only — see §5.2) |
 | Deploy a regular HTTP app (web server, frontend, REST API) | `dibbla deploy` with a `Dockerfile`, **no SDK needed** |
 | Build / iterate / call a workflow without writing Go | `dibbla wf` commands — see [workflows.md](workflows.md) |
@@ -139,7 +140,7 @@ server.RegisterFunction(
 
 ## 6. Jobs
 
-Long-running work that needs progress reporting, structured task tracking, and dashboard visibility. Registered with `server.RegisterJob` and invoked as a **pipeline job** — a pipeline (typically on a cron schedule) makes the platform send the worker a `job_trigger` gRPC event; there is no workflow-YAML node named `job_trigger`. Each trigger runs asynchronously: it spawns a goroutine on the worker and streams events back over gRPC.
+Long-running work that needs progress reporting, structured task tracking, and dashboard visibility. Registered with `server.RegisterJob` and invoked as a **pipeline job** — a pipeline (typically on a cron schedule) makes the platform send the worker a `job_trigger` gRPC event; there is no workflow-YAML node named `job_trigger`. Return an error to make the run fail: that is what raises `pipeline.run.failed`. The consumer side — binding the job to a cron and a concurrency policy, and the alerts — is in [pipelines.md](pipelines.md). Each trigger runs asynchronously: it spawns a goroutine on the worker and streams events back over gRPC.
 
 The `JobHost` abstraction was **removed** (see commit `0f2b190`). Register jobs directly on the server. Any tutorial or snippet that calls `server.NewJobHost(...)` or `jobs.NewJobHost(...)` is for an older SDK and will not compile.
 
