@@ -809,6 +809,7 @@ Rules:
 - Job names follow service-name regex (`^[a-z][a-z0-9-]{0,29}$`) and share namespace with services — a job and a service can't have the same name.
 - History limits default to K8s defaults (`3` successful, `1` failed). Override per-job for noisy crons.
 - A cron-only deploy (no `services:`) is allowed if `--no-public` is passed; otherwise the validator rejects it (`PUBLIC_SERVICE_MISSING`).
+- **Nothing notifies anyone when a cron job fails.** A `jobs:` entry is a plain K8s CronJob: no run history beyond the pod's, no alert, no recovery notice. If the user wants "a nightly job that tells me when it breaks", that is a **pipeline**, not this — see [pipelines.md](pipelines.md).
 
 ---
 
