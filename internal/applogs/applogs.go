@@ -162,7 +162,7 @@ func StreamRun(ctx context.Context, apiURL, apiToken, runID string, opts RunOpti
 // run, but writes its event messages in the same shape, so the endpoint at
 // /api/wf/slim/tool-invocations/{id}/logs speaks the same NDJSON as a run's.
 func StreamInvocation(ctx context.Context, apiURL, apiToken, invocationID string, opts RunOptions) (io.ReadCloser, error) {
-	return streamRunStyle(ctx, apiURL, apiToken, "/api/wf/slim/tool-invocations/"+invocationID+"/logs", opts)
+	return streamRunStyle(ctx, apiURL, apiToken, "/api/wf/slim/tool-invocations/"+url.PathEscape(invocationID)+"/logs", opts)
 }
 
 // streamRunStyle opens one of workflow-server's run-shaped NDJSON log

@@ -194,7 +194,7 @@ the record, in the same format as 'dibbla wf logs'.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		resp, err := getClient().Get("/api/wf/slim/tool-invocations/" + id + "?format=json")
+		resp, err := getClient().Get("/api/wf/slim/tool-invocations/" + url.PathEscape(id) + "?format=json")
 		if err != nil {
 			var apiErr *apiclient.APIError
 			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
