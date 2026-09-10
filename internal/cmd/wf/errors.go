@@ -187,6 +187,13 @@ func harden(cmd *cobra.Command) {
 			if err == nil {
 				return nil
 			}
+			// A command that already chose its message and exit code
+			// (failWithStatus) is passed through: re-rendering would either
+			// drop the message or attach the wrong guidance.
+			var already *exitError
+			if errors.As(err, &already) {
+				return already
+			}
 			code := exitCodeFor(err)
 			rendered := renderAPIError(err)
 			return &exitError{err: rendered, code: code}
@@ -206,3 +213,24 @@ type exitError struct {
 func (e *exitError) Error() string { return e.err.Error() }
 func (e *exitError) ExitCode() int { return e.code }
 func (e *exitError) Unwrap() error { return e.err }
+
+// failWithStatus builds a command-specific error for an API response whose
+// generic rendering would mislead — a 404 on a function is not "run
+// `dibbla wf list`" — while keeping the exit code the status maps to, so a
+// script still tells not-found (4) from forbidden (3) from conflict (6).
+func failWithStatus(status int, format string, args ...interface{}) error {
+	return &exitError{err: fmt.Errorf(format, args...), code: apiclient.ExitCodeForStatus(status)}
+}
+
+// slimError splits a slim-API error body into its message and code. The
+// message falls back to the raw body when it is not the JSON envelope.
+func slimError(apiErr *apiclient.APIError) (msg, code string) {
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if json.Unmarshal([]byte(apiErr.Message), &body) == nil && body.Error != "" {
+		return body.Error, body.Code
+	}
+	return strings.TrimSpace(apiErr.Message), ""
+}

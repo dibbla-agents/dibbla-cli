@@ -15,7 +15,8 @@
       "platform:workflows:execute",
       "platform:files:delete",
       "platform:operations:cancel",
-      "platform:checks:execute"
+      "platform:checks:execute",
+      "platform:tools:execute"
     ],
     "forbidden_scope_patterns": [
       "^platform:secrets:read-value$",
@@ -293,6 +294,14 @@
       "name": "platform:feedback:write",
       "class": "write",
       "summary": "Send product feedback about Dibbla, read the organization's feedback, and withdraw a message you sent.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
+    },
+    {
+      "name": "platform:tools:execute",
+      "class": "narrow-write",
+      "summary": "Invoke a function the organization has exposed as an MCP tool. Deliberately not implied by platform:workflows:execute.",
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false

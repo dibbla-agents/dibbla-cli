@@ -154,8 +154,22 @@ type RunOptions struct {
 // The endpoint is hosted by workflow-server, mounted under the dibbla gateway
 // at /api/wf/slim/runs/{runId}/logs.
 func StreamRun(ctx context.Context, apiURL, apiToken, runID string, opts RunOptions) (io.ReadCloser, error) {
+	return streamRunStyle(ctx, apiURL, apiToken, "/api/wf/slim/runs/"+runID+"/logs", opts)
+}
+
+// StreamInvocation is StreamRun for a tool invocation (DIB-764): the server
+// records an exposed function's MCP/API call as an invocation rather than a
+// run, but writes its event messages in the same shape, so the endpoint at
+// /api/wf/slim/tool-invocations/{id}/logs speaks the same NDJSON as a run's.
+func StreamInvocation(ctx context.Context, apiURL, apiToken, invocationID string, opts RunOptions) (io.ReadCloser, error) {
+	return streamRunStyle(ctx, apiURL, apiToken, "/api/wf/slim/tool-invocations/"+url.PathEscape(invocationID)+"/logs", opts)
+}
+
+// streamRunStyle opens one of workflow-server's run-shaped NDJSON log
+// endpoints, translating RunOptions into its query string.
+func streamRunStyle(ctx context.Context, apiURL, apiToken, path string, opts RunOptions) (io.ReadCloser, error) {
 	apiURL = strings.TrimSuffix(apiURL, "/")
-	u, err := url.Parse(fmt.Sprintf("%s/api/wf/slim/runs/%s/logs", apiURL, runID))
+	u, err := url.Parse(apiURL + path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid api url: %w", err)
 	}
