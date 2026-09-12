@@ -927,6 +927,7 @@ Error codes (subset — full set in `reference.md`):
 | `PUBLIC_MISSING_PORT` | A `public: true` service has no `port:` |
 | `QUOTA_EXCEEDED` | Resolved set exceeds an org quota (services, replicas, CPU, memory, PVC size) |
 | `BUILD_FAILED` | A build step failed (missing build secret, Dockerfile error, …) |
+| `REGISTRY_UNAVAILABLE` / `BUILD_SERVICE_UNAVAILABLE` | Dibbla's registry or build service was down during the build (503, exit `20`). Nothing to change; the running app was not touched — retry later |
 | `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias; wait or cancel |
 | `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy |
 | `ALIAS_HOSTNAME_COLLISION` | A multi-public deploy would produce a hostname `<alias>-<service>.<base>` that another existing alias in your org already owns. Rename either deploy. |

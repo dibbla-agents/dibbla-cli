@@ -36,10 +36,7 @@ func (j *JSONRenderer) OnDone() int {
 	switch {
 	case j.errEv != nil:
 		_ = enc.Encode(structuredFailure(j.errEv))
-		if j.errEv.FailedStep != "" {
-			return 2
-		}
-		return 1
+		return exitCodeFor(j.errEv)
 	case j.result != nil:
 		out := map[string]any{
 			"ok":         true,

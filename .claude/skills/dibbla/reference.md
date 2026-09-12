@@ -517,6 +517,8 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `PUBLIC_MISSING_PORT` | A `public: true` service has no `port:` | Add `port:` |
 | `QUOTA_EXCEEDED` | Resolved set exceeds an org quota | Trim `replicas` / `cpu` / `memory` / `volumes`, or talk to the platform operator |
 | `BUILD_FAILED` | A build step failed | Check the deploy event log; if it's a missing build secret, run `dibbla secrets set <NAME> <value> -d <alias>` first |
+| `REGISTRY_UNAVAILABLE` | Dibbla's container registry answered 5xx, ran out of disk or did not answer while the image was pushed (HTTP 503, exit `20`) | Platform fault: change nothing, the running app was not touched. Retry in a few minutes; escalate to Dibbla support if it persists |
+| `BUILD_SERVICE_UNAVAILABLE` | Dibbla's build service (BuildKit) could not be reached (HTTP 503, exit `20`) | Same as `REGISTRY_UNAVAILABLE` |
 | `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias | Wait or `dibbla apps cancel <alias>` |
 | `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy | Edit `dibbla.yaml` and redeploy with `--update` |
 | `ALIAS_HOSTNAME_COLLISION` | Multi-public deploy would produce a hostname `<alias>-<service>.<base>` that another existing alias in the org owns | Rename either deploy |

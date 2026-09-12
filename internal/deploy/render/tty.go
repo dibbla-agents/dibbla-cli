@@ -79,12 +79,7 @@ func (t *TTY) OnEvent(ev DeployEvent) {
 
 func (t *TTY) OnDone() int {
 	if t.errEv != nil {
-		// 2 mirrors the design's `exit 2` for build failures; everything
-		// else gets the generic exit 1.
-		if t.errEv.FailedStep != "" {
-			return 2
-		}
-		return 1
+		return exitCodeFor(t.errEv)
 	}
 	return 0
 }
@@ -391,10 +386,13 @@ func (t *TTY) printFailure() {
 	// real build context. Pre-build failures (auth, validation, archive
 	// limits) just print the API error one-line — wrapping those in a
 	// "step 0/0 (deploy)" frame is misleading.
-	hasBuildContext := t.errEv.FailedStep != "" ||
+	// A platform outage (registry or build service down) is not build
+	// context either: the raw "unknown: unknown error" tail would only send
+	// the customer hunting through their own Dockerfile.
+	hasBuildContext := !IsPlatformUnavailable(t.errEv) && (t.errEv.FailedStep != "" ||
 		len(t.errEv.ParsedItems) > 0 ||
 		t.errEv.BuildLogs != "" ||
-		(t.errEv.APIError != nil && t.errEv.APIError.Logs != "")
+		(t.errEv.APIError != nil && t.errEv.APIError.Logs != ""))
 
 	if hasBuildContext {
 		failedStep := t.errEv.FailedStep

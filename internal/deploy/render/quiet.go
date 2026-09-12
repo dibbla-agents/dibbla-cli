@@ -41,10 +41,7 @@ func (q *Quiet) OnDone() int {
 			msg = q.errEv.APIError.Message
 		}
 		fmt.Fprintf(q.out, "✗ %s: %s\n", code, msg)
-		if q.errEv.FailedStep != "" {
-			return 2
-		}
-		return 1
+		return exitCodeFor(q.errEv)
 	case q.result != nil:
 		// Append a "(N services)" suffix for multi-service deploys so quiet
 		// output reflects the new shape; legacy single-app deploys keep the
