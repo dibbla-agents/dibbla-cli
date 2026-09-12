@@ -241,7 +241,7 @@ dibbla create go-worker
 dibbla deploy
 dibbla deploy ./myapp
 dibbla deploy --alias my-api       # Custom alias (default: directory name)
-dibbla deploy --force
+dibbla deploy --force             # Recreate existing alias after a successful build (brief restart; failed build leaves the app running)
 dibbla deploy --cpu 500m --memory 512Mi --port 3000
 dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # bulk-load env vars (file < -e)

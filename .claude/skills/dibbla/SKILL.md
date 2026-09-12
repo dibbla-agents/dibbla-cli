@@ -132,7 +132,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 
 **Key rules:**
 - **Every `dibbla deploy` must include `-m "<message>"`.** The value becomes the git commit subject in the app's Dibbla-managed VCS history (and on the GitHub mirror, if configured). Treat it like a git commit: present-tense imperative, under ~72 chars, covering what changed and why — e.g. `-m "fix: handle null org in /api/me"`, `-m "feat: add nightly db backup workflow"`, `-m "chore: bump node to 20.14"`. For retries or mechanical redeploys, still say so explicitly: `-m "redeploy: retry after CF 524"`. Max 500 chars. Never run `dibbla deploy` without `-m`; a blank deploy history is a bug, not a default.
-- `--force` causes downtime (tears down and redeploys). Prefer `--update` for existing apps.
+- `--force` recreates the deployment after a successful build (brief restart). A failed build leaves the running app untouched. Prefer `--update` for existing apps (rolling, zero downtime).
 - `--force` and `--update` are mutually exclusive.
 - Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
 - **Login guard:** Use `--require-login` to require authentication. Combine with `--access-policy invite_only` to restrict to invited users, or `all_members` for org-wide access. Use `--google-scopes` to request additional Google OAuth scopes (e.g. Drive, Calendar). Invitations to an `invite_only` app are made in the console's **Access & users** dialog: **Add member** for org members, **Invite by email** for anyone else — the latter grants access to that app only and never adds the person to the organisation (see `platform.md` §9).

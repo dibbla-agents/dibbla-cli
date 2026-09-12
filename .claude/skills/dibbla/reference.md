@@ -477,7 +477,7 @@ The same applies to Python (`pip install -r requirements.txt` rather than shippi
 | **Arguments** | `path` (optional) — directory to deploy; default `.` |
 | **Flags** | `--alias`, `-a` — custom alias name (default: directory name) |
 | | `--message`, `-m` — Deploy message, used verbatim as the VCS commit subject (local bare repo and GitHub mirror). Max 500 chars; API returns 400 if exceeded. **Agents must always pass this** — treat it like a git commit subject (imperative mood, ≤72 chars). |
-|| | `--force`, `-f` — force redeploy if alias exists (causes downtime) |
+|| | `--force`, `-f` — recreate the deployment after a successful build if the alias exists (brief restart; a failed build leaves the running app untouched) |
 | | `--update`, `-u` — rolling update of existing deployment (zero downtime) |
 | | `--env`, `-e` — env var `KEY=value` (repeatable) |
 | | `--env-file <path>` — bulk-load env vars from a `.env`-style file. The file is the base layer; `-e` flags override individual keys (file < `-e`, same precedence as `dibbla run`). Keep the file **outside** the deploy directory (a `.env` in the deploy root is a guardrail blocker). |

@@ -240,7 +240,7 @@ Recovery:
 1. Wait 2–5 minutes for the backend build to finish.
 2. Run `dibbla apps list` and look for the alias.
 3. If it appears with `running` status, the deploy succeeded — you are done.
-4. If the alias does not appear after ~10 minutes, retry with `dibbla deploy --update` (rolling, zero downtime if the previous attempt did quietly succeed). Avoid `--force`, which causes downtime if the deploy actually worked.
+4. If the alias does not appear after ~10 minutes, retry with `dibbla deploy --update` (rolling, zero downtime if the previous attempt did quietly succeed). Avoid `--force`, which recreates the deployment (brief restart) if the deploy actually worked.
 
 ---
 
