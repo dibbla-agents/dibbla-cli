@@ -646,6 +646,49 @@ dibbla apps restart myapp -s web --quiet
 dibbla apps restart myapp -s redis --json
 ```
 
+### apps releases
+
+List the app's saved releases: one immutable image per successful deploy (`dep_…` id), newest first.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps releases <alias>` |
+| **Arguments** | `alias` (required) — deployment alias |
+| **Flags** | `--json` — print the raw API document verbatim |
+| **Output** | Table: `RELEASE`, `DEPLOYED`, `DIGEST` (12 hex), `STATE` (`running`, `available`, `gone`; `+config` when port/env/resources are saved), `AUTHOR`. Ends with the rollback commands. A missing deployment is called out with the `--to <dep-id>` recreate hint. |
+| **Errors** | `404 NOT_FOUND` — neither a deployment nor a saved release exists for the alias in your organization |
+| **Exit codes** | `0` ok · `4` not found · `5` bad alias (no request made) · `3` auth · `1` other |
+
+**Examples:**
+```bash
+dibbla apps releases myapp
+dibbla apps releases myapp --json | jq '.previous_deployment_id'
+```
+
+### apps rollback
+
+Switch the app to an earlier release's image **without a build**: a rolling update to an image that is already in the registry. Works while BuildKit or registry writes are broken. Env, resources and login gate are inherited from the running app; secrets are untouched. With the deployment missing (a `--force` deploy removed it and the build failed) the deployment is recreated from the release's image with the saved configuration.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps rollback <alias> [--to <dep-id>] [-y] [--json]` |
+| **Arguments** | `alias` (required) — deployment alias |
+| **Flags** | `--to <dep-id>` — release to roll back to; default: the previous release (newest not running) |
+| | `-y`, `--yes` — skip the confirmation prompt |
+| | `--json` — print the JSON response body verbatim |
+| **Output** | `✅ <alias> rolled back to <dep-id> (no build)` with the previous release and the image; `recreated from release <dep-id>` when the deployment was rebuilt; `already runs <dep-id>` when `--to` names the running release. |
+| **Errors** | `RELEASE_GONE` (410) — swept by retention; the message lists the releases still available. `RELEASE_NOT_FOUND` (404) — not a release of this app / no previous release. `RELEASE_CONFIG_UNKNOWN` (409) — deployment gone and no saved config: `dibbla deploy`. `ROLLBACK_UNSUPPORTED` (409) — multi-service or stateful app: redeploy the earlier source. |
+| **Exit codes** | `0` ok · `4` not found · `5` bad alias / bad `--to` / no terminal without `-y` (no request made) · `6` conflict · `1` other (incl. 410) |
+| **Rule** | The image is verified in the registry before the running app is touched — a failed rollback leaves the app as it was. |
+| **Non-interactive** | Pass `-y`; without a terminal the confirmation cannot be shown and the command refuses with exit 5. |
+
+**Examples:**
+```bash
+dibbla apps rollback myapp -y                   # previous release
+dibbla apps rollback myapp --to dep_k3f9a -y    # a specific release
+dibbla apps rollback myapp --json -y
+```
+
 ### apps get
 
 Show one deployment's record. This is the command `logs --pod-stream` 404s point at ("check `dibbla apps get <alias>`") to see which services exist.

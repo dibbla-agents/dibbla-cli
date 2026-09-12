@@ -166,6 +166,27 @@ Trigger a K8s rolling restart of one service in a multi-service deployment. Idem
 -   **Errors:** 404 (service not found) prints a hint to run `dibbla apps list`. Bad service-name regex is caught locally before the HTTP call.
 -   **Example:** `dibbla apps restart myapp --service worker` — **Quiet:** `dibbla apps restart myapp -s web -q`
 
+#### `apps releases`
+
+List the releases the platform still holds for an app: one immutable image per successful deploy (`dep_…` id), newest first, with digest, deploy time, author, and which one is running. A release marked `gone` was swept by registry retention and cannot be rolled back to; `+config` means the platform remembers its port/env/resources (what recreating a missing deployment needs).
+
+-   **Usage:** `dibbla apps releases <alias>`
+-   **Flags:** `--json`: print the raw API document.
+-   **Errors:** 404 `NOT_FOUND` when the alias has neither a deployment nor any saved release in your organization.
+-   **Example:** `dibbla apps releases myapp`
+
+#### `apps rollback`
+
+Switch a running app to an earlier release's image **without a build** — the way back when a deploy went wrong or the build service/registry is down. A rolling update; the app answers with the earlier version within about a minute. Env, resources and the login gate are inherited from the running app (like `deploy --update` with no flags); secrets are untouched. If the deployment is missing (a `--force` deploy removed it and the build failed), rollback recreates it from the release's image with the configuration the platform saved.
+
+-   **Usage:** `dibbla apps rollback <alias> [--to <dep-id>]`
+-   **Flags:**
+    -   `--to <dep-id>`: Release to roll back to (from `apps releases`). Default: the previous release (newest one not running).
+    -   `-y`, `--yes`: Skip the confirmation prompt (required in scripts/agents — without a terminal the command refuses with exit 5).
+    -   `--json`: Print the JSON response body.
+-   **Errors:** `RELEASE_GONE` (410) — the image was removed by retention; the message names the releases still available. `RELEASE_NOT_FOUND` (404) — not a release of this app, or no previous release. `RELEASE_CONFIG_UNKNOWN` / `ROLLBACK_UNSUPPORTED` (409) — the deployment is gone with no saved config, or the app is multi-service/stateful: `dibbla deploy` from source instead.
+-   **Example:** `dibbla apps rollback myapp -y` — **Specific:** `dibbla apps rollback myapp --to dep_k3f9a -y`
+
 #### `apps checks`
 
 Inspect and run an app's **application checks** — the assertions in `dibbla-checks.yaml` that prove the running app still does what it is for. This is not a `healthcheck:` in `dibbla.yaml`: that is a kubelet probe about the container, and it cannot see a broken signup form. The alias is always positional; a single check id is always the `--check` flag.
