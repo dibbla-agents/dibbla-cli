@@ -75,7 +75,7 @@ Examples:
   dibbla deploy --alias my-api  # Deploy with custom alias name
   dibbla deploy -m "feat: add /healthz endpoint"   # Set VCS commit subject
   dibbla deploy --update     # Rolling update (zero downtime)
-  dibbla deploy --force      # Force redeploy existing alias (causes downtime)
+  dibbla deploy --force      # Recreate existing alias after a successful build (brief restart)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
   dibbla deploy --env-file ../secrets/.env.prod              # Bulk-load env vars from a file
@@ -88,7 +88,7 @@ Examples:
 }
 
 func init() {
-	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Force redeploy if alias already exists (causes downtime)")
+	deployCmd.Flags().BoolVarP(&deployForce, "force", "f", false, "Recreate the deployment after a successful build if the alias already exists (brief restart; a failed build leaves the running app untouched)")
 	deployCmd.Flags().BoolVarP(&deployUpdate, "update", "u", false, "Rolling update of existing deployment (zero downtime)")
 	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
