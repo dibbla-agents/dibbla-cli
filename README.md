@@ -311,8 +311,24 @@ dibbla secrets list -d myapp                     # deployment-wide entries (serv
 dibbla apps list
 dibbla apps update my-app -e NODE_ENV=production --replicas 2
 dibbla apps update my-app --cpu 500m --memory 512Mi --port 3000
+dibbla apps releases my-app                 # saved images you can roll back to
+dibbla apps rollback my-app                 # previous release, rolling update, no build
+dibbla apps rollback my-app --to dep_k3f9a  # a specific release
 dibbla apps delete my-app
 ```
+
+### Roll back without a build
+
+Every deploy pushes one immutable image (`dep_…` id) and the platform keeps the
+newest ones. `dibbla apps releases <alias>` lists them — digest, when, which is
+running, and whether one is `gone` (removed by retention). `dibbla apps rollback
+<alias> [--to <dep-id>]` switches the running app to that image as a rolling
+update: no build, so it works while the build service or registry writes are
+broken, and the app answers with the earlier version within about a minute. If
+the deployment itself is missing (a `--force` deploy removed it and the build
+failed), rollback recreates it from the release's image with the port, env and
+resources the platform saved. A release retention has swept answers
+`RELEASE_GONE` naming the ones still available.
 
 ### Verify an App Still Works (`dibbla-checks.yaml`)
 
@@ -527,6 +543,7 @@ dibbla-cli/
 │   │   │   ├── register.go  # Command registration + requireToken
 │   │   │   ├── deploycmd.go # Deploy command
 │   │   │   ├── apps.go      # Apps management
+│   │   │   ├── apps_releases.go # apps releases / apps rollback (DIB-809)
 │   │   │   ├── db.go        # Database management (list, create, delete, restore, dump)
 │   │   │   └── secrets.go   # Secrets management (list, set, get, delete)
 │   │   ├── logs/            # Per-app log streaming command (`dibbla logs <app>`)
@@ -544,7 +561,8 @@ dibbla-cli/
 │   ├── deploy/
 │   │   └── deploy.go        # Deploy API client + archive build
 │   ├── apps/
-│   │   └── apps.go          # Apps (deployments) API client
+│   │   ├── apps.go          # Apps (deployments) API client
+│   │   └── releases.go      # Releases + rollback client (DIB-809)
 │   ├── applogs/
 │   │   └── applogs.go       # Streaming client for the per-app /logs endpoint
 │   ├── secrets/
