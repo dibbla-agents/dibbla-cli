@@ -90,8 +90,9 @@ func (l *Log) handleError(e *DeployError) {
 	// Only print the fenced BUILD OUTPUT block when there's real build
 	// context — pre-build failures (auth, validation, archive size) get a
 	// plain log line and the structured stderr event, no fake fence.
-	hasBuildContext := e.FailedStep != "" || len(e.ParsedItems) > 0 ||
-		e.BuildLogs != "" || (e.APIError != nil && e.APIError.Logs != "")
+	// A platform outage carries no build context worth reading either.
+	hasBuildContext := !IsPlatformUnavailable(e) && (e.FailedStep != "" || len(e.ParsedItems) > 0 ||
+		e.BuildLogs != "" || (e.APIError != nil && e.APIError.Logs != ""))
 	if hasBuildContext {
 		failedStep := e.FailedStep
 		if failedStep == "" {
@@ -123,10 +124,7 @@ func (l *Log) handleError(e *DeployError) {
 func (l *Log) OnDone() int {
 	if l.errEv != nil {
 		printlnTo(l.out, fmt.Sprintf("deploy failed  ·  %s  ·  %s", failedSummary(l.errEv), l.elapsed()))
-		if l.errEv.FailedStep != "" {
-			return 2
-		}
-		return 1
+		return exitCodeFor(l.errEv)
 	}
 	if l.result != nil {
 		printlnTo(l.out, fmt.Sprintf("deploy ok  ·  %s  ·  %s", l.result.Deployment.URL, l.elapsed()))
@@ -160,7 +158,7 @@ func failedSummary(e *DeployError) string {
 	if e == nil || e.APIError == nil {
 		return "unknown"
 	}
-	if e.FailedStep != "" {
+	if e.FailedStep != "" && !IsPlatformUnavailable(e) {
 		return fmt.Sprintf("step %d/%d (%s)", e.StepIndex, e.StepCount, e.FailedStep)
 	}
 	return e.APIError.Code
@@ -189,11 +187,9 @@ type structuredFailureEvent struct {
 
 func structuredFailure(e *DeployError) structuredFailureEvent {
 	// exit_code must match what OnDone actually returns: 2 only for build
-	// step failures, 1 for everything else (auth, validation, network).
-	exitCode := 1
-	if e.FailedStep != "" {
-		exitCode = 2
-	}
+	// step failures, 20 for a platform outage, 1 for everything else
+	// (auth, validation, network).
+	exitCode := exitCodeFor(e)
 	out := structuredFailureEvent{
 		Event:     "deploy.failed",
 		Step:      e.FailedStep,
