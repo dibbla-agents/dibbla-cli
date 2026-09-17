@@ -535,6 +535,29 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 
 ---
 
+## clone
+
+Clone the Dibbla-managed git repo of a deployed app. Every `dibbla deploy` writes one commit to a platform-managed bare repo (subject = the deploy's `-m` message, `Deploy-Id:` trailer = the deployment). `clone` fetches that history so you — or a coding agent on a machine that has never seen the code — can pick up exactly what is running, change it, and `deploy --update` from there.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla clone <app>` or `dibbla clone <org>/<app>` |
+| **Arguments** | `app` (required) — the app alias. The `<org>/` prefix is accepted but ignored: the organization comes from the active context (`dibbla org use` / `--org`), never from the argument. |
+| **Flags** | `--ref <sha>` — commit to check out after cloning (default: the latest commit on `main`, i.e. the most recent deploy). Use the SHA shown in the console's Version Control card or in `GET …/vcs/commits`; a short SHA works. |
+| | `--into <dir>` — destination directory (default: `./<app>`, derived from the clone URL). The directory must not exist; `git clone` refuses otherwise. |
+| **Behavior** | 1. Requires a token (`dibbla login` or `DIBBLA_API_TOKEN`) — the same one `deploy` uses; there is no separate clone credential. 2. Resolves the canonical clone URL with `GET /api/deploy/deployments/<app>/vcs/info` (also returns default branch, latest commit and `running_sha`). 3. Shells out to `git -c http.extraHeader="Authorization: Bearer <token>" clone --quiet <url> <dir>` — the token lives only in that process's config, never in `.git/config`, the remote URL or `~/.git-credentials`. 4. `git checkout <ref>` when `--ref` is given. |
+| **Requires** | `git` on `PATH` (the CLI does not bundle it). |
+| **Read-only** | **Push is rejected** — the platform answers `403 push is not permitted; use the deploy pipeline` to `git push`. The repo is append-only from deploys: the only way to add a commit is `dibbla deploy … --update`. You may commit locally as much as you like; those commits stay on your machine. To share code with other people, add a GitHub/GitLab remote and push there. |
+| **What is in the clone** | Exactly the files the deploy uploaded, minus the server-side VCS filter (`.env`, `.env.*`, `node_modules/`, `dist/`, `.venv/`, `.git/`, `*.pem`, `*.key`, plus anything in `.dibblaignore`). So: no secrets or env files — they live on the platform (`dibbla secrets`, `apps update -e`) and are already attached to the app; the next `deploy --update` keeps them. No original git history either: the commits are Dibbla's deploy commits, not the ones from the source repo the app was first deployed from. |
+| **What is NOT in the clone** | Anything that was never deployed: uncommitted or undeployed edits on the machine that last deployed, local branches, build outputs. Sync between machines happens **through deploys only** — if machine A has changes that matter, deploy them from A before cloning on B. |
+| **Output** | `✅ Cloned to <dir>` followed by `latest: <short-sha>  <subject>` (or `checked out <ref>`). With no deploy-written commits yet: `⚠️ Nothing to clone: the app has no deploy-written commits yet.` (exit 0). |
+| **Errors** | Not logged in → `API token is required. Run 'dibbla login' or set DIBBLA_API_TOKEN.` (exit 1). Token rejected → `Authentication failed. Your token may be invalid or expired. Try 'dibbla login' again.` App not in the active org, or version control disabled for the environment → `App not found in your org, or version control is not enabled for this environment.` (404 — check `dibbla org list` / `dibbla apps list` first; a wrong organization looks like a missing app). `git` missing → the preflight names the tool and how to install it. Destination exists → git's own `destination path '<dir>' already exists`. |
+| **When to use** | The code is not on this machine and its only copy is what is deployed (typical: an agent continues work from another laptop, a CI box or a sandbox). **Prefer a normal `git clone` from GitHub/GitLab** when the app's source lives there — that repo has the real history, branches and collaborators; the Dibbla repo is a deploy log, not a source of truth for collaboration. |
+
+**Version control API** (same data, for scripting): `GET /api/deploy/deployments/<app>/vcs/info`, `…/vcs/commits?limit=<n>&before=<sha>` (newest first, `deploy_id` per commit), `…/vcs/commits/<sha>` (file list at that tree). `Authorization: Bearer $DIBBLA_API_TOKEN`. Prefer `dibbla clone` over a hand-written `git clone` — it resolves the URL via `/vcs/info`, so it keeps working if the git host moves.
+
+---
+
 ## manifest
 
 Local-only schema validation for `dibbla.yaml`. No server roundtrip; useful in CI, pre-commit hooks, and editor integrations.
@@ -1695,6 +1718,7 @@ Alias: `fn`.
 | Feedback | `dibbla feedback list` | List feedback |
 | Feedback | `dibbla feedback delete <id>` | Delete feedback |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
+| Clone | `dibbla clone <app> [--ref <sha>] [--into <dir>]` | Clone the deploy history of an app (read-only; sync happens via `deploy --update`) |
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port, login guard |
 | Apps | `dibbla apps delete <alias>` | Delete deployment |

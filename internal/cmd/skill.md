@@ -649,6 +649,7 @@ Clones the Dibbla-managed git repo for a deployed app. Each `dibbla deploy` writ
     -   `--into <dir>`: Destination directory (default: `./<app>`).
 -   **Authentication:** Reuses the token from `dibbla login` / `DIBBLA_API_TOKEN` — no separate clone credential. Internally the CLI shells out to `git -c http.extraHeader="Authorization: Bearer <token>" clone ...`, so the token never lands in `~/.git-credentials` or `.git/config`.
 -   **Push is rejected.** The platform rejects `git push` by design — these repos are append-only from deploys. If you want to share changes, add a GitHub/GitLab remote locally and push there.
+-   **Continuing work from another machine:** `dibbla login` → `dibbla clone <app> --into <dir>` → edit → `dibbla deploy . --alias <app> -m "…" --update`. The deploy history is the sync: only deployed state travels (no uncommitted/undeployed edits from the other machine, no `.env`/secrets — those stay on the platform). If the source lives on GitHub/GitLab, clone from there instead. See `examples.md` → "Continue work on another machine".
 -   **Example:** `dibbla clone my-app` — **Pin commit:** `dibbla clone my-app --ref abc1234` — **Custom dir:** `dibbla clone my-app --into ./checkout`
 
 ### Version control API (for scripting / agents)
