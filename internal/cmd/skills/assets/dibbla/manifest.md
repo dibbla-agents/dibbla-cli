@@ -695,7 +695,7 @@ URL shape:
 
 - **Primary** (lex-first public service in the manifest's active set): `https://<alias>.<base-domain>` — the bare alias. Backwards compatible with single-public deploys.
 - **Secondary** public services: `https://<alias>-<service>.<base-domain>`. One DNS label deep, so the existing wildcard cert covers it.
-- **Custom domain** override: a service with `domain: api.example.com` claims that hostname instead. User owns the DNS (CNAME to the platform's ingress hostname); platform issues a Let's Encrypt cert. See § 14.
+- **Custom domain:** use `dibbla domains add <alias> <hostname>` — not the manifest. The `domain:` field is the older ingress-level override that replaces the alias host; see § 14.
 
 **Hostname-collision check.** If your alias plus a service name would shadow a different existing alias (e.g. you deploy `myapp` with a `web` public service while alias `myapp-web` already exists in the same org), the deploy fails with `ALIAS_HOSTNAME_COLLISION` before any side effects. Rename either deploy.
 
@@ -758,24 +758,16 @@ In dev, env-aware resolution yields `require_login=false` AND `access_policy=inv
 
 ## 14. Custom domains
 
-A service can claim a custom hostname via `domain:`:
+**Use `dibbla domains`, not the manifest.** Bringing your own hostname to an app is a platform operation, not a manifest field:
 
-```yaml
-services:
-  web:
-    build: ./web
-    port: 3000
-    public: true
-    domain: api.example.com
+```bash
+dibbla domains add myapp www.example.com     # prints: CNAME www → cname.dibbla.com
+dibbla domains verify myapp www.example.com  # waiting for DNS / issuing certificate / active
 ```
 
-The Ingress is rendered with that hostname and the platform's TLS issuer takes care of cert provisioning. **DNS is your job**:
+The hostname is registered at the platform's edge, the certificate is issued automatically once the CNAME resolves, the app keeps its `https://<alias>.dibbla.com` address alongside, and login/sessions work on the custom hostname. Most registrars cannot put a CNAME on the bare domain: connect `www` and redirect the apex to it at the registrar. See [SKILL.md § Custom domains](SKILL.md) for the guided flow and [reference.md § domains](reference.md) for flags and statuses.
 
-- Create a `CNAME` from `api.example.com` → the platform's ingress hostname (the platform operator publishes the target — usually `<region>.ingress.dibbla.com`).
-- Once DNS is live, the cert issuer issues a Let's Encrypt cert (HTTP-01 by default; DNS-01 if the operator has configured a DNS provider).
-- **The alias host is REPLACED, not kept alongside.** deploy-api's `PublicHostname` returns *only* the custom domain when `domain:` is set, and exactly one Ingress is rendered per public service — so setting `domain:` takes `https://<alias>.<base-domain>` away. Plan for that: it is the URL you would otherwise use to verify a deploy before DNS points at the custom name, and the one to fall back to if the custom domain misbehaves. If you need both, claim the hostname in the platform's ingress layer instead of in the manifest (P-0020 did this for `install.dibbla.com`).
-
-Multiple custom domains for the same service aren't supported in v1 (one `domain:` per service). For wildcard or apex domains, talk to the platform operator about the DNS-01 path — apex `example.com` needs a DNS-01 challenge because most registrars don't support `ALIAS`/`ANAME` at the apex.
+The manifest's `domain:` field still parses (`services.<name>.domain`), but it is the older ingress-level path: it **replaces** the alias host instead of adding to it (only one Ingress is rendered per public service, so `https://<alias>.<base-domain>` stops serving the app), it needs the platform operator to route the hostname, and it is not what `dibbla domains` manages. Do not set it unless the operator has asked you to.
 
 ---
 

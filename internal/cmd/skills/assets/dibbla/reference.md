@@ -859,6 +859,81 @@ approve/deny/retry post to the server-owned endpoint.
 
 ---
 
+## domains
+
+Serve a deployed app on your own hostname (`www.example.com`) — bring your own
+domain. The platform registers the hostname at its edge and issues the
+certificate automatically once your DNS points at it. The app keeps its
+`https://<alias>.dibbla.com` address; the custom domain is added alongside it,
+and login/sessions work on the custom hostname too.
+
+There is exactly one DNS record to create, and every command prints it:
+
+```
+Type:   CNAME
+Host:   www              (the label your registrar asks for; @ for a bare domain)
+Target: cname.dibbla.com
+```
+
+**Bare domain (apex) rule.** Most registrars (One.com, Loopia, GoDaddy,
+Namecheap) cannot put a CNAME on the bare domain `example.com`. Connect
+`www.example.com` and set up an **HTTP redirect from the bare domain to
+www** at the registrar. On DNS hosts that flatten CNAMEs (Cloudflare) a
+CNAME on the apex works; the API flags an apex hostname with `is_apex` and
+repeats this advice.
+
+Statuses come from the edge provider and are refreshed on **every read**
+(`list` and `verify`), so "pending" turns into "active" without anyone
+writing. The two fields are the hostname status (`pending` → `active`) and
+the certificate status (`initializing` → `pending_validation` →
+`pending_issuance` → `pending_deployment` → `active`); `active: true` is
+the only pair that means the hostname serves. Anything with `pending` in it
+is the edge waiting — for the CNAME until validation has passed, then for
+the certificate (a minute or two). `errors` carries the provider's own
+reason. A hostname the provider has forgotten shows `missing`: remove and add
+it again.
+
+On an installation without custom domains configured, `add` and `remove`
+fail with `DOMAINS_NOT_CONFIGURED` (503) — the feature is off, not a CLI bug.
+
+### domains add
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla domains add <alias> <hostname> [--json]` |
+| **Arguments** | `alias` (required) — the app; `hostname` (required) — e.g. `www.example.com`, lower-cased, trailing dot dropped, **no scheme or path** |
+| **Flags** | `--json` — print the API document verbatim (`hostname`, `status`, `ssl_status`, `active`, `errors`, `dns.{type,name,target,record}`, `is_apex`, `apex_advice`) |
+| **Output** | The CNAME to create (Type/Host/Target plus the one-line record), the apex advice, the current status and the `verify` command to run next |
+| **Errors** | `DOMAIN_TAKEN` (409, exit 6) — the hostname is already connected to an app, in this organization or another; the message never says whose. If it is yours, remove it from that app first. `DOMAIN_INVALID` (400, exit 5) — not a bare DNS name, a wildcard, an IP address, or one of the platform's own domains. `NOT_FOUND` (404, exit 4) — no such app in the active organization. Adding a hostname the same app already holds is a no-op that returns the row refreshed (200). |
+| **Role** | Needs the deploy role in the organization |
+
+### domains list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla domains list <alias> [--json]` |
+| **Output** | One row per hostname: hostname, status, certificate status, active yes/no; under the table, one line per not-yet-active hostname saying what the edge is waiting for, and the CNAME target. `--json` is the API document verbatim (`domains[]`, `cname_target`, `apex_advice`). |
+
+### domains verify
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla domains verify <alias> <hostname> [--json]` |
+| **Behaviour** | Fetches the hostname's **live** status from the edge and says what it means in one line: `waiting for DNS — create the CNAME …`, `issuing certificate — …`, `active — serving with a valid certificate`, or `error (…)` with the provider's reason. Not active → the CNAME instruction is printed again. Run it after creating the record; DNS changes can take a few minutes (rarely up to an hour) to propagate. |
+| **Exit** | 0 whether or not the hostname is active yet (the status is the answer, read it); 4 when the hostname is not connected to the app (`hint: dibbla domains add …`) |
+| **JSON** | `--json` prints that one hostname's document |
+
+### domains remove
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla domains remove <alias> <hostname> [--yes | -y]` |
+| **Flags** | `--yes`, `-y` — skip confirmation |
+| **Behaviour** | Removes the hostname from the app and from the edge. Your DNS record is untouched (delete the CNAME at the registrar yourself if you no longer need it). Adding the hostname again starts a fresh verification. `DOMAIN_NOT_FOUND` (404, exit 4) when the hostname is not connected to this app. |
+| **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests. Always pass `--yes` from scripts, CI and coding agents. |
+
+---
+
 ## logs
 
 Print runtime logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes and exits. **This is the primary way to debug a deployed app without redeploying** — when a deploy succeeds but the app 500s, errors out, or behaves unexpectedly, run `dibbla logs <app>` first rather than adding `console.log` and redeploying.

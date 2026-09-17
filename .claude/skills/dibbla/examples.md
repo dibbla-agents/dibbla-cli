@@ -713,16 +713,28 @@ auth:
 
 ### Custom domain
 
-```yaml
-services:
-  web:
-    build: ./web
-    port: 3000
-    public: true
-    domain: api.example.com
+Not a manifest setting — connect the hostname with the CLI after the app is deployed:
+
+```bash
+dibbla domains add myapp www.example.com
+# ✅ www.example.com is connected to 'myapp'.
+#   Create this DNS record at your registrar:
+#     Type:   CNAME
+#     Host:   www
+#     Target: cname.dibbla.com
+#   Bare domain: most registrars cannot put a CNAME on the bare domain;
+#   set up an HTTP redirect from it to www.example.com at your registrar instead.
+#   Status: waiting for DNS — create the CNAME www.example.com → cname.dibbla.com, then run verify again
+
+# after creating the record (propagation: minutes, occasionally up to an hour)
+dibbla domains verify myapp www.example.com
+# ✅ www.example.com: active — serving with a valid certificate
+
+dibbla domains list myapp
+dibbla domains remove myapp www.example.com --yes
 ```
 
-DNS is your job: point `CNAME api.example.com → <region>.ingress.dibbla.com` (the platform operator publishes the target). Once DNS is live, the platform issues a TLS cert via Let's Encrypt automatically. **`https://<alias>.dibbla.com` stops serving this app** — the custom domain replaces the alias host rather than adding to it, because only one Ingress is rendered per public service.
+The app keeps `https://myapp.dibbla.com` alongside the custom hostname. The manifest's `domain:` field is the older ingress-level path that replaces the alias host; leave it unset.
 
 ### Build-time secret
 
