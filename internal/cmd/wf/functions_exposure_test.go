@@ -28,6 +28,8 @@ type exposureStub struct {
 	// putStatus/putBody override the PUT answer to script a refusal.
 	putStatus int
 	putBody   string
+	// sources is the X-Dibbla-Source of every invoke, in order.
+	sources []string
 }
 
 func (s *exposureStub) server(t *testing.T) *httptest.Server {
@@ -67,6 +69,18 @@ func (s *exposureStub) server(t *testing.T) *httptest.Server {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			_, _ = w.Write([]byte(`{"ts":"2026-09-07T10:00:00Z","line":"INFO calling http get","labels":{"run":"inv-1"}}` + "\n"))
 			_, _ = w.Write([]byte(`{"ts":"2026-09-07T10:00:01Z","line":"INFO run completed","labels":{"event":"run_completed"}}` + "\n"))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/wf/slim/functions/") && strings.HasSuffix(r.URL.Path, "/invoke"):
+			raw, _ := io.ReadAll(r.Body)
+			var body map[string]interface{}
+			_ = json.Unmarshal(raw, &body)
+			s.bodies = append(s.bodies, body)
+			s.sources = append(s.sources, r.Header.Get("X-Dibbla-Source"))
+			if r.URL.Path == "/api/wf/slim/functions/http/gone/invoke" {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"Function not found","code":"NOT_FOUND"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"invocation_id":"inv-9","status":"completed","duration_ms":7,"result":{"status_code":200}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":"not found","code":"NOT_FOUND"}`))
@@ -336,5 +350,67 @@ func TestFunctionsInvocationNotFound(t *testing.T) {
 	err := functionsInvocationCmd.RunE(functionsInvocationCmd, []string{"nope"})
 	if err == nil || !strings.Contains(err.Error(), `invocation "nope" not found`) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// fn invoke (DIB-853) is the CLI half of platform_tools action=invoke: the
+// same endpoint, the same body, and a source header that says which surface
+// the ledger row came from.
+func TestFunctionsInvokeSendsInputsWithTheCLISource(t *testing.T) {
+	stub := &exposureStub{}
+	useStub(t, stub)
+	t.Cleanup(func() {
+		_ = functionsInvokeCmd.Flags().Set("input", "")
+		_ = functionsInvokeCmd.Flags().Set("file", "")
+	})
+	_ = functionsInvokeCmd.Flags().Set("input", `{"url":"https://example.com"}`)
+
+	out, err := captureStdout(t, func() error {
+		return functionsInvokeCmd.RunE(functionsInvokeCmd, []string{"http", "get"})
+	})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if got := strings.Join(stub.requests, ", "); got != "POST /api/wf/slim/functions/http/get/invoke?format=json" {
+		t.Fatalf("requests = %s", got)
+	}
+	inputs, _ := stub.bodies[0]["inputs"].(map[string]interface{})
+	if inputs["url"] != "https://example.com" {
+		t.Fatalf("body = %v; want the inputs object", stub.bodies)
+	}
+	if strings.Join(stub.sources, ",") != "cli" {
+		t.Fatalf("X-Dibbla-Source = %v, want cli", stub.sources)
+	}
+	if !strings.Contains(out, "invocation_id: inv-9") || !strings.Contains(out, "status_code: 200") {
+		t.Errorf("expected the invocation and its result, got:\n%s", out)
+	}
+}
+
+func TestFunctionsInvokeWithoutInputsSendsAnEmptyObject(t *testing.T) {
+	stub := &exposureStub{}
+	useStub(t, stub)
+	if _, err := captureStdout(t, func() error {
+		return functionsInvokeCmd.RunE(functionsInvokeCmd, []string{"http", "get"})
+	}); err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	inputs, ok := stub.bodies[0]["inputs"].(map[string]interface{})
+	if !ok || len(inputs) != 0 {
+		t.Fatalf("body = %v; want {\"inputs\":{}}", stub.bodies)
+	}
+}
+
+func TestFunctionsInvokeExplainsAnUnexposedFunction(t *testing.T) {
+	stub := &exposureStub{}
+	useStub(t, stub)
+	_, err := captureStdout(t, func() error {
+		return functionsInvokeCmd.RunE(functionsInvokeCmd, []string{"http", "gone"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "not exposed") || !strings.Contains(err.Error(), "dibbla fn exposed") {
+		t.Fatalf("want the not-exposed sentence with the way out, got %v", err)
+	}
+	var exit *exitError
+	if !errors.As(err, &exit) || exit.code != apiclient.ExitCodeForStatus(404) {
+		t.Errorf("want the not-found exit code, got %v", err)
 	}
 }

@@ -301,11 +301,19 @@
     {
       "name": "platform:tools:execute",
       "class": "narrow-write",
-      "summary": "Reserved since DIB-827. Calling a tool on /platform/tools follows platform:workflows:read: an organization's exposure policy (registered AND exposed AND role >= min_role, re-checked by workflow-server on every invoke and recorded per call) is the authorization, and a second OAuth gate on top of it only kept scope-less clients out. Kept in the registry so the narrow-write rule list and the history still resolve.",
+      "summary": "Reserved since DIB-827; the mount it gated was retired by DIB-853. Calling an exposed function (platform_tools action=invoke) follows platform:workflows:read: an organization's exposure policy (registered AND exposed AND role >= min_role, re-checked by workflow-server on every invoke and recorded per call) is the authorization, and a second OAuth gate on top of it only kept scope-less clients out. Kept in the registry so the narrow-write rule list and the history still resolve.",
       "granted_by_first_public_toolset": false,
       "consent_default": false,
       "static_token_eligible": false,
-      "reserved_reason": "DIB-827: the /platform/tools mount is gated by platform:workflows:read, the scope that lists it; exposure policy in workflow-server is the authorization. Not granted, not advertised, never on the consent page."
+      "reserved_reason": "DIB-827: calling an exposed function is gated by platform:workflows:read, the scope that lists it; exposure policy in workflow-server is the authorization. DIB-853 retired the /platform/tools mount and left this as it was. Not granted, not advertised, never on the consent page."
+    },
+    {
+      "name": "platform:tools:manage",
+      "class": "write",
+      "summary": "Expose or unexpose the organization's registered functions as tools on the connector, and set the minimum role that may call each. Consent is one gate; the organization role is the other — workflow-server refuses anyone below admin whatever the grant holds.",
+      "granted_by_first_public_toolset": true,
+      "consent_default": false,
+      "static_token_eligible": false
     }
   ]
 }

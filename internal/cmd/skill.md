@@ -676,7 +676,7 @@ Three things to know before looking for a tool:
 
 - **Parity is measured in capabilities, not in tools.** Several commands map to
   one capability, and — more often — one tool delivers several capabilities. A
-  full write grant lists **30 tools** for the whole platform, so do not expect a
+  full write grant lists **32 tools** for the whole platform, so do not expect a
   tool per command. Every destructive operation is still a read-only *plan*
   followed by an *execute* that carries a human's approval.
 - **A tool is a flow, and the step is a parameter.** `platform_apps` lists your

@@ -379,3 +379,37 @@ func TestPlatformHelpListsLocalOnlyFromContract(t *testing.T) {
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
+
+// The Claude Code form asks consent for the writes a coding agent needs
+// (DIB-853): a space-separated scope string, never a destructive scope — a
+// deletion stays a deliberate --login --scope.
+func TestPlatformClaudeConfigAsksForNonDestructiveScopes(t *testing.T) {
+	var buf bytes.Buffer
+	platformToolset.printConfig(&buf, "claude", "https://mcp.example.com/platform", resolveResult{})
+	out := buf.String()
+	start := strings.Index(out, "{")
+	if start < 0 {
+		t.Fatalf("no JSON in output:\n%s", out)
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			OAuth struct {
+				Scopes string `json:"scopes"`
+			} `json:"oauth"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(out[start:]), &cfg); err != nil {
+		t.Fatalf("config JSON does not parse: %v\n%s", err, out)
+	}
+	scopes := cfg.Servers["dibbla-platform"].OAuth.Scopes
+	for _, want := range []string{"platform:workflows:read", "platform:deployments:execute", "platform:tools:manage"} { //contract-pinned: three scopes the agent config must ask for
+		if !strings.Contains(scopes, want) {
+			t.Errorf("oauth.scopes lacks %s: %q", want, scopes)
+		}
+	}
+	for _, name := range strings.Fields(scopes) {
+		if strings.HasSuffix(name, ":delete") || strings.HasSuffix(name, ":restore") {
+			t.Errorf("oauth.scopes asks for the destructive scope %s by default", name)
+		}
+	}
+}

@@ -40,9 +40,9 @@
       "not-yet-available"
     ],
     "command_granularity": "leaf",
-    "max_tools_full_write": 31,
-    "tool_budget_target": 31,
-    "tool_budget_note": "A full write grant must not show more AGENT-VISIBLE tools than max_tools_full_write. Agent-visible is the whole measurement: a tool declared app-only (_meta.ui.visibility: [\"app\"], listed in a row's mcp_app_only_tools) is reachable only by this server's own MCP Apps card, never appears in the model's context and therefore costs the agent nothing — it is outside the count, not an allowance inside it. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused UNLESS the raise itself is a decision written here. There has been one. tool_budget_target is where P-0035 Part F says the surface belongs — every agent-visible tool definition costs the agent context before it has done anything. DIB-704 took it from 59 to 30 by merging families: one destructive pair for every irreversible capability instead of seven, one read tool per resource instead of a list tool and a get tool, and a parameter wherever the difference between two tools was which step of the same flow they named. DIB-753 raised it to 31 for platform_app_card, and this is the motivation the raise was allowed on: a render tool is not a data tool. Every other capability answers what is true about the platform and could be merged into a family that answers the same question; this one draws a surface for a human inside the chat, and merging it into platform_apps would make the honest read of an application also a request to display something — the one thing the budget's own rule (a parameter is cheaper than a tool) cannot buy. The surface sits exactly on its target again, so the next capability is a parameter on a tool that is already listed, an app-only tool, or it is a decision to take one away."
+    "max_tools_full_write": 32,
+    "tool_budget_target": 32,
+    "tool_budget_note": "A full write grant must not show more AGENT-VISIBLE tools than max_tools_full_write. Agent-visible is the whole measurement: a tool declared app-only (_meta.ui.visibility: [\"app\"], listed in a row's mcp_app_only_tools) is reachable only by this server's own MCP Apps card, never appears in the model's context and therefore costs the agent nothing — it is outside the count, not an allowance inside it. The number is a ratchet, not a licence: it may fall, and a change that raises it is refused UNLESS the raise itself is a decision written here. There has been one. tool_budget_target is where P-0035 Part F says the surface belongs — every agent-visible tool definition costs the agent context before it has done anything. DIB-704 took it from 59 to 30 by merging families: one destructive pair for every irreversible capability instead of seven, one read tool per resource instead of a list tool and a get tool, and a parameter wherever the difference between two tools was which step of the same flow they named. DIB-753 raised it to 31 for platform_app_card, and this is the motivation the raise was allowed on: a render tool is not a data tool. Every other capability answers what is true about the platform and could be merged into a family that answers the same question; this one draws a surface for a human inside the chat, and merging it into platform_apps would make the honest read of an application also a request to display something — the one thing the budget's own rule (a parameter is cheaper than a tool) cannot buy. The surface sits exactly on its target again, so the next capability is a parameter on a tool that is already listed, an app-only tool, or it is a decision to take one away. DIB-853 raised it to 32 for platform_tools, and this is the motivation the raise was allowed on: it is the one tool that runs the customer's own code. Every other tool reads or changes something Dibbla operates; this one lists, calls and governs the functions the organization's own tool servers register and an administrator has chosen to expose — a surface that is per-organization DATA, unbounded by this contract and changeable at any moment. It replaced the /platform/tools mount (DIB-764), which had listed one native tool per exposed function on a second URL: a second client entry and a second consent on every IDE, a list hosted chat clients carried whole in context, a list the stateless edge could never refresh, and a list a directory reviewer would have snapshotted from whatever the reviewing organization happened to expose. Folding it into ONE action tool keeps the contracted surface fixed and the organization's surface as data behind it. An agent told to run a function looks for a tool named tools; folding the invoke into platform_workflow_execute or platform_catalog would have saved the raise and cost that. The surface sits on its target again, and the rule stands: the next capability is a parameter, an app-only tool, or a decision to take one away."
   },
   "capabilities": [
     {
@@ -1309,22 +1309,65 @@
       ]
     },
     {
-      "id": "mcp.tools_invoke",
-      "title": "Invoke a function the organization exposes as an MCP tool",
-      "state": "remote-write",
+      "id": "platform.tools.list",
+      "title": "List the functions the organization exposes as tools",
+      "state": "remote-read",
       "scopes": [
-        "platform:tools:execute"
+        "platform:workflows:read"
       ],
       "auth": "oauth",
-      "mcp_toolset": "/platform/tools",
-      "mcp_tool": "*",
-      "note": "DIB-764. The tool list is per-organization data: each exposed function is one tool, governed by the organization's exposure allowlist and minimum role, not by this contract. The mount is outside parity.max_tools_full_write, which counts /platform only. Exposure policy is managed by `dibbla wf functions expose|unexpose|exposed`; each call is recorded as a tool invocation, a sibling of a workflow run, never a run. Ported into the contract by DIB-809: the row and scope had been vendored into app-hosting-service and dibbla-cli by hand and never landed here.",
+      "note": "DIB-853 folded the /platform/tools mount (DIB-764, DIB-827) into /platform as ONE tool, platform_tools, with an action enum; the rows of this family are the actions. action=list answers GET /api/slim/functions?exposed=1 filtered by the caller's role — every entry carries the function's input schema, so an agent reads it and calls action=invoke without a second tool. The list is per-organization data governed by the exposure allowlist and minimum role, not by this contract; it can change between calls, and a function that is unexposed after it was listed answers NOT_FOUND on invoke. A caller holding platform:tools:manage with the owner or admin role additionally sees each exposure's policy (min_role, enabled, registered) in the same answer, disabled and unregistered rows included.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_tools",
       "cli_commands": [
-        "functions expose",
-        "functions unexpose",
-        "functions exposed",
+        "functions exposed"
+      ]
+    },
+    {
+      "id": "platform.tools.invoke",
+      "title": "Invoke a function the organization exposes as a tool",
+      "state": "remote-write",
+      "scopes": [
+        "platform:workflows:read"
+      ],
+      "auth": "oauth",
+      "note": "DIB-853 folded the /platform/tools mount (DIB-764, DIB-827) into /platform as ONE tool, platform_tools, with an action enum; the rows of this family are the actions. action=invoke POSTs /api/slim/functions/<server>/<name>/invoke with X-Dibbla-Source: mcp and the grant id. Exposure is the authorization (DIB-827): workflow-server re-checks registered AND exposed AND role >= min_role on every invoke, so listing and calling follow the one read scope and no second OAuth gate sits on top; platform:tools:execute stays reserved. Each call is recorded as a tool invocation — a sibling of a workflow run, never a run — and priced against the organization's quota as a narrow write. Inputs are capped at 64 KiB and a result over 16 KiB is cut in both contents. There is no idempotency key: an invocation is an attempt the ledger records once per call, and the function's own idempotency is the function's. A static API token holds only platform:identity:read at /platform and can neither list nor call.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_tools",
+      "cli_commands": [
+        "functions invoke"
+      ]
+    },
+    {
+      "id": "platform.tools.invocations",
+      "title": "Read the ledger of calls made to exposed functions",
+      "state": "remote-read",
+      "scopes": [
+        "platform:workflows:read"
+      ],
+      "auth": "oauth",
+      "note": "DIB-853 folded the /platform/tools mount (DIB-764, DIB-827) into /platform as ONE tool, platform_tools, with an action enum; the rows of this family are the actions. action=invocations answers GET /api/slim/tool-invocations with the same filters the CLI takes (server, function, source, user, since, limit), newest first; with invocation_id it answers the one row. Who called what, when, from which source and how it ended. The lines a function logged during a call stay on the CLI (`functions invocation <id> --logs`, an NDJSON stream) until an operation-shaped read exists for them.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_tools",
+      "cli_commands": [
         "functions invocations",
         "functions invocation"
+      ]
+    },
+    {
+      "id": "platform.tools.expose",
+      "title": "Expose or unexpose a function as a tool, and set its minimum role",
+      "state": "remote-write",
+      "scopes": [
+        "platform:tools:manage"
+      ],
+      "auth": "oauth",
+      "note": "DIB-853 folded the /platform/tools mount (DIB-764, DIB-827) into /platform as ONE tool, platform_tools, with an action enum; the rows of this family are the actions. action=expose is PUT /api/slim/tool-exposures/<server>/<name> with min_role and enabled (an upsert: exposing again updates the policy, so it needs no idempotency key); action=unexpose is the DELETE. The organization's exposure policy is a governance act, so it sits behind TWO gates and both must hold: the grant carries platform:tools:manage (a write scope, never a consent default) AND the person behind the grant is an owner or admin of the organization — workflow-server enforces the role on every call, and platform_tools hides the two actions from anyone else and answers FORBIDDEN naming the role on a blind call. Engine-internal (`_`) and data-source functions are never exposable; the 101st enabled exposure is refused (EXPOSURE_LIMIT, a CONFLICT). The policy row carries a subject_kind, `function` today, so a later kind of subject (a workflow, an application) can join the same policy without a redesign — not built, deliberately.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_tools",
+      "cli_commands": [
+        "functions expose",
+        "functions unexpose"
       ]
     }
   ]

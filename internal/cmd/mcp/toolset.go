@@ -3,7 +3,10 @@ package mcp
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/platformcontract"
 )
 
 // toolset describes one hosted MCP toolset well enough for the config printers
@@ -108,19 +111,43 @@ func (ts toolset) printClaude(w io.Writer, endpoint string) {
 	// OAuth: no header at all. Claude Code discovers the authorization server
 	// from the 401 challenge and runs the browser flow when the server is first
 	// used (`/mcp` in the session shows the connection state).
+	//
+	// oauth.scopes is what makes a coding agent's grant able to WRITE. Claude
+	// Code's own client metadata names no scope, so without this line the
+	// consent page shows only the read defaults and every deploy, restart or
+	// exposure change answers INSUFFICIENT_SCOPE until the person reconnects
+	// (DIB-827 measured it; DIB-853 closes it here). Asking is not getting:
+	// each write is still a box the person ticks on the consent page.
 	fmt.Fprintf(w, `# One-liner:
 #   claude mcp add --transport http %s %s
 # Then authenticate from inside Claude Code: /mcp → %s → Authenticate.
-# Or as .mcp.json / settings JSON:
+# Or as .mcp.json / settings JSON — oauth.scopes asks for the writes a coding
+# agent needs; the consent page still shows each one as a box to tick:
 {
   "mcpServers": {
     "%s": {
       "type": "http",
-      "url": "%s"
+      "url": "%s",
+      "oauth": { "scopes": "%s" }
     }
   }
 }
-`, ts.ServerName, endpoint, ts.ServerName, ts.ServerName, endpoint)
+`, ts.ServerName, endpoint, ts.ServerName, ts.ServerName, endpoint, agentScopes())
+}
+
+// agentScopes is the scope string a coding agent's connection asks consent
+// for: every scope the first public toolset grants except the destructive
+// class. Deletions and restores stay a deliberate reconnect with
+// `--login --scope`, never a default a config file asks for.
+func agentScopes() string {
+	var names []string
+	for _, sc := range platformcontract.Scopes() {
+		if sc.GrantedByFirstPublicToolset && sc.Class != "destructive" {
+			names = append(names, sc.Name)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, " ")
 }
 
 func (ts toolset) printCodex(w io.Writer, endpoint string) {

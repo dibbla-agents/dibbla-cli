@@ -59,6 +59,11 @@ func (c *Client) Post(path string, body interface{}) (*Response, error) {
 	return c.do("POST", path, body)
 }
 
+// PostWithHeaders is Post with extra request headers (e.g. X-Dibbla-Source).
+func (c *Client) PostWithHeaders(path string, body interface{}, headers map[string]string) (*Response, error) {
+	return c.doWithHeaders("POST", path, body, headers)
+}
+
 func (c *Client) Put(path string, body interface{}) (*Response, error) {
 	return c.do("PUT", path, body)
 }

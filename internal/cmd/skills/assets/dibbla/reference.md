@@ -1650,7 +1650,7 @@ Alias: `fn`.
 |------|---------|
 | **Usage** | `dibbla functions exposed` |
 | **Output** | Table: NAME, SERVER, MIN ROLE, ENABLED, REGISTERED (default); JSON/YAML with `-o` |
-| **Behavior** | Lists the organization's function exposures — the functions members can call as tools on the `/platform/tools` MCP connector. REGISTERED `false` means the function's worker is not connected right now; the exposure stays and the tool is offered again when it registers. |
+| **Behavior** | Lists the organization's function exposures — the functions members (and their agents) can call directly: as `platform_tools` on the Dibbla MCP connector, with `dibbla fn invoke`, or over the API. REGISTERED `false` means the function's worker is not connected right now; the exposure stays and the tool is offered again when it registers. |
 
 ### functions expose
 
@@ -1686,6 +1686,16 @@ Alias: `fn`.
 | **Usage** | `dibbla functions invocation <id> [--logs]` |
 | **Output** | YAML (default) or JSON with `-o json`: caller, source, status, duration, input/output sizes and digests, result preview |
 | **Flags** | `--logs` — also print the log lines the function emitted during the call, in the same format as `dibbla wf logs` |
+
+### functions invoke
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla functions invoke <server> <name> [--input '<json object>' \| -f <file\|->]` |
+| **Arguments** | `server`, `name` — an exposed function from `functions exposed` |
+| **Flags** | `--input` — the function's inputs as a JSON object; `-f` reads the same JSON from a file, `-` for stdin. Neither means `{}`. |
+| **Output** | YAML (default) or JSON with `-o json`: `invocation_id`, `status`, `duration_ms` and the function's `result` |
+| **Behavior** | Calls the function directly, outside any workflow, synchronously (the engine waits up to 30 s) and records a tool invocation with source `cli`. Same endpoint and body as the connector's `platform_tools action=invoke`. Refusals: not registered / not exposed / disabled are one 404 (exit 4) on purpose; a min role above yours is 403 (exit 3); a function that fails is 502 with its error, recorded in the ledger (`fn invocation <id> --logs`); a timeout is 504 and the invocation is recorded as timed out; inputs over 64 KiB are 400. |
 
 **Agent guidance:** exposing is a policy decision for an admin, not a step in workflow authoring — a function does not need to be exposed to be used in a workflow. Reach for `fn exposed` / `fn invocations` when someone asks "which of our functions can agents call directly" or "who called this tool, and what happened".
 ---
@@ -1762,3 +1772,4 @@ Alias: `fn`.
 | Functions | `dibbla functions unexpose <server> <name> [-y]` | Stop exposing a function (admin) |
 | Functions | `dibbla functions invocations [filters]` | List calls made to exposed functions |
 | Functions | `dibbla functions invocation <id> [--logs]` | Show one call, optionally with its logs |
+| Functions | `dibbla functions invoke <server> <name> [--input <json> \| -f <file>]` | Call an exposed function directly (source `cli`) |
