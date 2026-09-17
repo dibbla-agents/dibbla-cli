@@ -67,9 +67,12 @@ minutes to propagate.`,
 var domainsRemoveCmd = &cobra.Command{
 	Use:   "remove <alias> <hostname>",
 	Short: "Disconnect a domain from the app",
-	Long: `Removes the hostname from the app and from the edge. Your DNS record is
-untouched; the hostname simply stops resolving to the app. Adding it again
-starts a fresh verification.`,
+	Long: `Disconnects the hostname from the app. Your DNS record is untouched, and
+while it still points at the platform visitors see Dibbla's "This site isn't
+connected" page instead of an error from the edge. The hostname stays
+reserved for your organization — 'dibbla domains add' connects it again at
+once, without a new certificate — until you remove the CNAME at your
+registrar, or for 30 days at most.`,
 	Args: cobra.ExactArgs(2),
 	Run:  runDomainsRemove,
 }
@@ -116,7 +119,7 @@ func runDomainsRemove(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 	alias, hostname := args[0], apps.NormalizeHostname(args[1])
 	if !domainsRemoveYes {
-		ok, err := askConfirm(fmt.Sprintf("Disconnect %s from '%s'? The hostname stops resolving to the app.", hostname, alias))
+		ok, err := askConfirm(fmt.Sprintf("Disconnect %s from '%s'? The app stops answering on it; visitors see Dibbla's \"not connected\" page until you remove the DNS record.", hostname, alias))
 		if err != nil {
 			os.Exit(refuseUnconfirmable(os.Stderr, fmt.Sprintf("removing domain %s", hostname)))
 		}
@@ -202,6 +205,12 @@ func runDomainsAddCore(stdout, stderr io.Writer, apiURL, apiToken, alias, hostna
 		return 0
 	}
 	fmt.Fprintf(stdout, "%s %s is connected to '%s'.\n\n", platform.Icon("✅", "[OK]"), d.Hostname, alias)
+	if d.Active {
+		// A reconnected domain (DIB-861): the edge record was kept, there is
+		// nothing to configure.
+		fmt.Fprintf(stdout, "  Status: %s\n  https://%s\n", d.Verdict(), d.Hostname)
+		return 0
+	}
 	printDNSInstruction(stdout, d)
 	fmt.Fprintf(stdout, "\n  Status: %s\n", d.Verdict())
 	for _, e := range d.Errors {
@@ -268,6 +277,14 @@ func runDomainsVerifyCore(stdout, stderr io.Writer, apiURL, apiToken, alias, hos
 		fmt.Fprintf(stdout, "  https://%s\n", d.Hostname)
 		return 0
 	}
+	if d.IsParked() {
+		fmt.Fprintf(stdout, "%s %s: %s\n", platform.Icon("⏸", "[--]"), d.Hostname, d.Verdict())
+		if d.DisconnectedAt != nil {
+			fmt.Fprintf(stdout, "  Disconnected: %s\n", d.DisconnectedAt.Local().Format("2006-01-02 15:04"))
+		}
+		fmt.Fprintf(stdout, "  Connect again with: dibbla domains add %s %s\n", alias, d.Hostname)
+		return 0
+	}
 	fmt.Fprintf(stdout, "%s %s: %s\n", platform.Icon("⏳", "[..]"), d.Hostname, d.Verdict())
 	fmt.Fprintf(stdout, "  Hostname status: %s\n", orDash(d.Status))
 	fmt.Fprintf(stdout, "  Certificate:     %s\n", orDash(d.SSLStatus))
@@ -290,7 +307,9 @@ func runDomainsRemoveCore(stdout, stderr io.Writer, apiURL, apiToken, alias, hos
 		return reportDomainError(stderr, "domains remove", alias, h, err)
 	}
 	fmt.Fprintf(stdout, "%s %s is disconnected from '%s'.\n", platform.Icon("✅", "[OK]"), h, alias)
-	fmt.Fprintf(stdout, "  Your DNS record is untouched; remove the CNAME at your registrar if you no longer need it.\n")
+	fmt.Fprintf(stdout, "  Visitors now see Dibbla's \"not connected\" page while your DNS record still points here.\n")
+	fmt.Fprintf(stdout, "  Remove the CNAME at your registrar when you no longer need the domain — or connect it again\n")
+	fmt.Fprintf(stdout, "  with: dibbla domains add %s %s  (active at once, no new certificate; reserved for 30 days)\n", alias, h)
 	return 0
 }
 
