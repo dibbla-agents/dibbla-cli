@@ -32,6 +32,13 @@ const domainRowApex = `{
 	"is_apex":true,"apex_advice":"Point the www hostname at the platform with a CNAME. Most registrars cannot put a CNAME on the bare domain (apex); set up an HTTP redirect from the apex to www there instead.",
 	"created_at":"2026-09-17T10:00:00Z","updated_at":"2026-09-17T10:00:00Z"}`
 
+const domainRowParked = `{
+	"id":"dom_4","deployment_alias":"myapp","hostname":"shop.exempel.se",
+	"status":"disconnected","ssl_status":"active","active":false,"parked":true,
+	"disconnected_at":"2026-09-17T12:00:00Z",
+	"dns":{"type":"CNAME","name":"shop.exempel.se","target":"cname.dibbla.com","record":"shop.exempel.se CNAME cname.dibbla.com"},
+	"is_apex":false,"created_at":"2026-09-17T10:00:00Z","updated_at":"2026-09-17T12:00:00Z"}`
+
 func domainsServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +269,57 @@ func TestDomainsRemove(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "ghost.exempel.se is not connected to 'myapp'") {
 		t.Errorf("stderr: %s", stderr.String())
+	}
+}
+
+// DIB-861: a parked domain lists as "disconnected" with the way back; verify
+// says so without DNS instructions; add on a parked hostname (the server
+// answers 200 active) prints no CNAME block; remove explains the parking.
+func TestDomainsParked_ListVerifyAddRemove(t *testing.T) {
+	srv := domainsServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"domains":[` + domainRowParked + `],"cname_target":"cname.dibbla.com","apex_advice":"…"}`))
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(strings.Replace(domainRowActive, "app.exempel.se", "shop.exempel.se", -1)))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	var stdout, stderr bytes.Buffer
+	if code := runDomainsListCore(&stdout, &stderr, srv.URL, "tok", "myapp", false); code != 0 {
+		t.Fatalf("list exit %d (stderr=%q)", code, stderr.String())
+	}
+	for _, want := range []string{"shop.exempel.se", "disconnected", "not connected", "domains add"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("list missing %q:\n%s", want, stdout.String())
+		}
+	}
+	stdout.Reset()
+	if code := runDomainsVerifyCore(&stdout, &stderr, srv.URL, "tok", "myapp", "shop.exempel.se", false); code != 0 {
+		t.Fatalf("verify exit %d (stderr=%q)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "disconnected") || !strings.Contains(out, "dibbla domains add myapp shop.exempel.se") || strings.Contains(out, "Create this DNS record") {
+		t.Errorf("verify output:\n%s", out)
+	}
+	stdout.Reset()
+	if code := runDomainsAddCore(&stdout, &stderr, srv.URL, "tok", "myapp", "shop.exempel.se", false); code != 0 {
+		t.Fatalf("add exit %d (stderr=%q)", code, stderr.String())
+	}
+	out = stdout.String()
+	if !strings.Contains(out, "active — serving") || !strings.Contains(out, "https://shop.exempel.se") || strings.Contains(out, "Type:") {
+		t.Errorf("reconnect output must not carry DNS instructions:\n%s", out)
+	}
+	stdout.Reset()
+	if code := runDomainsRemoveCore(&stdout, &stderr, srv.URL, "tok", "myapp", "shop.exempel.se"); code != 0 {
+		t.Fatalf("remove exit %d (stderr=%q)", code, stderr.String())
+	}
+	for _, want := range []string{"not connected", "30 days", "dibbla domains add myapp shop.exempel.se"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("remove missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

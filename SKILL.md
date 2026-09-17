@@ -440,20 +440,20 @@ Connects a hostname and prints the DNS record to create.
 #### `domains list`
 
 -   **Usage:** `dibbla domains list <alias> [--json]`
--   **Output:** Every hostname on the app with hostname status, certificate status and active yes/no, plus a one-line explanation for each hostname that is not active yet. Statuses are refreshed from the edge on every read.
+-   **Output:** Every hostname on the app with hostname status, certificate status and active yes/no, plus a one-line explanation for each hostname that is not active yet. Statuses are refreshed from the edge on every read. A hostname that was disconnected shows status `disconnected` (parked — see `domains remove`).
 
 #### `domains verify`
 
 Fetches the hostname's live status from the edge and explains it.
 
 -   **Usage:** `dibbla domains verify <alias> <hostname> [--json]`
--   **Verdicts:** `waiting for DNS` (the CNAME is not visible yet — propagation takes minutes, occasionally up to an hour; ask again rather than re-adding), `issuing certificate` (DNS is right, the certificate is a minute or two away), `active — serving with a valid certificate`, or `error (…)` with the provider's reason. When not active, the CNAME instruction is printed again.
+-   **Verdicts:** `waiting for DNS` (the CNAME is not visible yet — propagation takes minutes, occasionally up to an hour; ask again rather than re-adding), `issuing certificate` (DNS is right, the certificate is a minute or two away), `active — serving with a valid certificate`, `disconnected` (parked after `domains remove`; `domains add` connects it again at once), or `error (…)` with the provider's reason. When waiting, the CNAME instruction is printed again.
 -   **Exit:** 0 whatever the status (read the verdict); 4 when the hostname is not connected to this app.
 
 #### `domains remove`
 
 -   **Usage:** `dibbla domains remove <alias> <hostname> [--yes | -y]`
--   **Behaviour:** Removes the hostname from the app and from the edge; the user's DNS record is untouched. Pass `--yes` when running as an agent.
+-   **Behaviour:** Disconnects the hostname from the app; the user's DNS record is untouched. The hostname is **parked**, not deleted: while the CNAME still points at the platform, visitors see Dibbla's "This site isn't connected" page instead of an edge error, and the hostname stays reserved for the organization. `dibbla domains add` of the same hostname (this or another of the organization's apps) connects it again at once, without a new certificate. The platform releases a parked hostname when the CNAME no longer points at it, or 30 days after disconnecting, whichever comes first — tell the user to remove the CNAME at the registrar when they are done with the domain. Pass `--yes` when running as an agent.
 
 ### `deploy`
 

@@ -929,7 +929,7 @@ fail with `DOMAINS_NOT_CONFIGURED` (503) — the feature is off, not a CLI bug.
 |------|---------|
 | **Usage** | `dibbla domains remove <alias> <hostname> [--yes | -y]` |
 | **Flags** | `--yes`, `-y` — skip confirmation |
-| **Behaviour** | Removes the hostname from the app and from the edge. Your DNS record is untouched (delete the CNAME at the registrar yourself if you no longer need it). Adding the hostname again starts a fresh verification. `DOMAIN_NOT_FOUND` (404, exit 4) when the hostname is not connected to this app. |
+| **Behaviour** | Disconnects the hostname from the app; the app stops answering on it. Your DNS record is untouched, and the hostname is *parked* rather than deleted: while the CNAME still points at the platform, visitors see Dibbla's "This site isn't connected" page instead of an edge error, `domains list`/`verify` show status `disconnected`, and `domains add` connects it again at once without a new certificate (to this or another of your apps). The platform releases it when the CNAME no longer points here, or 30 days after disconnecting — delete the CNAME at the registrar when you no longer need the domain. `DOMAIN_NOT_FOUND` (404, exit 4) when the hostname is not connected to this app. |
 | **Non-interactive** | Without a terminal on stdin and without `--yes`, the command refuses with exit 5 and makes zero requests. Always pass `--yes` from scripts, CI and coding agents. |
 
 ---

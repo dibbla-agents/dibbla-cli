@@ -32,7 +32,10 @@ type DNSInstruction struct {
 
 // Domain is one custom hostname as GET/POST /deployments/{alias}/domains
 // shows it. Status and SSLStatus are Cloudflare's words; Active is the only
-// pair that means the hostname serves.
+// pair that means the hostname serves. Parked (DIB-861) is a hostname
+// disconnected from the app but kept at the edge: status "disconnected",
+// visitors see Dibbla's "not connected" page, and `domains add` connects
+// it again without a new certificate.
 type Domain struct {
 	ID              string         `json:"id"`
 	DeploymentAlias string         `json:"deployment_alias"`
@@ -40,6 +43,8 @@ type Domain struct {
 	Status          string         `json:"status"`
 	SSLStatus       string         `json:"ssl_status"`
 	Active          bool           `json:"active"`
+	Parked          bool           `json:"parked,omitempty"`
+	DisconnectedAt  *time.Time     `json:"disconnected_at,omitempty"`
 	Errors          []string       `json:"errors,omitempty"`
 	DNS             DNSInstruction `json:"dns"`
 	IsApex          bool           `json:"is_apex"`
@@ -108,6 +113,10 @@ func RemoveDomain(apiURL, apiToken, alias, hostname string) error {
 	return nil
 }
 
+// IsParked reports whether the hostname is disconnected but still reserved
+// for this organization (DIB-861).
+func (d *Domain) IsParked() bool { return d.Parked || d.Status == "disconnected" }
+
 // FindDomain returns the hostname's row out of a listing, or nil.
 func (r *DomainsListResponse) FindDomain(hostname string) *Domain {
 	for i := range r.Domains {
@@ -126,6 +135,9 @@ func (r *DomainsListResponse) FindDomain(hostname string) *Domain {
 // or "initializing" in it is Cloudflare waiting; the CNAME is what it waits
 // for until validation has passed.
 func (d *Domain) Verdict() string {
+	if d.IsParked() {
+		return "disconnected — no app answers; visitors see Dibbla's \"not connected\" page while your DNS record still points here. `dibbla domains add` connects it again at once (no new certificate); remove the CNAME at your registrar when you are done with it"
+	}
 	if d.Active {
 		return "active — serving with a valid certificate"
 	}

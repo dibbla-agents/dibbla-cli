@@ -732,6 +732,9 @@ dibbla domains verify myapp www.example.com
 
 dibbla domains list myapp
 dibbla domains remove myapp www.example.com --yes
+# ✅ www.example.com is disconnected from 'myapp'.
+#    Visitors now see Dibbla's "not connected" page while your DNS record still points here.
+#    (reserved for 30 days; `dibbla domains add myapp www.example.com` connects it again at once)
 ```
 
 The app keeps `https://myapp.dibbla.com` alongside the custom hostname. The manifest's `domain:` field is the older ingress-level path that replaces the alias host; leave it unset.
