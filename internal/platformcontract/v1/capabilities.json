@@ -1103,6 +1103,52 @@
       ]
     },
     {
+      "id": "platform.domains.list",
+      "title": "List and verify an application's custom domains",
+      "state": "remote-read",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps",
+      "note": "DIB-843, on deploy-api's /deployments/{alias}/domains (DIB-842). `dibbla domains list|verify` is platform_apps with view=domains: every custom hostname of the application with its hostname status and certificate status, refreshed from the edge (Cloudflare for SaaS) on every read, a one-line verdict — waiting for DNS, issuing certificate, active, or an error with the provider's reason — and the CNAME record to create. Name a hostname to verify just that one; verify is the listing narrowed, because a read already refreshes. A custom hostname is a property of an application, decided by the same authority as its replicas, so — as with scheduled maintenance (DIB-704) — it is a view of the apps read tool rather than a family of its own; the surface grew by zero tools. Provider ids and the owning organization never enter the answer.",
+      "cli_commands": [
+        "domains list",
+        "domains verify"
+      ]
+    },
+    {
+      "id": "platform.domains.add",
+      "title": "Connect a custom domain to an application",
+      "state": "remote-write",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "DIB-843. `dibbla domains add` is the domain_add field of platform_app_config_update: the hostname is registered as a custom hostname at the edge, and the answer carries — in clear text, the same words as the CLI — the one DNS record to create at the registrar (CNAME, host label, target) and the bare-domain advice (most registrars cannot put a CNAME on the apex; connect www and redirect the apex to it). The scope is the app write scope because a domain is app configuration. One hostname, one tenant: a hostname any application anywhere already holds is CONFLICT, and the answer never says whose. Adding a hostname the same application already holds hands the row back refreshed. Needs deploy-api's deploy role, like every other write on the application.",
+      "cli_commands": [
+        "domains add"
+      ]
+    },
+    {
+      "id": "platform.domains.remove",
+      "title": "Disconnect a custom domain from an application",
+      "state": "remote-write",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "DIB-843. `dibbla domains remove` is the domain_remove field of platform_app_config_update: the custom hostname is removed at the edge first and then from the registry; the customer's own DNS record is theirs and is never touched. Not destructive in the contract's sense — adding the hostname again starts a fresh verification and nothing that cannot be recreated is lost — so it is a write under the app write scope, not a plan/execute pair. A hostname the application does not hold is the one absence answer.",
+      "cli_commands": [
+        "domains remove"
+      ]
+    },
+    {
       "id": "platform.apps.maintenance.run",
       "title": "Start one maintenance run",
       "state": "remote-async",

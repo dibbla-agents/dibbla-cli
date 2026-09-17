@@ -646,11 +646,11 @@ the step.
 |---|---|---|
 | Know who and where you are, and which organizations you belong to | `platform_whoami` | — |
 | See what you can build with: templates, workflow functions, providers | `platform_catalog` | `kind` |
-| List apps, read one, read its maintenance settings and runs | `platform_apps` | omit `alias` to list; `view: maintenance` |
+| List apps, read one, read its maintenance settings and runs, list or verify its custom domains | `platform_apps` | omit `alias` to list; `view: maintenance` \| `domains` (+ `hostname` to verify one) |
 | Read an app's logs | `platform_app_logs` | — |
 | See an app's checks, or what they found | `platform_app_checks` | `view: definitions` \| `history` |
 | Run checks now, or one maintenance run | `platform_app_run` | `kind: checks` \| `maintenance` |
-| Change env vars, resources, or scheduled maintenance | `platform_app_config_update` | `maintenance_enabled` |
+| Change env vars, resources, scheduled maintenance, or connect/disconnect a custom domain | `platform_app_config_update` | `maintenance_enabled`; `domain_add` \| `domain_remove` |
 | Restart | `platform_app_restart` | — |
 | Turn an app's checks runtime on or off | `platform_app_checks_set_enabled` | — |
 | List databases, read one, see its phase | `platform_databases` | omit `name` to list |
