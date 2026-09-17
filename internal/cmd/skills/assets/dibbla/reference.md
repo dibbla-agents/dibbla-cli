@@ -1672,7 +1672,7 @@ Alias: `fn`.
 | **Arguments** | `server`, `name` — an exposed function from `functions exposed` |
 | **Flags** | `--input` — the function's inputs as a JSON object; `-f` reads the same JSON from a file, `-` for stdin. Neither means `{}`. |
 | **Output** | YAML (default) or JSON with `-o json`: `invocation_id`, `status`, `duration_ms` and the function's `result` |
-| **Behavior** | Calls the function directly, outside any workflow, synchronously (the engine waits up to 30 s) and records a tool invocation with source `cli`. Same endpoint and body as the connector's `platform_tools action=invoke`. Refusals: not registered / not exposed / disabled are one 404 (exit 4) on purpose; a min role above yours is 403 (exit 3); a timeout is 504 and the invocation is recorded as timed out; inputs over 64 KiB are 413. |
+| **Behavior** | Calls the function directly, outside any workflow, synchronously (the engine waits up to 30 s) and records a tool invocation with source `cli`. Same endpoint and body as the connector's `platform_tools action=invoke`. Refusals: not registered / not exposed / disabled are one 404 (exit 4) on purpose; a min role above yours is 403 (exit 3); a function that fails is 502 with its error, recorded in the ledger (`fn invocation <id> --logs`); a timeout is 504 and the invocation is recorded as timed out; inputs over 64 KiB are 400. |
 
 **Agent guidance:** exposing is a policy decision for an admin, not a step in workflow authoring — a function does not need to be exposed to be used in a workflow. Reach for `fn exposed` / `fn invocations` when someone asks "which of our functions can agents call directly" or "who called this tool, and what happened".
 ---

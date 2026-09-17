@@ -298,7 +298,7 @@ func TestRegistryNamesEveryScopeExplicitly(t *testing.T) {
 		"platform:workflows:delete",           //contract-pinned: hand-written inventory
 		"platform:feedback:write",             //contract-pinned: hand-written inventory
 		"platform:tools:execute",              //contract-pinned: hand-written inventory
-		"platform:tools:manage",
+		"platform:tools:manage",               //contract-pinned: hand-written inventory
 	}
 
 	var got []string

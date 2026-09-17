@@ -253,8 +253,10 @@ Inputs are the function's inputs by name, as a JSON object:
   cat inputs.json | dibbla fn invoke my-crm lookup.customer -f -
 
 The function must be registered, exposed and enabled, and your organization
-role must meet its min role; anything else is 404 (exit 4), exactly as the
-connector answers. This is the same call an agent makes with platform_tools
+role must meet its min role; not registered, not exposed and disabled are one
+404 (exit 4) on purpose, a role below the min role is 403, and inputs over
+64 KiB are refused as 400. A function that fails answers 502 and is recorded
+with its error; a function that does not answer in 30 s is 504. This is the same call an agent makes with platform_tools
 action=invoke — one surface for people with a shell, one for agents without.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -310,10 +312,10 @@ func renderInvokeError(err error, server, name string) error {
 		return failWithStatus(404, "function %s/%s is not exposed for your organization (not registered, not exposed, or disabled) — `dibbla fn exposed` lists the callable ones", server, name)
 	case 403:
 		return failWithStatus(403, "%s (your role is below the exposure's min role)", msg)
+	case 502:
+		return failWithStatus(502, "function %s/%s failed: %s — the attempt is recorded; `dibbla fn invocations --function %s` lists it, `dibbla fn invocation <id> --logs` shows what it logged", server, name, msg, name)
 	case 504:
 		return failWithStatus(504, "function %s/%s did not answer in time; the invocation is recorded as timed out — `dibbla fn invocations --function %s`", server, name, name)
-	case 413:
-		return failWithStatus(413, "inputs are too large: at most 64 KiB")
 	}
 	if code != "" {
 		return failWithStatus(apiErr.StatusCode, "%s (%s)", msg, code)
