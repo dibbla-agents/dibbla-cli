@@ -420,6 +420,41 @@ Deletes a secret.
     -   `--yes`, `-y`: Skip the confirmation prompt.
 -   **Example:** `dibbla secrets delete API_KEY --yes` — **Per-app:** `dibbla secrets delete API_KEY -d myapp -y` — **Per-service:** `dibbla secrets delete NPM_TOKEN -d myapp -s web -y`
 
+### `domains`
+
+The `domains` command puts a deployed app on the user's own hostname (bring your own domain). It is the answer to "connect my domain" / "use www.example.com" — **not** the manifest's `domain:` field. The app keeps `https://<alias>.dibbla.com` alongside the custom hostname; login and sessions work on both.
+
+The flow: `add` → the user creates **one CNAME** at their registrar → `verify` until active.
+
+#### `domains add`
+
+Connects a hostname and prints the DNS record to create.
+
+-   **Usage:** `dibbla domains add <alias> <hostname> [--json]`
+-   **Arguments:** `alias` (required) — the app; `hostname` (required) — e.g. `www.example.com` (no scheme, no path).
+-   **Output:** `Type: CNAME`, `Host: www` (the label; `@` for a bare domain), `Target: cname.dibbla.com`, the full record line, the bare-domain advice, the current status and the `verify` command to run next. Relay the record to the user verbatim.
+-   **Bare domain (apex):** recommend `www`. Most registrars (One.com, Loopia, GoDaddy, Namecheap) cannot put a CNAME on `example.com`; connect `www.example.com` and set up an HTTP redirect from the bare domain to www at the registrar. An apex hostname is accepted and flagged (`is_apex`) with the same advice.
+-   **Errors:** `DOMAIN_TAKEN` (exit 6) — already connected to an app, here or in another organization; the message never says whose. `DOMAIN_INVALID` (exit 5) — not a bare DNS name / wildcard / IP / one of the platform's own domains. `DOMAINS_NOT_CONFIGURED` (503) — the installation has the feature off.
+-   **Example:** `dibbla domains add myapp www.example.com`
+
+#### `domains list`
+
+-   **Usage:** `dibbla domains list <alias> [--json]`
+-   **Output:** Every hostname on the app with hostname status, certificate status and active yes/no, plus a one-line explanation for each hostname that is not active yet. Statuses are refreshed from the edge on every read.
+
+#### `domains verify`
+
+Fetches the hostname's live status from the edge and explains it.
+
+-   **Usage:** `dibbla domains verify <alias> <hostname> [--json]`
+-   **Verdicts:** `waiting for DNS` (the CNAME is not visible yet — propagation takes minutes, occasionally up to an hour; ask again rather than re-adding), `issuing certificate` (DNS is right, the certificate is a minute or two away), `active — serving with a valid certificate`, or `error (…)` with the provider's reason. When not active, the CNAME instruction is printed again.
+-   **Exit:** 0 whatever the status (read the verdict); 4 when the hostname is not connected to this app.
+
+#### `domains remove`
+
+-   **Usage:** `dibbla domains remove <alias> <hostname> [--yes | -y]`
+-   **Behaviour:** Removes the hostname from the app and from the edge; the user's DNS record is untouched. Pass `--yes` when running as an agent.
+
 ### `deploy`
 
 The `deploy` command deploys a project to the Dibbla platform. **Detection is by file:** if `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root, the multi-service path runs (manifest parse + resolve + parallel build + atomic apply with rollback). Otherwise the legacy single-`Dockerfile` path runs unchanged.
