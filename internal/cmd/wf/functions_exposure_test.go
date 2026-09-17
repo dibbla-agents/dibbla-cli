@@ -42,8 +42,9 @@ func (s *exposureStub) server(t *testing.T) *httptest.Server {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/wf/slim/tool-exposures":
 			_, _ = w.Write([]byte(`{"exposures":[
-				{"server":"http","function_name":"get","subject_kind":"function","min_role":"viewer","enabled":true,"registered":true},
-				{"server":"org-worker","function_name":"lookup_customer","subject_kind":"function","min_role":"developer","enabled":false,"registered":false}
+				{"server":"http","function_name":"get","subject_kind":"function","min_role":"viewer","enabled":true,"registered":true,"exposable":true},
+				{"server":"org-worker","function_name":"lookup_customer","subject_kind":"function","min_role":"developer","enabled":false,"registered":false},
+				{"server":"go-function-server1","function_name":"call_http_api","subject_kind":"function","min_role":"viewer","enabled":true,"registered":true,"exposable":false}
 			]}`))
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/wf/slim/tool-exposures/"):
 			raw, _ := io.ReadAll(r.Body)
@@ -147,13 +148,15 @@ func TestFunctionsExposedRendersTheTable(t *testing.T) {
 		t.Fatalf("requests = %s", got)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("want a header and two rows, got:\n%s", out)
+	if len(lines) != 4 {
+		t.Fatalf("want a header and three rows, got:\n%s", out)
 	}
 	for i, want := range []string{
-		"NAME  SERVER  MIN ROLE  ENABLED  REGISTERED",
-		"get  http  viewer  true  true",
-		"lookup_customer  org-worker  developer  false  false",
+		"NAME  SERVER  MIN ROLE  ENABLED  REGISTERED  EXPOSABLE",
+		"get  http  viewer  true  true  true",
+		// An older engine sends no flag: "-", not a false it never said.
+		"lookup_customer  org-worker  developer  false  false  -",
+		"call_http_api  go-function-server1  viewer  true  true  false",
 	} {
 		if got := columnGap.ReplaceAllString(strings.TrimSpace(lines[i]), "  "); got != want {
 			t.Errorf("line %d = %q, want %q", i, got, want)

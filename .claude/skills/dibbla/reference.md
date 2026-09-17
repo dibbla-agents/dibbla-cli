@@ -1649,8 +1649,8 @@ Alias: `fn`.
 | Item | Details |
 |------|---------|
 | **Usage** | `dibbla functions exposed` |
-| **Output** | Table: NAME, SERVER, MIN ROLE, ENABLED, REGISTERED (default); JSON/YAML with `-o` |
-| **Behavior** | Lists the organization's function exposures — the functions members (and their agents) can call directly: as `platform_tools` on the Dibbla MCP connector, with `dibbla fn invoke`, or over the API. REGISTERED `false` means the function's worker is not connected right now; the exposure stays and the tool is offered again when it registers. |
+| **Output** | Table: NAME, SERVER, MIN ROLE, ENABLED, REGISTERED, EXPOSABLE (default); JSON/YAML with `-o` |
+| **Behavior** | Lists the organization's function exposures — the functions members (and their agents) can call directly: as `platform_tools` on the Dibbla MCP connector, with `dibbla fn invoke`, or over the API. REGISTERED `false` means the function's worker is not connected right now; the exposure stays and the tool is offered again when it registers. EXPOSABLE `false` on a registered function means it is not available as a tool (agents and platform-internal functions): nothing can call it, and `dibbla fn unexpose` removes the row. `-` means the server did not say. |
 
 ### functions expose
 
@@ -1661,7 +1661,7 @@ Alias: `fn`.
 | **Flags** | `--min-role` — lowest organization role that may call the tool (default `viewer`, i.e. any member; there is no `member` role) |
 | | `--disabled` — record the exposure but do not offer the tool yet |
 | **Role** | admin or owner (enforced server-side) |
-| **Behavior** | Upsert: running it again on an exposed function updates its min role and enabled state. Prints the resulting exposure. Refusals: `_`-prefixed and `data_source_*` functions cannot be exposed (400); an unregistered function is 404; the 101st enabled exposure is refused (409 `EXPOSURE_LIMIT`, exit 6) — unexpose one first. |
+| **Behavior** | Upsert: running it again on an exposed function updates its min role and enabled state. Prints the resulting exposure. Refusals: a function that is not available as a tool — agents, and platform built-ins that are not opted in for direct calls — cannot be exposed (400); your organization's own non-agent functions can; an unregistered function is 404; the 101st enabled exposure is refused (409 `EXPOSURE_LIMIT`, exit 6) — unexpose one first. |
 
 ### functions unexpose
 
