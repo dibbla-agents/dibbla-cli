@@ -244,6 +244,28 @@ Recovery:
 
 ---
 
+## Clone (fetch the deploy history of an app)
+
+```bash
+dibbla clone my-app                       # → ./my-app, checked out at the latest deploy
+dibbla clone my-app --into ./checkout     # custom directory (must not exist yet)
+dibbla clone my-app --ref abc1234         # check out an older deploy by commit SHA
+dibbla clone acme/my-app                  # org prefix accepted; the org still comes from the active context
+
+# Inside the clone: each commit is one deploy, subject = the deploy's -m message
+git -C my-app log --oneline
+git -C my-app diff HEAD~1 --stat          # what changed between the last two deploys
+
+# The clone is read-only. Push is rejected by the platform:
+#   error: The requested URL returned error: 403 (push is not permitted; use the deploy pipeline)
+# The way to add a commit is to deploy:
+cd my-app && dibbla deploy . --alias my-app -m "fix: …" --update
+```
+
+The two-machine version of this — deploy on A, continue on B — is under [Agent workflows](#continue-work-on-another-machine-clone--deploy---update).
+
+---
+
 ## Multi-service deployments (`dibbla.yaml`)
 
 For the schema and runtime contract see [manifest.md](manifest.md). The transcripts below are the day-to-day shapes.
@@ -1158,6 +1180,57 @@ dibbla deploy . --alias my-app --update
 # To change env vars without redeploying code
 dibbla apps update my-app -e LOG_LEVEL=debug -e NEW_VAR=value
 ```
+
+### Continue work on another machine (clone → deploy --update)
+
+The app was built and deployed from machine A; you are an agent on machine B, which has never seen the code. **There is no sync service between machines — the deploy history is the sync.** Each `dibbla deploy` is a commit in the app's Dibbla-managed repo, so B gets exactly what A last deployed and A gets B's work back the same way.
+
+```bash
+# ── Machine A (earlier) ────────────────────────────────────────────
+dibbla deploy . --alias my-app -m "feat: add /export endpoint" --update
+# Anything A did NOT deploy (uncommitted edits, local branches, build
+# outputs, .env files) does not travel. If it matters, deploy it first.
+
+# ── Machine B ──────────────────────────────────────────────────────
+# 1. Log in (same account; the org pin decides which apps you see)
+dibbla login --browser                    # or: dibbla login --api-key <token>
+dibbla org list                           # confirm the org that owns the app
+dibbla apps list                          # my-app should be listed
+
+# 2. Clone the deployed state — never `git clone` a URL by hand; the CLI
+#    resolves it via /vcs/info and injects the token for you
+dibbla clone my-app --into ./my-app
+cd my-app
+git log --oneline -5                      # one line per deploy; HEAD = what is running
+
+# 3. Work as usual (edit, run tests, commit locally if you like —
+#    local commits are fine, they just never leave this machine via git)
+$EDITOR src/export.js
+
+# 4. Ship it back the only way that exists: a deploy. --update keeps the
+#    app's env vars and secrets, which were never in the clone anyway.
+#    Guardrails still apply: review, REVIEW.md, user confirmation.
+dibbla deploy . --alias my-app -m "fix: paginate /export" --update
+
+# ── Machine A (later) ──────────────────────────────────────────────
+# A's working copy is now behind. Re-clone to pick up B's deploy:
+dibbla clone my-app --into ./my-app-latest
+```
+
+Picking an **older deploy** instead of the latest — for a bisect, a rollback build, or to see what a customer was running:
+
+```bash
+curl -sS -H "Authorization: Bearer $DIBBLA_API_TOKEN" \
+  https://api.dibbla.com/api/deploy/deployments/my-app/vcs/commits?limit=10
+dibbla clone my-app --ref 3f2a9c1 --into ./my-app-3f2a9c1
+```
+
+Things that trip agents up here:
+
+- **Push is rejected** (`403 push is not permitted; use the deploy pipeline`). Do not try `git push`, do not add the Dibbla URL as a remote for writing; deploy instead.
+- **Only deployed state syncs.** If the user says "the change I made this morning is missing", it was never deployed from the other machine — ask them to deploy from there, then re-clone.
+- **No secrets in the clone.** `.env`, `*.pem`, `*.key` are filtered from VCS. The app already has its env vars and secrets on the platform; `deploy --update` preserves them. Use `dibbla secrets list -d my-app` to see what is set.
+- **The code lives on GitHub/GitLab?** Then clone from there — real history, branches, collaborators — and use `dibbla clone` only to inspect what was actually deployed (`git diff` between the two answers "is prod behind main?").
 
 ### Deploy-or-update pattern
 
