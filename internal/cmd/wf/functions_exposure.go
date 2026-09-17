@@ -2,10 +2,12 @@ package wf
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,10 +19,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Function exposure (DIB-764). A registered function is callable from a
-// workflow by anyone who can edit workflows; exposing it additionally makes
-// it a tool on the /platform/tools MCP connector, callable by every member
-// whose organization role is at least the exposure's min_role. The policy is
+// Function exposure (DIB-764, folded into one connector tool by DIB-853). A
+// registered function is callable from a workflow by anyone who can edit
+// workflows; exposing it additionally makes it callable DIRECTLY — as the
+// platform_tools tool on the Dibbla MCP connector, by `dibbla fn invoke`, or
+// over the API — by every member whose organization role is at least the
+// exposure's min_role. The policy is
 // default-deny and org-scoped, capped at 100 enabled exposures, and every
 // call through it is recorded as a tool invocation — a sibling of a workflow
 // run, never a run — with its own logs.
@@ -34,8 +38,9 @@ const exposureLimit = 100
 var functionsExposedCmd = &cobra.Command{
 	Use:   "exposed",
 	Short: "List the functions exposed as MCP tools",
-	Long: `List this organization's function exposures — the functions members can call
-as tools on the /platform/tools MCP connector.
+	Long: `List this organization's function exposures — the functions members (and
+their agents) can call directly: through the platform_tools tool on the Dibbla
+MCP connector, with 'dibbla fn invoke', or over the API.
 
 A function is exposed with 'dibbla fn expose <server> <name>'. Members whose
 organization role is at least the exposure's MIN ROLE see it as a tool;
@@ -75,7 +80,9 @@ is not offered until the function registers again.`,
 var functionsExposeCmd = &cobra.Command{
 	Use:   "expose <server> <name>",
 	Short: "Expose a function as an MCP tool (admin only)",
-	Long: `Expose a registered function as a tool on the /platform/tools MCP connector.
+	Long: `Expose a registered function so it can be called directly, outside any
+workflow — as platform_tools on the Dibbla MCP connector, with 'dibbla fn
+invoke', or over the API.
 
 Once exposed, every member of this organization whose role is at least
 --min-role (viewer < developer < admin < owner; default viewer, i.e. any
@@ -137,7 +144,8 @@ var functionsInvocationsCmd = &cobra.Command{
 	Use:   "invocations",
 	Short: "List calls made to exposed functions",
 	Long: `List tool invocations — the calls members (or their agents) made to exposed
-functions through the /platform/tools MCP connector or the API, newest first.
+functions — through the MCP connector, 'dibbla fn invoke' or the API — newest
+first.
 
 An invocation is not a workflow run: it does not appear in 'dibbla wf runs
 list'. Use 'dibbla fn invocation <id>' for one call's full record and logs.`,
@@ -229,6 +237,88 @@ the record, in the same format as 'dibbla wf logs'.`,
 				return applogs.StreamInvocation(ctx, cfg.APIURL, cfg.APIToken, id, opts)
 			})
 	},
+}
+
+var functionsInvokeCmd = &cobra.Command{
+	Use:   "invoke <server> <name>",
+	Short: "Call an exposed function directly, outside any workflow",
+	Long: `Call a function your organization has exposed (see 'dibbla fn exposed') and
+print its result. The call is synchronous — the engine waits up to 30 s — and
+is recorded as a tool invocation with source "cli" ('dibbla fn invocations').
+
+Inputs are the function's inputs by name, as a JSON object:
+
+  dibbla fn invoke http get --input '{"url":"https://example.com"}'
+  dibbla fn invoke my-crm lookup.customer -f inputs.json
+  cat inputs.json | dibbla fn invoke my-crm lookup.customer -f -
+
+The function must be registered, exposed and enabled, and your organization
+role must meet its min role; anything else is 404 (exit 4), exactly as the
+connector answers. This is the same call an agent makes with platform_tools
+action=invoke — one surface for people with a shell, one for agents without.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		server, name := args[0], args[1]
+		raw, _ := cmd.Flags().GetString("input")
+		file, _ := cmd.Flags().GetString("file")
+		if raw != "" && file != "" {
+			return fmt.Errorf("pass --input or --file, not both")
+		}
+		if file != "" {
+			var data []byte
+			var err error
+			if file == "-" {
+				data, err = io.ReadAll(cmd.InOrStdin())
+			} else {
+				data, err = os.ReadFile(file)
+			}
+			if err != nil {
+				return fmt.Errorf("read inputs: %w", err)
+			}
+			raw = string(data)
+		}
+		inputs := map[string]interface{}{}
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &inputs); err != nil {
+				return fmt.Errorf("inputs must be a JSON object: %w", err)
+			}
+		}
+		path := "/api/wf/slim/functions/" + url.PathEscape(server) + "/" + url.PathEscape(name) + "/invoke?format=json"
+		resp, err := getClient().PostWithHeaders(path, map[string]interface{}{"inputs": inputs}, map[string]string{"X-Dibbla-Source": "cli"})
+		if err != nil {
+			return renderInvokeError(err, server, name)
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		return printResult(result, "")
+	},
+}
+
+// renderInvokeError says what stopped the call in the caller's terms. The
+// engine collapses "not registered", "not exposed" and "disabled" onto one
+// 404 on purpose, so the sentence names all three.
+func renderInvokeError(err error, server, name string) error {
+	var apiErr *apiclient.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	msg, code := slimError(apiErr)
+	switch apiErr.StatusCode {
+	case 404:
+		return failWithStatus(404, "function %s/%s is not exposed for your organization (not registered, not exposed, or disabled) — `dibbla fn exposed` lists the callable ones", server, name)
+	case 403:
+		return failWithStatus(403, "%s (your role is below the exposure's min role)", msg)
+	case 504:
+		return failWithStatus(504, "function %s/%s did not answer in time; the invocation is recorded as timed out — `dibbla fn invocations --function %s`", server, name, name)
+	case 413:
+		return failWithStatus(413, "inputs are too large: at most 64 KiB")
+	}
+	if code != "" {
+		return failWithStatus(apiErr.StatusCode, "%s (%s)", msg, code)
+	}
+	return err
 }
 
 func exposurePath(server, name string) string {
@@ -349,4 +439,7 @@ func init() {
 	functionsCmd.AddCommand(functionsUnexposeCmd)
 	functionsCmd.AddCommand(functionsInvocationsCmd)
 	functionsCmd.AddCommand(functionsInvocationCmd)
+	functionsInvokeCmd.Flags().String("input", "", "The function's inputs as a JSON object")
+	functionsInvokeCmd.Flags().StringP("file", "f", "", "Read the inputs JSON from this file (- for stdin)")
+	functionsCmd.AddCommand(functionsInvokeCmd)
 }

@@ -632,7 +632,7 @@ is a tool call rather than a shell command.
 The unit is the **contract row**, not the command. Several CLI commands may map
 to one capability (`apps checks enable` and `apps checks disable` are two
 commands and one row), and — far more often — **one tool delivers several
-capabilities**. A full write grant lists **30 tools** for everything the
+capabilities**. A full write grant lists **32 tools** for everything the
 platform can do. So do not look for a tool per command; look for the flow, and
 then for the parameter that names your step of it.
 
