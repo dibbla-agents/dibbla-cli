@@ -46,7 +46,10 @@ A function is exposed with 'dibbla fn expose <server> <name>'. Members whose
 organization role is at least the exposure's MIN ROLE see it as a tool;
 ENABLED false keeps the row but hides the tool. REGISTERED false means the
 function's worker is not connected right now: the exposure stays, the tool
-is not offered until the function registers again.`,
+is not offered until the function registers again. EXPOSABLE false on a
+registered function means it is not available as a tool (agents and
+platform-internal functions): the row stays, nothing can call it, and it can
+be removed with 'dibbla fn unexpose'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		resp, err := getClient().Get("/api/wf/slim/tool-exposures?format=json")
 		if err != nil {
@@ -63,7 +66,7 @@ is not offered until the function registers again.`,
 			return output.PrintYAML(result)
 		}
 		exposures, _ := result["exposures"].([]interface{})
-		headers := []string{"NAME", "SERVER", "MIN ROLE", "ENABLED", "REGISTERED"}
+		headers := []string{"NAME", "SERVER", "MIN ROLE", "ENABLED", "REGISTERED", "EXPOSABLE"}
 		var rows [][]string
 		for _, e := range exposures {
 			row, ok := e.(map[string]interface{})
@@ -365,7 +368,7 @@ func exposureRow(row map[string]interface{}) []string {
 	name, _ := row["function_name"].(string)
 	server, _ := row["server"].(string)
 	minRole, _ := row["min_role"].(string)
-	return []string{name, server, minRole, formatBool(row["enabled"]), formatBool(row["registered"])}
+	return []string{name, server, minRole, formatBool(row["enabled"]), formatBool(row["registered"]), formatOptionalBool(row["exposable"])}
 }
 
 // invocationRow renders one invocation for the table. ERROR prefers the
@@ -406,6 +409,15 @@ func formatBool(v interface{}) string {
 		return "true"
 	}
 	return "false"
+}
+
+// formatOptionalBool is formatBool for a field an older server may not send
+// (exposable, DIB-858): absent renders "-" rather than a false it never said.
+func formatOptionalBool(v interface{}) string {
+	if _, ok := v.(bool); !ok {
+		return "-"
+	}
+	return formatBool(v)
 }
 
 // formatDurationMS renders a JSON number of milliseconds as "123ms" below a
