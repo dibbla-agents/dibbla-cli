@@ -104,9 +104,11 @@ nodes:
     tool_search:                    # capability "tool_search"
       allow: true
       persist: true
-      scope:                        # empty = the full non-agent pool
+      scope:                        # empty = every non-agent tool, NO data sources
         - { type: tag,  value: search }
         - { type: tool, value: dangerous_thing, exclude: true }
+        - { type: source, value: "*" }                    # data sources are opt-in: "*" or a source id
+        - { type: source, value: ds_legacy, exclude: true }  # excepted like tools
     outputs: [response]
 
   # ── A tool: ordinary function node, referenced from agent.tools ──
