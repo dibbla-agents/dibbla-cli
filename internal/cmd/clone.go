@@ -32,9 +32,10 @@ var — the same token you already use for "dibbla deploy". The token is passed
 to git via an in-memory http.extraHeader config, so it never lands in
 ~/.git-credentials or your shell history.
 
-Only Dibbla-authored commits from your deploys live in this repo. Pushing is
-rejected by the platform — fork to GitHub or GitLab if you want to share
-changes.
+This repo is the app's version history: every "dibbla deploy" writes one
+commit. To save or ship a change from the clone, run
+"dibbla deploy . --alias <app> -m "…" --update". git push is answered
+with 403 by design, and no GitHub/GitLab remote is needed.
 
 Examples:
   dibbla clone my-app

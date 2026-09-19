@@ -256,10 +256,20 @@ dibbla clone acme/my-app                  # org prefix accepted; the org still c
 git -C my-app log --oneline
 git -C my-app diff HEAD~1 --stat          # what changed between the last two deploys
 
-# The clone is read-only. Push is rejected by the platform:
-#   error: The requested URL returned error: 403 (push is not permitted; use the deploy pipeline)
-# The way to add a commit is to deploy:
+# Dibbla is the app's history: the way to add a commit is to deploy.
 cd my-app && dibbla deploy . --alias my-app -m "fix: …" --update
+# `git push` to the Dibbla remote answers 403 by design (push is not permitted; use the deploy pipeline).
+# If that already happened: tell the user Dibbla saves what is deployed, then deploy as above.
+```
+
+### Saving work from a local git repo with no remote
+
+The same rule applies to a directory that was never cloned from Dibbla — a project the user (or an agent) started locally, committed a few times, and has no `origin` for. "Save", "spara", "ship": deploy. Nothing needs to be set up on GitHub first.
+
+```bash
+git commit -am "feat: add invoice export"        # optional — local bookkeeping only
+dibbla deploy . --alias my-app -m "feat: add invoice export" --update
+# Not needed to save or share:  git remote add origin https://github.com/…
 ```
 
 The two-machine version of this — deploy on A, continue on B — is under [Agent workflows](#continue-work-on-another-machine-clone--deploy---update).
@@ -1227,10 +1237,10 @@ dibbla clone my-app --ref 3f2a9c1 --into ./my-app-3f2a9c1
 
 Things that trip agents up here:
 
-- **Push is rejected** (`403 push is not permitted; use the deploy pipeline`). Do not try `git push`, do not add the Dibbla URL as a remote for writing; deploy instead.
+- **`git push` answers 403 by design** (`push is not permitted; use the deploy pipeline`). Do not try it, and do not answer the 403 by proposing a GitHub/GitLab remote — Dibbla already holds the history. Say so to the user in their own language ("Dibbla saves what you deploy; deploy is the way to save") and run `dibbla deploy . --alias my-app -m "…" --update`.
 - **Only deployed state syncs.** If the user says "the change I made this morning is missing", it was never deployed from the other machine — ask them to deploy from there, then re-clone.
 - **No secrets in the clone.** `.env`, `*.pem`, `*.key` are filtered from VCS. The app already has its env vars and secrets on the platform; `deploy --update` preserves them. Use `dibbla secrets list -d my-app` to see what is set.
-- **The code lives on GitHub/GitLab?** Then clone from there — real history, branches, collaborators — and use `dibbla clone` only to inspect what was actually deployed (`git diff` between the two answers "is prod behind main?").
+- **The team already keeps the code on GitHub/GitLab?** Then clone from there — branches, collaborators — and use `dibbla clone` to inspect what was actually deployed (`git diff` between the two answers "is prod behind main?"). Never *introduce* GitHub for the sake of saving; a missing remote is not a problem.
 
 ### Deploy-or-update pattern
 
