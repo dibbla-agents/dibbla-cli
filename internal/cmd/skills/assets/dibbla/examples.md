@@ -244,13 +244,23 @@ Recovery:
 
 ---
 
-## Clone (fetch the deploy history of an app)
+## Clone / link (connect a folder to an app's deploy history)
 
 ```bash
 dibbla clone my-app                       # → ./my-app, checked out at the latest deploy
-dibbla clone my-app --into ./checkout     # custom directory (must not exist yet)
-dibbla clone my-app --ref abc1234         # check out an older deploy by commit SHA
+dibbla clone my-app --into ./checkout     # custom directory (empty or missing)
+dibbla clone my-app --ref abc1234         # fresh clone at an older deploy by commit SHA
 dibbla clone acme/my-app                  # org prefix accepted; the org still comes from the active context
+
+# The folder you are in — whatever state it is in. Never run git clone by hand.
+dibbla link my-app                        # empty folder → clone in place; `git init`ed repo with no
+                                          #   commits → remote added, main checked out
+dibbla link my-app --yes                  # repo with its own commits: files on disk are kept, history
+                                          #   starts over from Dibbla's main (old commits → pre-dibbla-* branch);
+                                          #   git status then shows disk vs Dibbla as changes to commit
+dibbla link my-app                        # already linked → git pull --ff-only, "already linked — updated"
+dibbla status                             # in a linked folder: app, org, N commits ahead/behind Dibbla,
+                                          #   and whether the running commit is this folder's HEAD
 
 # Inside the clone: each commit is one deploy, subject = the deploy's -m message
 git -C my-app log --oneline
@@ -1208,7 +1218,10 @@ dibbla org list                           # confirm the org that owns the app
 dibbla apps list                          # my-app should be listed
 
 # 2. Clone the deployed state — never `git clone` a URL by hand; the CLI
-#    resolves it via /vcs/info and injects the token for you
+#    resolves it via /vcs/info and git reads the login through the helper.
+#    Already standing in the folder you want (empty, `git init`ed, or with
+#    your own commits)? `dibbla link my-app` instead — it picks the right
+#    git steps for the folder's state.
 dibbla clone my-app --into ./my-app
 cd my-app
 git log --oneline -5                      # one line per deploy; HEAD = what is running
@@ -1223,8 +1236,9 @@ $EDITOR src/export.js
 dibbla deploy . --alias my-app -m "fix: paginate /export" --update
 
 # ── Machine A (later) ──────────────────────────────────────────────
-# A's working copy is now behind. Re-clone to pick up B's deploy:
-dibbla clone my-app --into ./my-app-latest
+# A's working copy is now behind. In A's linked folder:
+dibbla status                             # "1 commit(s) behind Dibbla"
+dibbla link my-app                        # already linked → git pull --ff-only
 ```
 
 Picking an **older deploy** instead of the latest — for a bisect, a rollback build, or to see what a customer was running:
