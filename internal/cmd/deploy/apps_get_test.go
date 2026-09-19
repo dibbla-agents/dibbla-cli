@@ -13,6 +13,12 @@ import (
 func TestRunAppsGetCore_HumanOutput(t *testing.T) {
 	deployed := "2026-08-20T10:00:00Z"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/deploy/deployments/myapp/vcs/info" {
+			// main is one push ahead of what runs, and that push's build failed.
+			_, _ = w.Write([]byte(`{"default_branch":"main","latest_sha":"abcdefabcdefabcdefabcdefabcdefabcdefabcd","running_sha":"0123456789abcdef0123456789abcdef01234567",
+				"main_deploy":{"operation_id":"deployment:op-9","phase":"failed","failure_code":"BUILD_FAILED","failure_summary":"exit code 7"}}`))
+			return
+		}
 		if r.URL.Path != "/api/deploy/deployments/myapp" {
 			http.NotFound(w, r)
 			return
@@ -39,7 +45,8 @@ func TestRunAppsGetCore_HumanOutput(t *testing.T) {
 	}
 	out := stdout.String()
 	for _, want := range []string{"myapp", "https://myapp.dibbla.com", "running", "web", "worker", "stateful", "2/2 ready", "required",
-		"Commit:   0123456789abcdef0123456789abcdef01234567"} {
+		"Commit:   0123456789abcdef0123456789abcdef01234567",
+		"Main:     abcdefabcdefabcdefabcdefabcdefabcdefabcd — NOT running", "BUILD_FAILED — exit code 7", "dibbla deploy status deployment:op-9"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output:\n%s", want, out)
 		}

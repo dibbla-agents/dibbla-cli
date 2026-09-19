@@ -730,7 +730,7 @@ Show one deployment's record. This is the command `logs --pod-stream` 404s point
 | **Usage** | `dibbla apps get <alias>` |
 | **Arguments** | `alias` (required) — regex `^[a-z][a-z0-9-]{2,62}[a-z0-9]$`, validated locally (zero requests on failure, exit 5) |
 | **Flags** | `--json` — print the raw API document verbatim |
-| **Output** | Default: URL, status, deployed/updated times, replicas, size, health, login policy; for multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker |
+| **Output** | Default: URL, status, deployed/updated times, the commit the app runs (`Commit:`), replicas, size, health, login policy; for multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker. When the app's `main` is ahead of the running commit (a `git push` whose deploy failed or is still building), a `Main: <sha> — NOT running` block follows with the failure (`BUILD_FAILED — …`) and the `dibbla deploy status <id>` to read; the fix is a new commit, never a rewind |
 | **Errors** | `404` exit 4 with a hint to `apps list`; `401/403` exit 3 |
 
 **Examples:**
