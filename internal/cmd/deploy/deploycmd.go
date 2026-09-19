@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -162,11 +163,17 @@ func runDeploy(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		registerGitCredentialHelper(cfg.APIURL, os.Stderr)
+		// --json and --quiet promise stdout to one object / one line; the
+		// commit and push narration then goes to stderr.
+		progress := io.Writer(os.Stdout)
+		if deployJSON || deployQuiet {
+			progress = os.Stderr
+		}
 		os.Exit(runGitDeploy(gitDeployInput{
 			Dir: top, Remote: remote, Branch: "main", App: target.App,
 			Message: deployMessage, Force: deployForce,
 			APIURL: cfg.APIURL, APIToken: cfg.APIToken,
-		}, os.Stdout, os.Stderr, followDeployOperation(cfg.APIURL, cfg.APIToken)))
+		}, progress, os.Stderr, followDeployOperation(cfg.APIURL, cfg.APIToken)))
 	}
 
 	r := selectRenderer()
