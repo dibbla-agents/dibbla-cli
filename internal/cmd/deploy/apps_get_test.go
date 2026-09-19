@@ -23,6 +23,7 @@ func TestRunAppsGetCore_HumanOutput(t *testing.T) {
 			"created_at":"2026-08-01T10:00:00Z","updated_at":"2026-08-20T10:00:00Z","deployed_at":"` + deployed + `",
 			"require_login":true,"app_access_policy":"all_members",
 			"replicas":2,"cpu":"500m","memory":"512Mi",
+			"commit_sha":"0123456789abcdef0123456789abcdef01234567",
 			"health_check":{"status":"healthy","response_time_ms":42},
 			"services":[
 				{"name":"web","replicas":2,"ready_replicas":2,"is_public":true,"status":"running"},
@@ -37,7 +38,8 @@ func TestRunAppsGetCore_HumanOutput(t *testing.T) {
 		t.Fatalf("exit %d (stderr=%q)", code, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{"myapp", "https://myapp.dibbla.com", "running", "web", "worker", "stateful", "2/2 ready", "required"} {
+	for _, want := range []string{"myapp", "https://myapp.dibbla.com", "running", "web", "worker", "stateful", "2/2 ready", "required",
+		"Commit:   0123456789abcdef0123456789abcdef01234567"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output:\n%s", want, out)
 		}

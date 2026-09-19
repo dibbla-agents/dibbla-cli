@@ -15,9 +15,9 @@ import (
 var appsGetCmd = &cobra.Command{
 	Use:   "get <alias>",
 	Short: "Show one deployed application",
-	Long: `Show the deployment record for one app: URL, status, replicas, size,
-health check, login policy and — for multi-service deployments — the
-per-service breakdown.
+	Long: `Show the deployment record for one app: URL, status, the git commit it
+runs, replicas, size, health check, login policy and — for multi-service
+deployments — the per-service breakdown.
 
 Referenced by ` + "`dibbla logs --pod-stream`" + ` errors as the way to check
 an app's services without the console.
@@ -69,6 +69,11 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 		fmt.Fprintf(stdout, "   Deployed: %s\n", dep.DeployedAt.Local().Format("2006-01-02 15:04:05"))
 	}
 	fmt.Fprintf(stdout, "   Updated:  %s\n", dep.UpdatedAt.Local().Format("2006-01-02 15:04:05"))
+	if dep.CommitSHA != "" {
+		// The full sha: it is what `dibbla clone` / `git log` show, and what
+		// an agent pastes into a `git diff`. Short forms are for pills.
+		fmt.Fprintf(stdout, "   Commit:   %s\n", dep.CommitSHA)
+	}
 	if dep.Replicas != nil {
 		fmt.Fprintf(stdout, "   Replicas: %d\n", *dep.Replicas)
 	}
