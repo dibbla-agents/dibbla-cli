@@ -247,6 +247,29 @@ dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
 dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # bulk-load env vars (file < -e)
 ```
 
+#### Follow a deploy started by `git push`
+
+Where the platform has opened `main` for push (apps under *immediate*
+governance), an accepted `git push origin main` starts the deploy on the
+platform and answers at once with an operation id:
+
+```
+remote: Dibbla: deploying 4f2a9c1e0b7d to myapp
+remote:   operation: deployment:2b1c…
+remote:   app:       https://myapp.dibbla.com
+remote:   follow:    dibbla deploy status deployment:2b1c… --follow
+```
+
+```bash
+dibbla deploy status deployment:2b1c…            # current phase
+dibbla deploy status deployment:2b1c… --follow   # stream build log + rollout; exit code is the deploy's
+dibbla deploy status deployment:2b1c… --follow --json
+```
+
+A failed build leaves `main` on the pushed commit and the running app on its
+previous revision (`dibbla apps get` shows the running commit); fix it with
+the next commit.
+
 #### Deploy a multi-service app (`dibbla.yaml`)
 
 Bundle multiple containers into one alias by adding a `dibbla.yaml` at the deploy root. Detection is automatic: present ⇒ multi-service path; absent ⇒ legacy single-`Dockerfile` path. Min example:
