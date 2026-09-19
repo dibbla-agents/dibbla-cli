@@ -1735,6 +1735,7 @@ Alias: `fn`.
 | Feedback | `dibbla feedback list` | List feedback |
 | Feedback | `dibbla feedback delete <id>` | Delete feedback |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
+| Deploy | `dibbla deploy status <operation-id> [--follow] [--json]` | Show or follow a deploy the platform started from an accepted `git push` to `main` (the push prints the id as `operation: deployment:…`); `--follow` streams build log + rollout and exits with the deploy's code |
 | Clone | `dibbla clone <app> [--ref <sha>] [--into <dir>]` | Clone the deploy history of an app (changes go back via `deploy --update`, never `git push`) |
 | Apps | `dibbla apps list` | List deployments |
 | Apps | `dibbla apps update <alias> ...` | Update env, replicas, cpu, memory, port, login guard |

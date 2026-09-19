@@ -863,11 +863,12 @@
         "platform:operations:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND. DIB-704 merged status, events, logs and output into platform_operation; `view` chooses between them.",
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_status, platform_operation_events, platform_operation_logs and platform_operation_output; extended by DIB-540 to database-operation IDs. Typed phase and cursor-paged content come from the resource's durable engine. The operation id is data, never authentication; an operation in another organization is NOT_FOUND. DIB-704 merged status, events, logs and output into platform_operation; `view` chooses between them. DIB-903: a `git push` to main answers with a deployment operation id; `dibbla deploy status <id> --follow` reads the same ledger through GET /deployment-operations/{id}[/events|/logs] under the human session, so the pusher and an agent on the connector watch one deploy.",
       "production": "live",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_operation",
       "cli_commands": [
+        "deploy status",
         "workflows logs",
         "workflows runs list",
         "workflows runs output"
