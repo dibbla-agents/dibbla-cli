@@ -1015,10 +1015,11 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Returns credential material to be pasted into the caller’s shell — a secret value, a bucket access key, or a database connection string carrying the caller’s API token as its password. Keeping credential material out of a model’s context window is an invariant of P-0035, not a precaution, so this half of each family cannot have a remote form even though listing and setting can.",
-      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:234, internal/cmd/deploy/storage.go:298, internal/cmd/deploy/db.go:291",
+      "reason": "Returns credential material to be pasted into the caller’s shell or written to a file on the caller’s disk — a secret value, the app’s whole resolved environment as a local .env.local (env pull, DIB-919), a bucket access key, or a database connection string carrying the caller’s API token as its password. Keeping credential material out of a model’s context window is an invariant of P-0035, not a precaution, so this half of each family cannot have a remote form even though listing and setting can.",
+      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:234, internal/cmd/deploy/env.go, internal/cmd/deploy/storage.go:298, internal/cmd/deploy/db.go:291",
       "cli_commands": [
         "secrets get",
+        "env pull",
         "storage credentials",
         "db connect"
       ]

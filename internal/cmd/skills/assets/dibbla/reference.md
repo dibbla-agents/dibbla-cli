@@ -386,7 +386,7 @@ When the deploy archive arrives at the backend, a second filter decides which fi
 |------|---------|
 | **Location** | `.dibblaignore` at the root of the deploy directory (same level as `Dockerfile`). The file itself is committed to VCS — keep it under version control. |
 | **Syntax** | gitignore-style globs (powered by `sabhiram/go-gitignore`). Supports `**`, directory suffixes (`build/`), negation, etc. Example: `build/`, `**/*.log`, `coverage/`, `*.tmp`. |
-| **Platform denylist (always-on)** | `node_modules/`, `dist/`, `.venv/`, `.git/`, `.env`, `.env.*`, `*.pem`, `*.key`. These are **always** filtered from VCS regardless of `.dibblaignore`, and each hit produces a warning returned in the deploy response under `vcs_filtered`. The CLI surfaces these as a recommendation to add the path to `.dibblaignore` to silence the warning. |
+| **Platform denylist (always-on)** | `node_modules/`, `dist/`, `.venv/`, `.git/`, `.env`, `.env.*`, `*.pem`, `*.key`. These are **always** filtered from VCS regardless of `.dibblaignore`, and each hit produces a warning returned in the deploy response under `vcs_filtered`. The CLI surfaces these as a recommendation to add the path to `.dibblaignore` to silence the warning. **Two exceptions:** `.env.example` and `.env.sample` (exact names) are kept — they carry the *names* of the variables the app needs, never values, and a `dibbla clone` must bring that list along. The pre-receive hook on `git push` applies the same list: a pushed `.env`/`.env.local`/`.env.*` is refused with a message saying secrets belong in `dibbla secrets` and the file in `.gitignore`; `.env.example`/`.env.sample` pass. |
 | **Suppressing warnings** | Add a path that hits the platform denylist (e.g. `.env`) to `.dibblaignore` and the warning goes away — same file is still excluded from VCS, but silently. User-ignored entries are checked **before** the platform denylist, so `.dibblaignore` always wins on the warning channel. |
 | **Hard rejections** | The server enforces per-file and per-commit size caps. If any file exceeds the per-file cap, or the kept set exceeds the total cap, the **entire deploy fails** with `ErrCodeVCSFiltered` (HTTP 400) and a message naming the offending path. Limits are server-configured (`GitMaxFileSize`, `GitMaxCommitDelta`); typical cause is committing a generated artifact, dataset, or build output. Fix by adding the path to `.dibblaignore`. |
 | **Symlinks / non-regular files** | Skipped silently. Only regular files are committed. |
@@ -1284,7 +1284,30 @@ Two things that bite:
 | **Flags** | `--deployment`, `-d` — for deployment-scoped secret |
 | | `--service`, `-s` — for per-service secret (requires `-d`) |
 | **Output** | Secret value only (pipeline-friendly) |
-| **Notes** | Returns the exact (deployment, service) row — there is no implicit fall-through. To inspect what a service container actually sees at runtime, exec into the pod or use `dibbla logs <alias> --service <svc>` after a redeploy. |
+| **Roles** | Reading a value needs the deploy roles (owner, admin, developer). A viewer can `secrets list` but gets `403 ROLE_FORBIDDEN` here — and from `env pull`, which follows the same rule. |
+| **Notes** | Returns the exact (deployment, service) row — there is no implicit fall-through. To see what a service container actually sees at runtime, values included, use `dibbla env pull --stdout -d <alias> [-s <svc>]`. |
+
+## env
+
+Values live in Dibbla, names live in the code. Secrets and the variables the platform generates (`DATABASE_URL_*`, `STORAGE_*`, `DIBBLA_*`) are injected into the app when it runs; `.env.example` in the repository lists the names the app needs. `dibbla env pull` fetches the values to a local `.env.local` so the app can run on this machine — that file never goes back: `.gitignore`, the VCS filter and the push hook all refuse it.
+
+### env pull
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla env pull [-d <alias>] [-s <service>] [--replace] [--stdout] [--json]` |
+| **App** | The app this folder is linked to (`dibbla clone` / `dibbla link` — the folder must be the repository root), or `--deployment <alias>` / `-d`. |
+| **Flags** | `--service`, `-s` — resolve one service's view of a multi-service app (its per-service secrets on top; `DIBBLA_SVC_*` as that container sees them) |
+| | `--replace` — rewrite `.env.local` from scratch instead of updating it in place |
+| | `--stdout` — print `KEY=value` lines to stdout instead of writing a file (`eval "$(dibbla env pull --stdout)"`); nothing is written, `.gitignore` is not touched |
+| | `--json` — print the API document: `{deployment_alias, service, variables:[{name, value, source}]}` with `source` ∈ `global` / `deployment` / `service` / `inline` / `platform` |
+| **What it resolves** | Exactly what the running container gets, same precedence: global secrets < deployment-wide < per-service (`-s`) < inline env (`deploy -e`, manifest `environment:`) < injected `DIBBLA_*` (`DIBBLA_ALIAS`, `DIBBLA_ENV`, `DIBBLA_AI_GATEWAY_URL`, `DIBBLA_SVC_*` …). `DATABASE_URL_*` and `STORAGE_*` are secrets the platform created, so they are in the set and reach the real database and buckets through the public proxy. `DIBBLA_IDENTITY_TOKEN_FILE` is left out — it names a file that exists only inside the pod. |
+| **The file** | `.env.local` in the current folder, mode 0600, first line `# Pulled from Dibbla — lives only on this machine; run 'dibbla env pull' again to refresh.` Without `--replace` an existing file is updated in place: keys Dibbla knows are refreshed where they stand, every other line (a local override, a comment) survives, new keys are appended sorted. |
+| **.gitignore** | If `.gitignore` in the folder has no `.env.local` line, one is appended (created if missing) and the command says so. The VCS filter strips the file from tarball deploys and the push hook refuses it on `git push` — three locks on the same door. |
+| **Output** | Names and counts only (`5 variable(s) from Dibbla (app shop) — 2 global, 2 app, 1 platform`), never values, plus the reminder that a local run with this file uses the app's real database and buckets. |
+| **Roles** | Owner, admin or developer — the same rule as `secrets get`. A viewer gets `403 ROLE_FORBIDDEN`. |
+| **Exit codes** | `0` written; `5` not a linked folder and no `-d`, or `--stdout` together with `--json`; API errors map like every other command (`403`/`404` → non-zero with the server's message). |
+| **New variable** | `dibbla secrets set NAME value -d <alias>` → add `NAME= # what it is` to `.env.example` → `dibbla env pull`. Never `.env.local` by hand as the only place: the running app would not have it. |
 
 ### secrets delete
 

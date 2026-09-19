@@ -82,6 +82,8 @@ User-app environment variables come from three places:
 
 Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
 
+**Running the app on your own machine — values live in Dibbla, names live in the code.** Think of it as a safe and a set of keyholes: the values sit in Dibbla's safe, and `.env.example` in the repository lists the keyholes (one `NAME= # what it is` per line, committed, kept by §8). `dibbla env pull` in a linked folder fetches the values — the resolved secret set plus the platform-generated `DATABASE_URL_*`, `STORAGE_*` and `DIBBLA_*` — into `.env.local`, adds that file to `.gitignore` if it is missing, and the VCS filter and the push hook refuse it on top of that, so it can never travel back. Dibbla has **one environment per app**: a local run with that file talks to the app's real database and buckets. Say so before starting, and offer a local Postgres if the person wants isolation. A new variable is `dibbla secrets set NAME value -d <alias>` → the name in `.env.example` → `dibbla env pull`, never a hand-written `.env.local` as the only place.
+
 ---
 
 ## 6. Build-time vs runtime env vars (Vite, Next.js, CRA)
@@ -98,7 +100,7 @@ This trips up almost every frontend project on first deploy, so understand the d
 
 What does **not** work:
 - Putting `VITE_FOO=...` in `dibbla deploy --env` and expecting the frontend to see it. The bundle was built before that env var existed.
-- Relying on a `.env.local` on your laptop. The CLI strips `.env.production` and `.env.prod` and the server denylist strips `.env` and `.env.*` (§8).
+- Relying on a `.env.local` on your laptop as the *source* of a value. It never reaches Dibbla: the CLI strips `.env.production` and `.env.prod`, the server denylist strips `.env` and `.env.*` (§8), and the push hook refuses them. `.env.local` is the *copy* `dibbla env pull` writes for local runs; the value itself must be set with `dibbla secrets set`.
 - `ARG` directives in the Dockerfile expecting values from `--env` flags. `--env` becomes runtime env, not Docker build args.
 
 Pattern (1) — inlining public values — is the right answer for the Lovable / Supabase / Firebase-frontend genre. Pattern (3) — runtime config endpoint — is the right answer when values genuinely differ across deploys but are still public.
@@ -129,7 +131,7 @@ The proxy uses standard Postgres TLS negotiation, so any driver works without Po
    - Service-account JSON: `credentials.json`, `service-account.json`
    - Production env files: `.env.production`, `.env.prod`
    - By extension: `.pem`, `.key`, `.exe`, `.dll`, `.so`, `.dylib`, `.bat`, `.cmd`, `.com`, `.msi`, `.scr`, `.pif`
-2. **Server-side VCS denylist** additionally strips `.env`, `.env.*`, `node_modules/`, `dist/`, `.venv/`, `.git/`, `*.pem`, `*.key` from the managed VCS history and surfaces each match as a **warning** in `DeployResponse.vcs_filtered`. This layer decides what gets committed to Dibbla's managed version control; it does not touch the build context.
+2. **Server-side VCS denylist** additionally strips `.env`, `.env.*`, `node_modules/`, `dist/`, `.venv/`, `.git/`, `*.pem`, `*.key` from the managed VCS history and surfaces each match as a **warning** in `DeployResponse.vcs_filtered`. **Except `.env.example` and `.env.sample`** (exact names): they hold the *names* of the variables the app needs, never values, and travel with the code so a `dibbla clone` knows what to `dibbla env pull`. The pre-receive hook on `git push` enforces the same list — a pushed `.env.local` is refused with a message that says secrets belong in `dibbla secrets` and the file in `.gitignore`. This layer decides what gets committed to Dibbla's managed version control; it does not touch the build context.
 3. **Build-context strip (server-side).** During archive extraction, `deploy-api` drops these directories entirely — they never reach `docker build`, and **nothing is reported when it happens**: `node_modules/`, `.git/`, `__pycache__/`, `.venv/`, `vendor/`, `.next/`, `dist/`, `.cache/`.
 
    They are treated as regenerable and are excluded to fit the per-deploy file-count cap (1000 files by default), which a `vendor/` or `node_modules/` tree blows through on its own. **Do not write a Dockerfile that depends on any of these being present** — `COPY vendor/`, `COPY dist/`, `COPY .next/` all fail the build even though the directory is right there in your working tree. The deploy exits with `BUILD_FAILED` on the `copy-source` step, and the message ends `"/vendor": not found` (the full text is buildkit's `failed to compute cache key: failed to calculate checksum of ref …: "/vendor": not found`). Regenerate them inside the build instead: `go mod download`, `npm ci && npm run build`, `pip install -r requirements.txt`.
@@ -698,7 +700,7 @@ something on the caller's own machine that no remote call can reach:
 | `cli.deploy.archive` | `deploy` | Reads the caller's filesystem to build the upload archive. The **deploy itself** is remote (`platform.deployments.start`); only the archiving is local. |
 | `cli.run` | `run` | Executes commands on the caller's machine. |
 | `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`, which is `platform_deployment_preflight`). |
-| `cli.credentials.reveal` | `secrets get`, `storage credentials`, `db connect` | Returns credential material in plaintext. Keeping credentials out of a model's context window is an invariant, not a precaution. |
+| `cli.credentials.reveal` | `secrets get`, `env pull`, `storage credentials`, `db connect` | Returns credential material in plaintext — to the terminal, or as `.env.local` on the caller's disk. Keeping credentials out of a model's context window is an invariant, not a precaution. |
 | `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting one secret at a time *is* remote. |
 | `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
 | `cli.clone` | `clone` | Writes a git working copy locally. Reading the same source remotely is `platform.files.get`. |

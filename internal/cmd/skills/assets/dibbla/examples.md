@@ -965,6 +965,53 @@ Every key is validated against `^[a-zA-Z][a-zA-Z0-9_]{0,127}$` before anything
 is sent; if any key is invalid, nothing is imported. The server upserts, so a
 re-run is safe. Output is key names + a count only — values are never printed.
 
+### Set up a local development environment (env pull)
+
+Values live in Dibbla, names live in the code. In a folder linked to the app
+(`dibbla clone` / `dibbla link`), the whole setup is:
+
+```bash
+cat .env.example                 # 1. the names the app needs, one comment each — nothing to fill in
+dibbla env pull                  # 2. values → .env.local (0600); .env.local added to .gitignore if missing
+#    ✅ .env.local: 7 variable(s) from Dibbla (app my-app) — 2 global, 4 app, 1 platform
+#       added .env.local to .gitignore so git never sees it
+#       This file lives only on this machine. A local run with it uses the app's real database and buckets.
+git status --short               # 3. no .env.local here — ever
+docker build -t my-app . && docker run --rm -p 3000:3000 --env-file .env.local my-app
+#                                # 4. or `npm run dev` / `go run .` with the file loaded — whatever the Dockerfile/template does
+```
+
+Then tell the person, in one sentence and their own language: *the app's
+settings were fetched from Dibbla and live only on this computer; the app runs
+here against the same database as the real app* — and offer a local Postgres
+(`docker run -e POSTGRES_PASSWORD=… postgres`, then override `DATABASE_URL_*`
+in `.env.local`, which `env pull` keeps on the next run) if they want to work
+without touching real data. Do not ask them to understand git, secrets or
+environment variables; they said "set up a local environment" and that is all
+they need to know.
+
+**The app needs a new secret** (an API key for a new integration, say):
+
+```bash
+dibbla secrets set STRIPE_API_KEY "sk_…" -d my-app     # 1. the value goes into Dibbla first
+printf 'STRIPE_API_KEY= # Stripe secret key\n' >> .env.example   # 2. the name goes into the code
+dibbla env pull                                        # 3. and back down to this machine
+dibbla deploy -m "Stripe integration" --update         # the running app gets it from Dibbla
+```
+
+Never write the value into `.env.local` by hand as the only place: the file
+does not travel, so the deployed app would start without it.
+
+**One service of a multi-service app**, and the two other output modes:
+
+```bash
+dibbla env pull -d my-app --service worker   # the worker's view: its per-service secrets, its DIBBLA_SVC_*
+eval "$(dibbla env pull --stdout)"            # into the current shell, no file written
+dibbla env pull --json | jq '.variables[] | {name, source}'   # which layer each value came from
+```
+
+A viewer (read role) is refused, exactly like `secrets get`.
+
 > **Quote values containing `$` with single quotes.** The `.env` parser expands
 > `${VAR}` inside double quotes, so `PASSWORD="p$assw0rd"` silently imports as
 > `p`. Write `PASSWORD='p$assw0rd'` instead. Full grammar in `reference.md`
@@ -1253,7 +1300,7 @@ Things that trip agents up here:
 
 - **`git push` answers 403 by design** (`push is not permitted; use the deploy pipeline`). Do not try it, and do not answer the 403 by proposing a GitHub/GitLab remote — Dibbla already holds the history. Say so to the user in their own language ("Dibbla saves what you deploy; deploy is the way to save") and run `dibbla deploy . --alias my-app -m "…" --update`.
 - **Only deployed state syncs.** If the user says "the change I made this morning is missing", it was never deployed from the other machine — ask them to deploy from there, then re-clone.
-- **No secrets in the clone.** `.env`, `*.pem`, `*.key` are filtered from VCS. The app already has its env vars and secrets on the platform; `deploy --update` preserves them. Use `dibbla secrets list -d my-app` to see what is set.
+- **No secrets in the clone — but the list of names is.** `.env`, `.env.local`, `*.pem`, `*.key` are filtered from VCS; `.env.example` is kept, so the clone tells you what the app needs. The app already has its values on the platform (`deploy --update` preserves them); to run it here, `dibbla env pull` writes them to `.env.local` — see "Set up a local development environment".
 - **The team already keeps the code on GitHub/GitLab?** Then clone from there — branches, collaborators — and use `dibbla clone` to inspect what was actually deployed (`git diff` between the two answers "is prod behind main?"). Never *introduce* GitHub for the sake of saving; a missing remote is not a problem.
 
 ### Deploy-or-update pattern

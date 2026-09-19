@@ -100,3 +100,42 @@ func TestSkill_DocumentsApplicationChecks(t *testing.T) {
 		}
 	}
 }
+
+// TestSkill_DocumentsEnvPull pins the DIB-919 documentation contract: an
+// agent asked to "set up a local environment" must find the model (values in
+// Dibbla, names in the code), the command, the five steps, the .env.example
+// exception in the filter list, and the guardrail that a .env.local git
+// cannot see is expected rather than a blocker. Losing any of these is how an
+// agent goes back to `secrets get` one value at a time — or flags the file
+// env pull just wrote.
+func TestSkill_DocumentsEnvPull(t *testing.T) {
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(sourceDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(data)
+	}
+	skill, reference, examples, guardrails, platform := read("SKILL.md"), read("reference.md"), read("examples.md"), read("guardrails.md"), read("platform.md")
+	for _, want := range []struct{ file, doc, needle string }{
+		{"SKILL.md", skill, "Secrets and the local environment — values live in Dibbla, names live in the code"},
+		{"SKILL.md", skill, "`dibbla env pull`"},
+		{"SKILL.md", skill, "same database as the real app"},
+		{"SKILL.md", skill, "offer a local Postgres"},
+		{"reference.md", reference, "### env pull"},
+		{"reference.md", reference, "`.env.example` and `.env.sample` (exact names) are kept"},
+		{"examples.md", examples, "### Set up a local development environment (env pull)"},
+		{"examples.md", examples, "dibbla secrets set STRIPE_API_KEY"},
+		{"guardrails.md", guardrails, "A `.env.local` that *is* in `.gitignore` is expected"},
+		{"platform.md", platform, "**Except `.env.example` and `.env.sample`**"},
+		{"platform.md", platform, "`secrets get`, `env pull`, `storage credentials`, `db connect`"},
+	} {
+		if !strings.Contains(want.doc, want.needle) {
+			t.Errorf("%s no longer contains %q", want.file, want.needle)
+		}
+	}
+	// The old guardrail row called the file env pull writes a BLOCKER.
+	if strings.Contains(guardrails, "| `.env` files present in the deploy directory | BLOCKER |") {
+		t.Error("guardrails.md still calls every .env file in the folder a BLOCKER")
+	}
+}
