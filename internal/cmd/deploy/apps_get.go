@@ -9,6 +9,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/vcs"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +74,7 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 		// The full sha: it is what `dibbla clone` / `git log` show, and what
 		// an agent pastes into a `git diff`. Short forms are for pills.
 		fmt.Fprintf(stdout, "   Commit:   %s\n", dep.CommitSHA)
+		printMainBehind(stdout, apiURL, apiToken, alias, dep.CommitSHA)
 	}
 	if dep.Replicas != nil {
 		fmt.Fprintf(stdout, "   Replicas: %d\n", *dep.Replicas)
@@ -107,6 +109,29 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 		}
 	}
 	return 0
+}
+
+// printMainBehind says when main is not what runs (DIB-903): a push whose
+// deploy failed leaves main ahead of the running commit, and the gap must be
+// explained where the running commit is shown. Best effort — an app without
+// version control, or an info endpoint that is down, prints nothing extra.
+func printMainBehind(stdout io.Writer, apiURL, apiToken, alias, running string) {
+	info, err := vcs.GetInfo(apiURL, apiToken, alias)
+	if err != nil || info.LatestSHA == "" || info.LatestSHA == running {
+		return
+	}
+	fmt.Fprintf(stdout, "   Main:     %s — NOT running\n", info.LatestSHA)
+	switch {
+	case info.MainDeploy == nil:
+		fmt.Fprintf(stdout, "             no deploy of this commit was started; run `dibbla deploy --update` from a clone\n")
+	case info.MainDeploy.Phase == "failed":
+		fmt.Fprintf(stdout, "             %s the deploy of main failed: %s — %s\n", platform.Icon("❌", "[X]"), info.MainDeploy.FailureCode, info.MainDeploy.FailureSummary)
+		fmt.Fprintf(stdout, "             fix it with a new commit and push again; details: dibbla deploy status %s\n", info.MainDeploy.OperationID)
+	case info.MainDeploy.Phase == "cancelled":
+		fmt.Fprintf(stdout, "             the deploy of main was cancelled; push a new commit or run `dibbla deploy --update`\n")
+	default:
+		fmt.Fprintf(stdout, "             the deploy of main is %s: dibbla deploy status %s --follow\n", info.MainDeploy.Phase, info.MainDeploy.OperationID)
+	}
 }
 
 func orDash(s string) string {

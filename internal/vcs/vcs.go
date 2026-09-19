@@ -20,6 +20,17 @@ type Info struct {
 	CloneURLWithEnvToken string  `json:"clone_url_with_env_token"`
 	CLICommand           string  `json:"cli_command"`
 	RunningSHA           string  `json:"running_sha,omitempty"`
+	// MainDeploy is the deploy a push to main started for LatestSHA
+	// (DIB-903): its phase and, when it failed, why.
+	MainDeploy *MainDeploy `json:"main_deploy,omitempty"`
+}
+
+// MainDeploy mirrors deployments.MainDeploy on the server.
+type MainDeploy struct {
+	OperationID    string `json:"operation_id"`
+	Phase          string `json:"phase"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	FailureSummary string `json:"failure_summary,omitempty"`
 }
 
 // Commit mirrors gitlog.Commit.
