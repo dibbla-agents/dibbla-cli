@@ -20,6 +20,7 @@ import (
 	updatecmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/update"
 	"github.com/dibbla-agents/dibbla-cli/internal/contextcfg"
 	"github.com/dibbla-agents/dibbla-cli/internal/credential"
+	"github.com/dibbla-agents/dibbla-cli/internal/gitcred"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
 	"github.com/dibbla-agents/dibbla-cli/internal/skillregistry"
@@ -177,6 +178,11 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 				_ = credential.DeleteOrg()
 				return credential.DeleteTokenFile()
 			},
+		})
+
+		steps = append(steps, step{
+			label: "git credential helper entries in the user git config",
+			exec:  gitcred.Unregister,
 		})
 
 		if statePath := update.StateFilePath(); statePath != "" {

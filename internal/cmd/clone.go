@@ -12,6 +12,7 @@ import (
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/gitcred"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/dibbla-agents/dibbla-cli/internal/preflight"
 	"github.com/dibbla-agents/dibbla-cli/internal/vcs"
@@ -28,9 +29,10 @@ var cloneCmd = &cobra.Command{
 	Long: `Clone the Dibbla-managed version-control repo for one of your deployed apps.
 
 Authentication reuses the token from "dibbla login" or the DIBBLA_API_TOKEN env
-var — the same token you already use for "dibbla deploy". The token is passed
-to git via an in-memory http.extraHeader config, so it never lands in
-~/.git-credentials or your shell history.
+var — the same token you already use for "dibbla deploy". git reads it through
+the "dibbla git-credential" helper that login registers for Dibbla's git host,
+so it never lands in .git/config, ~/.git-credentials or your shell history —
+and git pull and git push in the clone use the same login.
 
 This repo is the app's version history: every "dibbla deploy" writes one
 commit. To save or ship a change from the clone, run
@@ -92,7 +94,7 @@ func runClone(cmd *cobra.Command, args []string) {
 		dest = filepath.Base(strings.TrimSuffix(info.CloneURL, ".git"))
 	}
 
-	if err := runGitClone(info.CloneURL, cfg.APIToken, dest); err != nil {
+	if err := runGitClone(info.CloneURL, cfg.APIURL, dest); err != nil {
 		fmt.Printf("%s git clone failed: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}
@@ -121,24 +123,22 @@ func splitOrgApp(s string) (org, app string) {
 	return "", s
 }
 
-// runGitClone shells out to git with the token injected via
-// `-c http.extraHeader=Authorization: Bearer <token>`. Using -c (rather than
-// embedding the token in the URL) keeps it out of .git/config, the remote,
-// and the process arg list captured in some shell histories.
+// runGitClone shells out to git. The token is not passed here at all: git asks
+// the credential helper registered for Dibbla's git host, which reads the
+// same login this command did. That keeps the token out of .git/config, the
+// process arg list and /proc, and — unlike the previous one-shot
+// http.extraHeader — leaves the clone able to pull and push on its own.
 //
-// Note: -c does appear in /proc/<pid>/cmdline briefly. That's an acceptable
-// tradeoff vs. the URL-embedded alternative, which would also land in
-// .git/config permanently.
-func runGitClone(cloneURL, token, dest string) error {
+// Registration is repeated here (idempotent) so a clone from a login made
+// before the helper existed, or from DIBBLA_API_TOKEN alone, still works.
+func runGitClone(cloneURL, apiURL, dest string) error {
 	if err := preflight.RequireTool("git"); err != nil {
 		return err
 	}
-
-	args := []string{
-		"-c", "http.extraHeader=Authorization: Bearer " + token,
-		"clone", "--quiet", cloneURL, dest,
+	if err := gitcred.Register(apiURL); err != nil {
+		return fmt.Errorf("register git credential helper: %w", err)
 	}
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", "clone", "--quiet", cloneURL, dest)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

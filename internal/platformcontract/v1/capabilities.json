@@ -944,9 +944,10 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Uses the OS keyring and a TTY.",
+      "reason": "Uses the OS keyring and a TTY. git-credential is the git credential helper that login registers: git runs it to read the stored login for Dibbla's git host, so the credential never leaves the caller's machine (DIB-904).",
       "source": "dibbla-cli/internal/cmd/login.go",
       "cli_commands": [
+        "git-credential",
         "login",
         "logout"
       ]
