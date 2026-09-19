@@ -178,7 +178,8 @@ func TestHelperValue_AbsolutePathQuotedWhenNeeded(t *testing.T) {
 
 type fakeGit struct {
 	calls  [][]string
-	listed string
+	listed string // answer to --get-regexp ^credential…
+	mapped string // answer to --get-regexp ^dibbla…api$
 }
 
 func stubGitConfig(t *testing.T, f *fakeGit) {
@@ -187,10 +188,14 @@ func stubGitConfig(t *testing.T, f *fakeGit) {
 	gitConfig = func(args ...string) ([]byte, error) {
 		f.calls = append(f.calls, args)
 		if args[0] == "--get-regexp" {
-			if f.listed == "" {
+			ans := f.listed
+			if strings.HasPrefix(args[1], "^dibbla") {
+				ans = f.mapped
+			}
+			if ans == "" {
 				return nil, &exec.ExitError{ProcessState: exitState(t, 1)}
 			}
-			return []byte(f.listed), nil
+			return []byte(ans), nil
 		}
 		return nil, nil
 	}
@@ -254,6 +259,9 @@ func TestUnregister_RemovesOnlyDibblaHelpers(t *testing.T) {
 	}
 	var unset []string
 	for _, c := range f.calls[1:] {
+		if c[0] == "--get-regexp" {
+			continue
+		}
 		if c[0] != "--unset-all" {
 			t.Errorf("unexpected call %v", c)
 		}
@@ -282,7 +290,108 @@ func TestUnregister_NoEntriesIsSuccess(t *testing.T) {
 	if err := Unregister(); err != nil {
 		t.Fatalf("no entries should not be an error: %v", err)
 	}
-	if len(f.calls) != 1 {
-		t.Errorf("nothing should be unset: %v", f.calls)
+	for _, c := range f.calls {
+		if c[0] != "--get-regexp" {
+			t.Errorf("nothing should be unset: %v", f.calls)
+		}
+	}
+}
+
+// Prod hands out clone URLs on git.dibbla.com while the login is for
+// api.dibbla.com. The helper must be registered for the git host too, and
+// the mapping that lets it answer for that host must be written.
+func TestRegisterGitHost_RegistersTheCloneHostAndMapsItToTheAPI(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	f := &fakeGit{}
+	stubGitConfig(t, f)
+	if err := RegisterGitHost("https://git.dibbla.com/git/acme/app.git", "https://api.dibbla.com"); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, c := range f.calls {
+		keys = append(keys, c[0]+" "+c[1])
+	}
+	want := []string{
+		"--replace-all credential.https://api.dibbla.com/git.helper",
+		"--add credential.https://api.dibbla.com/git.helper",
+		"--replace-all credential.https://git.dibbla.com/git.helper",
+		"--add credential.https://git.dibbla.com/git.helper",
+		"--replace-all dibbla.git.dibbla.com.api",
+	}
+	if strings.Join(keys, "\n") != strings.Join(want, "\n") {
+		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(keys, "\n"), strings.Join(want, "\n"))
+	}
+	if last := f.calls[len(f.calls)-1]; last[2] != "https://api.dibbla.com" {
+		t.Errorf("mapping value = %q", last[2])
+	}
+}
+
+// Same host (dev: api.dibbla.net serves /git itself) → plain Register, no mapping.
+func TestRegisterGitHost_SameHostIsJustRegister(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	f := &fakeGit{}
+	stubGitConfig(t, f)
+	if err := RegisterGitHost("https://api.dibbla.net/git/acme/app.git", "https://api.dibbla.net"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 2 {
+		t.Errorf("calls = %v", f.calls)
+	}
+}
+
+// The helper is asked for git.dibbla.com; no login names that host, but the
+// mapping RegisterGitHost wrote says its login is api.dibbla.com's. The real
+// lookup runs, with the login coming from the environment.
+func TestGet_AnswersForAMappedGitHost(t *testing.T) {
+	t.Setenv("DIBBLA_API_URL", "https://api.dibbla.com")
+	t.Setenv("DIBBLA_API_TOKEN", "tok-prod")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	prev := apiHostFor
+	apiHostFor = func(h string) string {
+		if h == "git.dibbla.com" {
+			return "api.dibbla.com"
+		}
+		return ""
+	}
+	t.Cleanup(func() { apiHostFor = prev })
+	out, _, err := run(t, "get", "protocol=https\nhost=git.dibbla.com\npath=git/acme/app.git\n\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "password=tok-prod") {
+		t.Errorf("expected the API host's token for the mapped git host, got %q", out)
+	}
+	// An unmapped foreign host still gets nothing.
+	out, _, _ = run(t, "get", "protocol=https\nhost=github.com\n\n")
+	if !strings.Contains(out, "quit=1") {
+		t.Errorf("github.com must not get the token: %q", out)
+	}
+}
+
+func TestUnregister_AlsoDropsTheGitHostMapping(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	f := &fakeGit{
+		listed: "credential.https://git.dibbla.com/git.helper !/usr/local/bin/dibbla git-credential",
+		mapped: "dibbla.git.dibbla.com.api https://api.dibbla.com",
+	}
+	stubGitConfig(t, f)
+	if err := Unregister(); err != nil {
+		t.Fatal(err)
+	}
+	var unset []string
+	for _, c := range f.calls {
+		if c[0] == "--unset-all" {
+			unset = append(unset, c[1])
+		}
+	}
+	if strings.Join(unset, ",") != "credential.https://git.dibbla.com/git.helper,dibbla.git.dibbla.com.api" {
+		t.Errorf("unset = %v", unset)
 	}
 }

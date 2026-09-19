@@ -9,6 +9,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy/render"
+	"github.com/dibbla-agents/dibbla-cli/internal/gitlink"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	isatty "github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -154,7 +155,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 	// A folder linked to its app deploys the way git push does — one
 	// history, the customer's own commit (DIB-906). See deploy_git.go.
 	if top, remote, target, ok := linkedFolder(absPath); ok {
-		if host := hostMismatch(cfg.APIURL, target); host != "" {
+		if host := hostMismatch(cfg.APIURL, target, cloneHostOf(cfg.APIURL, cfg.APIToken)); host != "" {
 			fmt.Fprintf(os.Stderr, "✗ this folder is linked to %s on %s, but you are logged in to %s.\n", target.App, target.Host, host)
 			fmt.Fprintln(os.Stderr, "  hint: dibbla context use <name> to switch, or deploy from a folder that is not linked.")
 			os.Exit(1)
@@ -162,7 +163,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		if !checkGitModeFlags(cmd, os.Stderr, target.App) {
 			os.Exit(1)
 		}
-		registerGitCredentialHelper(cfg.APIURL, os.Stderr)
+		registerGitCredentialHelper(gitlink.RemoteURL(top, remote), cfg.APIURL, os.Stderr)
 		// --json and --quiet promise stdout to one object / one line; the
 		// commit and push narration then goes to stderr.
 		progress := io.Writer(os.Stdout)

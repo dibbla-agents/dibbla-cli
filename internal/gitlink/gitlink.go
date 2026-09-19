@@ -503,3 +503,12 @@ func Push(dir, remote, branch string, stderr io.Writer) (string, error) {
 	}
 	return buf.String(), nil
 }
+
+// RemoteURL is the configured URL of remote name in dir, "" when unknown.
+func RemoteURL(dir, name string) string {
+	remotes, err := gitRemotes(dir)
+	if err != nil {
+		return ""
+	}
+	return remotes[name]
+}
