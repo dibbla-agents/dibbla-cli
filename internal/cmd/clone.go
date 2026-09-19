@@ -116,8 +116,10 @@ func runClone(cmd *cobra.Command, args []string) {
 	}
 
 	// Registration is repeated here (idempotent) so a clone from a login made
-	// before the helper existed, or from DIBBLA_API_TOKEN alone, still works.
-	if err := gitcred.Register(cfg.APIURL); err != nil {
+	// before the helper existed, or from DIBBLA_API_TOKEN alone, still works —
+	// and this is where the clone URL's host is known, which in prod
+	// (git.dibbla.com) is not the API host the login registered.
+	if err := gitcred.RegisterGitHost(info.CloneURL, cfg.APIURL); err != nil {
 		fmt.Printf("%s register git credential helper: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)
 	}

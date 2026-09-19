@@ -15,6 +15,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/gitcred"
 	"github.com/dibbla-agents/dibbla-cli/internal/gitlink"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/vcs"
 	"github.com/spf13/cobra"
 )
 
@@ -92,7 +93,11 @@ func checkGitModeFlags(cmd *cobra.Command, stderr io.Writer, app string) bool {
 
 // hostMismatch is set when the folder's remote points at another Dibbla
 // than the CLI is logged in to (a prod clone deployed with a dev login).
-func hostMismatch(apiURL string, target gitlink.Target) string {
+// The git host is not always the API host — prod serves git.dibbla.com for
+// api.dibbla.com — so a different host is only a mismatch if the server
+// behind the login does not itself hand out clone URLs on that host;
+// cloneHostFor asks it (nil in tests that have no server).
+func hostMismatch(apiURL string, target gitlink.Target, cloneHostFor func(app string) string) string {
 	u, err := url.Parse(apiURL)
 	if err != nil || u.Host == "" {
 		return ""
@@ -100,7 +105,26 @@ func hostMismatch(apiURL string, target gitlink.Target) string {
 	if strings.EqualFold(u.Host, target.Host) {
 		return ""
 	}
+	if cloneHostFor != nil && strings.EqualFold(cloneHostFor(target.App), target.Host) {
+		return ""
+	}
 	return u.Host
+}
+
+// cloneHostOf answers the host the logged-in server hands out clone URLs on
+// for app, or "" when it cannot say (unknown app, no VCS, network error).
+func cloneHostOf(apiURL, apiToken string) func(app string) string {
+	return func(app string) string {
+		info, err := vcs.GetInfo(apiURL, apiToken, app)
+		if err != nil || info.CloneURL == "" {
+			return ""
+		}
+		cu, err := url.Parse(info.CloneURL)
+		if err != nil {
+			return ""
+		}
+		return cu.Host
+	}
 }
 
 var operationLine = regexp.MustCompile(`(?m)operation:\s*(deployment:\S+)`)
@@ -208,9 +232,10 @@ func followDeployOperation(apiURL, apiToken string) func(string) int {
 }
 
 // registerGitCredentialHelper makes sure git can answer Dibbla's auth from
-// the login this deploy uses; repeated registration is idempotent.
-func registerGitCredentialHelper(apiURL string, stderr io.Writer) {
-	if err := gitcred.Register(apiURL); err != nil {
+// the login this deploy uses, for the host the folder's remote actually
+// points at; repeated registration is idempotent.
+func registerGitCredentialHelper(remoteURL, apiURL string, stderr io.Writer) {
+	if err := gitcred.RegisterGitHost(remoteURL, apiURL); err != nil {
 		fmt.Fprintf(stderr, "%s git credential helper: %v (the push may prompt or fail)\n", platform.Icon("⚠", "[!]"), err)
 	}
 }

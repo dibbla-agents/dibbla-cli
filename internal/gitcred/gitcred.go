@@ -104,6 +104,66 @@ func Register(apiURL string) error {
 	return nil
 }
 
+// RegisterGitHost makes git consult this binary for the host a clone URL
+// actually points at. In dev the git host IS the API host
+// (https://api.dibbla.net/git/…) and this is Register(apiURL); in prod the
+// server hands out https://git.dibbla.com/git/… while the API is
+// api.dibbla.com, and a helper registered for the API host is never asked.
+// So the helper is registered for the clone URL's origin too, and a
+// `dibbla.<git-host>.api` entry records which API the login lives under, so
+// the helper can answer for a host no context names. Idempotent.
+func RegisterGitHost(cloneURL, apiURL string) error {
+	if err := Register(apiURL); err != nil {
+		return err
+	}
+	gu, err := parseAPIURL(cloneURL)
+	if err != nil {
+		return fmt.Errorf("clone URL: %w", err)
+	}
+	au, err := parseAPIURL(apiURL)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(gu.Host, au.Host) {
+		return nil
+	}
+	origin := gu.Scheme + "://" + strings.ToLower(gu.Host)
+	key, err := ConfigKey(origin)
+	if err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate dibbla binary: %w", err)
+	}
+	if _, err := gitConfig("--replace-all", key, ""); err != nil {
+		return fmt.Errorf("git config %s: %w", key, err)
+	}
+	if _, err := gitConfig("--add", key, HelperValue(exe)); err != nil {
+		return fmt.Errorf("git config %s: %w", key, err)
+	}
+	if _, err := gitConfig("--replace-all", apiForHostKey(gu.Host), au.Scheme+"://"+strings.ToLower(au.Host)); err != nil {
+		return fmt.Errorf("git config %s: %w", apiForHostKey(gu.Host), err)
+	}
+	return nil
+}
+
+// apiForHostKey is the git config key that maps a git host to the API host
+// whose login answers for it: [dibbla "git.dibbla.com"] api = https://api.dibbla.com
+func apiForHostKey(gitHost string) string {
+	return "dibbla." + strings.ToLower(gitHost) + ".api"
+}
+
+// apiHostFor answers the API host recorded for a git host by RegisterGitHost,
+// or "" when the git host is not one we mapped. Indirected for tests.
+var apiHostFor = func(gitHost string) string {
+	out, err := gitConfig("--get", apiForHostKey(gitHost))
+	if err != nil {
+		return ""
+	}
+	return hostOf(strings.TrimSpace(string(out)))
+}
+
 // IsRegistered reports whether the user-level git config already routes the
 // git host of apiURL to this helper.
 func IsRegistered(apiURL string) bool {
@@ -150,6 +210,17 @@ func Unregister() error {
 			return fmt.Errorf("git config --unset-all %s: %w", key, err)
 		}
 	}
+	// And the git-host → API rows RegisterGitHost wrote; they mean nothing
+	// without the helper. No match is exit 1 and fine.
+	if out, err := gitConfig("--get-regexp", `^dibbla\..*\.api$`); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if key, _, ok := strings.Cut(line, " "); ok && key != "" {
+				if _, err := gitConfig("--unset-all", key); err != nil {
+					return fmt.Errorf("git config --unset-all %s: %w", key, err)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -180,6 +251,19 @@ type Credential struct {
 // scanned, so someone logged in to both production and a customer instance
 // pushes to each with the right credential.
 var lookup = func(host string) (Credential, bool) {
+	if c, ok := lookupAPIHost(host); ok {
+		return c, true
+	}
+	// A git host that is not the API host (prod: git.dibbla.com for
+	// api.dibbla.com) was mapped when the folder was cloned or linked.
+	if api := apiHostFor(host); api != "" && api != host {
+		return lookupAPIHost(api)
+	}
+	return Credential{}, false
+}
+
+// lookupAPIHost finds the login whose API URL has exactly this host.
+func lookupAPIHost(host string) (Credential, bool) {
 	cfg := config.Load()
 	if cfg.HasToken() && hostOf(cfg.APIURL) == host {
 		return Credential{Token: cfg.APIToken, OrgID: cfg.OrgID}, true

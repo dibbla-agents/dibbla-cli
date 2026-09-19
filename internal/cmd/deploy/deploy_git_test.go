@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/gitlink"
 )
 
 // The Dibbla side in these tests is a local bare repository reached through
@@ -250,4 +252,25 @@ func stubPushOutput(t *testing.T, hookOutput string) *bool {
 	}
 	t.Cleanup(func() { pushMain = orig })
 	return &ran
+}
+
+// Prod hands out clone URLs on git.dibbla.com while the login is
+// api.dibbla.com; that is not a mismatch when the server itself says so.
+func TestHostMismatch_GitHostDifferentFromAPIHostIsFineWhenTheServerSaysSo(t *testing.T) {
+	target := gitlink.Target{Host: "git.dibbla.com", Org: "acme", App: "shop"}
+	server := func(app string) string {
+		if app == "shop" {
+			return "git.dibbla.com"
+		}
+		return ""
+	}
+	if got := hostMismatch("https://api.dibbla.com", target, server); got != "" {
+		t.Errorf("server-issued git host flagged as mismatch: %q", got)
+	}
+	if got := hostMismatch("https://api.dibbla.net", target, func(string) string { return "api.dibbla.net" }); got != "api.dibbla.net" {
+		t.Errorf("a prod clone under a dev login must still be refused, got %q", got)
+	}
+	if got := hostMismatch("https://api.dibbla.com", target, nil); got != "api.dibbla.com" {
+		t.Errorf("with nothing to ask, a different host is a mismatch, got %q", got)
+	}
 }
