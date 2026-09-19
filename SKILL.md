@@ -637,20 +637,28 @@ Writes the skill files into the current project (or `$HOME` with `--user`) plus 
 -   **Idempotent:** Re-running is safe. Identical bytes are a no-op (no mtime bump). CRLF vs LF line endings in `AGENTS.md` / `GEMINI.md` are preserved.
 -   **Example:** `dibbla skills install dibbla` — **Machine-wide:** `dibbla skills install dibbla --user` — **Claude Code only:** `dibbla skills install dibbla --no-agents`
 
-### `clone`
+### `clone` / `link`
 
-Clones the Dibbla-managed git repo for a deployed app. Each `dibbla deploy` writes a commit to a platform-managed bare repo; that repo is the app's version history, and `clone` lets you fetch it locally so you (or a coding agent) can inspect exactly what was deployed, diff between deploys, and continue working from it.
+Connects a local folder to the Dibbla-managed git repo of a deployed app. Each `dibbla deploy` writes a commit to a platform-managed bare repo; that repo is the app's version history, and `clone` lets you fetch it locally so you (or a coding agent) can inspect exactly what was deployed, diff between deploys, and continue working from it. Dibbla is the app's `origin`.
 
--   **Usage:** `dibbla clone <app>` or `dibbla clone <org>/<app>`
--   **Arguments:**
-    -   `app` (required): The app alias. The `<org>/` prefix is accepted but optional — the org is derived from your token.
+-   **Usage:** `dibbla clone <app> [--into <dir>]` or `dibbla link <app>` (the same command with `--into .` as the default — link the folder you are standing in). `<org>/<app>` is accepted; the org is derived from your token.
 -   **Flags:**
-    -   `--ref <sha>`: Commit SHA to check out after clone (default: latest on `main`).
-    -   `--into <dir>`: Destination directory (default: `./<app>`).
+    -   `--into <dir>`: Destination directory (default: `./<app>`; `link` defaults to `.`).
+    -   `--yes` / `-y`: Link a folder that has its own git history without the prompt (agents: pass it when you mean it).
+    -   `--ref <sha>`: Fresh clones only — commit to check out after cloning (default: latest on `main`).
+-   **The folder's state decides what happens — never run `git clone` by hand:**
+    -   Empty or missing folder → `git clone`; origin = Dibbla, `main` checked out.
+    -   Files but no `.git` → without `--into` the app is cloned into `./<app>/` and the CLI says so; with `--into .` the folder is linked in place and the files are kept.
+    -   A repo with no commits (a `git init` an agent already ran) → remote added, `main` fetched and checked out. No "destination path already exists" error.
+    -   A repo with its own commits and no Dibbla remote → the CLI explains that every file on disk is kept but the history starts over from Dibbla's `main`, asks for confirmation (`--yes`), moves the old commits to a `pre-dibbla-<timestamp>` branch, and leaves `git status` showing disk vs Dibbla as changes to commit. Two histories are never merged.
+    -   Already linked to this app → `git pull --ff-only`, "already linked — updated".
+    -   `./<app>` exists and is not a clean clone target → `clone` without `--into` refuses with a hint (`--into ./<app>` to link it, or another dir). Nothing is touched.
+-   **`dibbla status` in a linked folder** shows the app, org, `N commit(s) ahead / behind Dibbla` (after a fetch) and whether the commit the app runs is this folder's HEAD.
+-   **Wrong organization:** a 403/404 names the org the CLI acted as (`Access denied for organization Acme (…)` / `App not found in organization Acme (…)`) and how to switch: `dibbla org list`, then `dibbla org use <name>`.
 -   **Authentication:** Reuses the token from `dibbla login` / `DIBBLA_API_TOKEN` — no separate clone credential. `dibbla login` registers a git credential helper (`dibbla git-credential`) in your user git config for Dibbla's git host only, so `git clone`, `git pull` and `git push` against Dibbla authenticate from the stored login and the token never lands in `~/.git-credentials` or `.git/config`. Other remotes are unaffected. Not logged in or token expired → git prints `Run dibbla login`.
 -   **Deliver changes with `deploy`, never `git push`.** From the clone directory, `dibbla deploy . --alias <app> -m "…" --update` is how a change is saved and shipped. The platform answers `git push` with 403 by design — the repo is written by deploys. Don't answer that 403 by proposing a GitHub/GitLab remote: Dibbla already holds the history, and a missing `origin` is not a problem. Tell the user (in their language) that Dibbla saves what is deployed, then deploy. The same holds for a local git repo with no remote: "save" means `dibbla deploy --update`.
 -   **Continuing work from another machine:** `dibbla login` → `dibbla clone <app> --into <dir>` → edit → `dibbla deploy . --alias <app> -m "…" --update`. The deploy history is the sync: only deployed state travels (no uncommitted/undeployed edits from the other machine, no `.env`/secrets — those stay on the platform). If the team already keeps the source on GitHub/GitLab, clone from there and use `dibbla clone` to inspect what is running. See `examples.md` → "Continue work on another machine".
--   **Example:** `dibbla clone my-app` — **Pin commit:** `dibbla clone my-app --ref abc1234` — **Custom dir:** `dibbla clone my-app --into ./checkout`
+-   **Example:** `dibbla clone my-app` — **This folder:** `dibbla link my-app` (`--yes` when it has its own commits) — **Pin commit:** `dibbla clone my-app --ref abc1234` — **Custom dir:** `dibbla clone my-app --into ./checkout`
 
 ### Version control API (for scripting / agents)
 

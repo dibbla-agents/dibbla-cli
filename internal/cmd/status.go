@@ -3,13 +3,16 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
+	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/gitlink"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
 
@@ -20,7 +23,7 @@ var (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show CLI version, API endpoint, and login state",
+	Short: "Show CLI version, API endpoint, login state — and how a linked folder relates to Dibbla",
 	Long: `Print the CLI version, the API server this CLI will talk to, and whether a
 valid login is configured.
 
@@ -28,6 +31,12 @@ By default the configured token is validated against the resolved API URL via
 POST /api/auth/v1/tokens/validate so the "logged in" line reflects the live
 state of the token (revoked / expired tokens show as not logged in). Use
 --no-validate to skip the network call and report only what's stored locally.
+
+Run inside a folder linked to an app (dibbla clone / dibbla link), status also
+shows the app and org the folder is connected to, how many commits it is ahead
+of or behind Dibbla's main (after a fetch), and whether the commit the app runs
+is this folder's HEAD. --no-validate skips the fetch and the running-commit
+lookup too.
 
 The "source" annotations show where each value came from. Resolution order
 matches the rest of the CLI:
@@ -70,10 +79,37 @@ type statusReport struct {
 	// --no-validate (no network) and on orgs/installs without a plan.
 	Plan        string `json:"plan,omitempty"`
 	TrialEndsAt string `json:"trial_ends_at,omitempty"`
+	// Folder describes the git repo status was run in when that repo has a
+	// Dibbla remote (DIB-905); nil elsewhere.
+	Folder *folderReport `json:"folder,omitempty"`
+}
+
+// folderReport is the linked-folder half of `dibbla status`: which app the
+// folder is connected to and how its commits relate to Dibbla's.
+type folderReport struct {
+	Path   string `json:"path"`
+	App    string `json:"app"`
+	Org    string `json:"org"`
+	Remote string `json:"remote"`
+	Branch string `json:"branch,omitempty"`
+	// HeadSHA is the local HEAD; Ahead/Behind count commits against
+	// <remote>/<branch> after a fetch (or the last fetch under
+	// --no-validate, in which case Fetched is false).
+	HeadSHA string `json:"head_sha,omitempty"`
+	Ahead   int    `json:"ahead"`
+	Behind  int    `json:"behind"`
+	Fetched bool   `json:"fetched"`
+	Dirty   bool   `json:"dirty"`
+	// RunningSHA is the commit the app runs on Dibbla, when the API said;
+	// RunningIsHead is true when that is the local HEAD.
+	RunningSHA    string `json:"running_sha,omitempty"`
+	RunningIsHead bool   `json:"running_is_head"`
+	Error         string `json:"error,omitempty"`
 }
 
 func runStatus(cmd *cobra.Command, args []string) {
 	report := buildStatusReport(statusNoValidate)
+	report.Folder = buildFolderReport(".", report.APIURL, resolvedToken(), statusNoValidate || !report.TokenConfigured)
 
 	if statusJSON {
 		out, err := json.MarshalIndent(report, "", "  ")
@@ -136,6 +172,66 @@ func buildStatusReport(noValidate bool) statusReport {
 	}
 	r.LoggedIn = true
 	return r
+}
+
+// resolvedToken is the token the folder check may use — the same one the
+// login line was resolved from.
+func resolvedToken() string {
+	t, _ := resolveTokenWithSource()
+	return t
+}
+
+// buildFolderReport describes dir when it sits in a git repo with a Dibbla
+// remote. offline skips the fetch and the API lookup, so the counts are as of
+// the last fetch and the running commit is unknown.
+func buildFolderReport(dir, apiURL, token string, offline bool) *folderReport {
+	top := gitlink.Toplevel(dir)
+	if top == "" {
+		return nil
+	}
+	remote, target, ok := gitlink.FindDibblaRemote(top)
+	if !ok {
+		return nil
+	}
+	fr := &folderReport{Path: top, App: target.App, Org: target.Org, Remote: remote}
+	if st, err := gitlink.Inspect(top, ""); err == nil {
+		fr.Branch = st.Branch
+	}
+	branch := fr.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	sync, err := gitlink.Compare(top, remote, branch, !offline, io.Discard)
+	if err != nil {
+		// A fetch that fails (offline, login rejected) still leaves the
+		// last-fetched counts usable.
+		sync, err = gitlink.Compare(top, remote, branch, false, io.Discard)
+		if err != nil {
+			fr.Error = err.Error()
+			return fr
+		}
+		fr.Fetched = false
+	} else {
+		fr.Fetched = !offline
+	}
+	fr.HeadSHA, fr.Ahead, fr.Behind, fr.Dirty = sync.HeadSHA, sync.Ahead, sync.Behind, sync.Dirty
+
+	if offline || token == "" {
+		return fr
+	}
+	fr.RunningSHA = lookupRunningSHA(apiURL, token, target.App)
+	fr.RunningIsHead = fr.RunningSHA != "" && fr.RunningSHA == fr.HeadSHA
+	return fr
+}
+
+// lookupRunningSHA asks the API which commit the app runs. Indirected so
+// tests can answer without a server. Empty when unknown.
+var lookupRunningSHA = func(apiURL, token, alias string) string {
+	dep, _, err := apps.GetApp(apiURL, token, alias)
+	if err != nil || dep == nil {
+		return ""
+	}
+	return dep.CommitSHA
 }
 
 // envOnly reports whether config.Load would take its env-only short-circuit and
@@ -262,6 +358,10 @@ func printStatusHuman(r statusReport) {
 		}
 	}
 
+	if r.Folder != nil {
+		printFolderHuman(r.Folder, ok, warn)
+	}
+
 	switch {
 	case !r.TokenConfigured:
 		fmt.Printf("Status:  %s not logged in — run `dibbla login`\n", bad)
@@ -273,4 +373,49 @@ func printStatusHuman(r statusReport) {
 		fmt.Printf("Status:  %s token rejected: %s\n", bad, r.ValidationError)
 		fmt.Printf("         re-authenticate with `dibbla login`\n")
 	}
+}
+
+// printFolderHuman renders the linked-folder lines. "N ahead / M behind" is
+// the answer to the question a person in a linked folder has: is what I have
+// what Dibbla has?
+func printFolderHuman(f *folderReport, ok, warn string) {
+	fmt.Printf("Folder:  %s\n", f.Path)
+	fmt.Printf("App:     %s  (org %s, remote %s)\n", f.App, f.Org, f.Remote)
+	if f.Error != "" {
+		fmt.Printf("Sync:    %s %s\n", warn, f.Error)
+		return
+	}
+	var rel string
+	switch {
+	case f.Ahead == 0 && f.Behind == 0:
+		rel = "in sync with Dibbla"
+	case f.Behind == 0:
+		rel = fmt.Sprintf("%d commit(s) ahead of Dibbla", f.Ahead)
+	case f.Ahead == 0:
+		rel = fmt.Sprintf("%d commit(s) behind Dibbla — git pull to catch up", f.Behind)
+	default:
+		rel = fmt.Sprintf("%d commit(s) ahead, %d behind Dibbla — histories have diverged", f.Ahead, f.Behind)
+	}
+	if !f.Fetched {
+		rel += " (as of the last fetch)"
+	}
+	if f.Dirty {
+		rel += "; uncommitted changes on disk"
+	}
+	fmt.Printf("Sync:    %s\n", rel)
+	switch {
+	case f.RunningSHA == "":
+		fmt.Printf("Running: unknown\n")
+	case f.RunningIsHead:
+		fmt.Printf("Running: %s %s — the commit the app runs is this folder's HEAD\n", ok, short(f.RunningSHA))
+	default:
+		fmt.Printf("Running: %s %s — not this folder's HEAD (%s)\n", warn, short(f.RunningSHA), short(f.HeadSHA))
+	}
+}
+
+func short(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
