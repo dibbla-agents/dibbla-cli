@@ -523,7 +523,7 @@ Idempotent — calling twice in a row produces two pod rollouts.
 ### Inspect one app in full
 
 ```bash
-dibbla apps get myapp                # status, size, health, login policy + per-service breakdown
+dibbla apps get myapp                # status, running commit, size, health, login policy + per-service breakdown
 dibbla apps get myapp --json | jq '.services[].name'
 ```
 

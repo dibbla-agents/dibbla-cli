@@ -45,6 +45,10 @@ type Deployment struct {
 	ReviewSummary string              `json:"review_summary,omitempty"`
 	ServiceCount  int                 `json:"service_count,omitempty"`
 	Services      []DeploymentService `json:"services,omitempty"`
+	// CommitSHA is the commit on the app's main branch the running revision
+	// was built from (DIB-902). Empty for apps last deployed before the
+	// server recorded it.
+	CommitSHA string `json:"commit_sha,omitempty"`
 }
 
 // DeploymentService is one service of a multi-service deployment, as returned
