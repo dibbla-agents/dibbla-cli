@@ -82,7 +82,18 @@ Examples:
   dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # File as base, -e overrides one key
   dibbla deploy --favicon https://example.com/favicon.ico
   dibbla deploy --quiet      # Single-line success/failure (script-friendly)
-  dibbla deploy --json       # Structured JSON output for jq / agents`,
+  dibbla deploy --json       # Structured JSON output for jq / agents
+
+Linked folders:
+  In a folder connected to its app (dibbla clone / dibbla link) a deploy is
+  a commit and a push: everything tracked and untracked (.gitignore honoured)
+  is committed with -m, pushed to main, and the deploy the push started is
+  followed to the end. Nothing new since main → "nothing new to deploy"
+  (--force -m "…" redeploys the same tree as a new commit). main at Dibbla
+  ahead of the folder → refused with a git pull --rebase hint; no tarball is
+  ever sent from a linked folder, so the history stays one. --update is the
+  default there (a push is a rolling update); runtime flags such as --env,
+  --port or --cpu are refused — use dibbla apps update or dibbla.yaml.`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runDeploy,
 }
@@ -137,6 +148,25 @@ func runDeploy(cmd *cobra.Command, args []string) {
 			writeReviewGateError(os.Stderr, missing)
 			os.Exit(1)
 		}
+	}
+
+	// A folder linked to its app deploys the way git push does — one
+	// history, the customer's own commit (DIB-906). See deploy_git.go.
+	if top, remote, target, ok := linkedFolder(absPath); ok {
+		if host := hostMismatch(cfg.APIURL, target); host != "" {
+			fmt.Fprintf(os.Stderr, "✗ this folder is linked to %s on %s, but you are logged in to %s.\n", target.App, target.Host, host)
+			fmt.Fprintln(os.Stderr, "  hint: dibbla context use <name> to switch, or deploy from a folder that is not linked.")
+			os.Exit(1)
+		}
+		if !checkGitModeFlags(cmd, os.Stderr, target.App) {
+			os.Exit(1)
+		}
+		registerGitCredentialHelper(cfg.APIURL, os.Stderr)
+		os.Exit(runGitDeploy(gitDeployInput{
+			Dir: top, Remote: remote, Branch: "main", App: target.App,
+			Message: deployMessage, Force: deployForce,
+			APIURL: cfg.APIURL, APIToken: cfg.APIToken,
+		}, os.Stdout, os.Stderr, followDeployOperation(cfg.APIURL, cfg.APIToken)))
 	}
 
 	r := selectRenderer()
