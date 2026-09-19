@@ -312,6 +312,7 @@ func renderPointerBlock(id, cliVersion string) string {
 	b.WriteString(fmt.Sprintf("- `.claude/skills/%s/reference.md` — full command reference\n", id))
 	b.WriteString(fmt.Sprintf("- `.claude/skills/%s/examples.md` — example flows\n", id))
 	b.WriteString(fmt.Sprintf("- `.claude/skills/%s/guardrails.md` — safety checks\n\n", id))
+	b.WriteString("Secrets: values live in Dibbla, names live in the code (`.env.example`). To run the app locally, `dibbla env pull` writes them to `.env.local`, which never goes back to git.\n\n")
 	b.WriteString(fmt.Sprintf("Installed by `dibbla skills install %s` (CLI %s). Re-run to refresh.\n", id, cliVersion))
 	b.WriteString(markerClose)
 	return b.String()

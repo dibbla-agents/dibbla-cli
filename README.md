@@ -482,8 +482,28 @@ seed env vars at deploy/update time.
 | `secrets list [-d deployment]` | List secrets (global or for one deployment) |
 | `secrets set <name> [value] [-d deployment]` | Create or update a secret (value from arg or stdin) |
 | `secrets import <file> [-e KEY=value] [-d deployment] [--dry-run]` | Bulk-load a `.env` file into secrets (no redeploy) |
-| `secrets get <name> [-d deployment]` | Print a secret's value |
+| `secrets get <name> [-d deployment]` | Print a secret's value (deploy roles only; a viewer lists, never reads) |
 | `secrets delete <name> [-d deployment]` | Delete a secret (`-y` to skip confirmation) |
+
+### Local environment (`env pull`)
+
+Values live in Dibbla, names live in the code. `.env.example` in the repo lists
+the variables the app needs (the one `.env*` file the platform keeps);
+`dibbla env pull` writes their values — secrets resolved as the running app
+gets them, plus `DATABASE_URL_*`, `STORAGE_*` and `DIBBLA_*` — to a local
+`.env.local`, and adds that file to `.gitignore` so it never goes back.
+
+```bash
+dibbla env pull                          # in a folder from dibbla clone / dibbla link
+dibbla env pull -d myapp --service worker
+dibbla env pull --replace                # rewrite .env.local instead of updating it in place
+eval "$(dibbla env pull --stdout)"       # into the current shell
+dibbla env pull --json                   # names, values and which layer each came from
+```
+
+A local run with that file talks to the app's real database and buckets. A new
+secret goes in with `dibbla secrets set` first, then its name into
+`.env.example`, then `dibbla env pull` again.
 
 ### Prompts
 

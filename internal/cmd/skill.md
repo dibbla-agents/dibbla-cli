@@ -405,6 +405,7 @@ Prints a secret's value (suitable for piping).
 -   **Flags:**
     -   `--deployment`, `-d`: For a deployment-scoped secret.
     -   `--service`, `-s`: For a per-service secret (requires `-d`).
+-   **Roles:** Reading a value needs the deploy roles (owner, admin, developer); a viewer can list, not get. `env pull` follows the same rule.
 -   **Example:** `dibbla secrets get API_KEY` — **Per-app:** `dibbla secrets get API_KEY -d myapp` — **Per-service:** `dibbla secrets get NPM_TOKEN -d myapp -s web`
 
 #### `secrets delete`
@@ -419,6 +420,28 @@ Deletes a secret.
     -   `--service`, `-s`: For a per-service secret (requires `-d`).
     -   `--yes`, `-y`: Skip the confirmation prompt.
 -   **Example:** `dibbla secrets delete API_KEY --yes` — **Per-app:** `dibbla secrets delete API_KEY -d myapp -y` — **Per-service:** `dibbla secrets delete NPM_TOKEN -d myapp -s web -y`
+
+### `env`
+
+Values live in Dibbla, names live in the code. Secrets and the variables the platform generates (`DATABASE_URL_*`, `STORAGE_*`, `DIBBLA_*`) are injected into the app when it runs; `.env.example` in the repository lists the names the app needs (one `NAME= # what it is` per line — the one `.env*` file the platform keeps in the app's repo). `dibbla env pull` fetches the values to a local `.env.local` so the app can run on this machine — that file never goes back: `.gitignore`, the VCS filter and the push hook all refuse it.
+
+#### `env pull`
+
+Writes the app's environment — as the running container sees it — to `.env.local`.
+
+-   **Usage:** `dibbla env pull [-d <alias>] [-s <service>] [--replace] [--stdout] [--json]`
+-   **App:** the one this folder is linked to (`dibbla clone` / `dibbla link`), or `--deployment <alias>`.
+-   **Flags:**
+    -   `--service`, `-s`: resolve one service's view of a multi-service app (its per-service secrets, its `DIBBLA_SVC_*`).
+    -   `--replace`: rewrite `.env.local` from scratch. Without it an existing file is updated in place — keys Dibbla knows are refreshed, your other lines stay.
+    -   `--stdout`: print `KEY=value` lines instead of writing a file (`eval "$(dibbla env pull --stdout)"`).
+    -   `--json`: the API document — `variables[]` with `name`, `value` and `source` (`global` / `deployment` / `service` / `inline` / `platform`).
+-   **Resolution:** exactly the runtime's — global secrets < deployment-wide < per-service < inline env (`deploy -e`, manifest) < injected `DIBBLA_*`. `DATABASE_URL_*` and `STORAGE_*` are in the set and reach the real database and buckets. `DIBBLA_IDENTITY_TOKEN_FILE` is left out (a file that exists only in the pod).
+-   **The file:** mode 0600, first line `# Pulled from Dibbla — lives only on this machine; run 'dibbla env pull' again to refresh.` If `.gitignore` lacks a `.env.local` line, one is added and the command says so.
+-   **Output:** names and counts, never values. Reminds you that a local run with this file uses the app's real database and buckets — Dibbla has one environment per app; offer a local Postgres if the person wants isolation.
+-   **Roles:** owner, admin or developer — the same rule as `secrets get`; a viewer is refused.
+-   **New variable:** `dibbla secrets set NAME value -d <alias>` → add `NAME= # what it is` to `.env.example` → `dibbla env pull`. Never `.env.local` by hand as the only place: it does not travel, so the deployed app would start without it.
+-   **Example:** `dibbla env pull` — **One service:** `dibbla env pull -d shop -s worker` — **Into the shell:** `eval "$(dibbla env pull --stdout)"`
 
 ### `domains`
 

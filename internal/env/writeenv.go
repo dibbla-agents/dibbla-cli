@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -70,15 +71,15 @@ func MergeEnvFile(envPath string, updates map[string]string) ([]string, error) {
 		}
 	}
 
-	// Append remaining keys (new ones) in stable order: iterate `updates`
-	// (which has map-iteration order) but also check that we haven't already
-	// written them above. For deterministic output across runs, iterate the
-	// `written` exclusion set using the map's keys.
-	for k, v := range updates {
-		if _, stillPending := remaining[k]; !stillPending {
-			continue
-		}
-		lines = append(lines, formatLine(k, v))
+	// Append the new keys in sorted order so two pulls of the same set
+	// produce the same file (and a diff of .env.local reads as a diff).
+	pending := make([]string, 0, len(remaining))
+	for k := range remaining {
+		pending = append(pending, k)
+	}
+	sort.Strings(pending)
+	for _, k := range pending {
+		lines = append(lines, formatLine(k, updates[k]))
 		written = append(written, k)
 	}
 
@@ -102,6 +103,14 @@ func MergeEnvFile(envPath string, updates map[string]string) ([]string, error) {
 // Returns true if the file was created or modified, false if it was already
 // correct.
 func EnsureGitignoreEntry(gitignorePath string) (bool, error) {
+	return EnsureGitignoreLine(gitignorePath, ".env")
+}
+
+// EnsureGitignoreLine is EnsureGitignoreEntry for any single file name:
+// present as `name` or `/name` on its own line means already ignored, and
+// otherwise the line is appended. `dibbla env pull` uses it for .env.local
+// so the file it writes can never be committed by accident (DIB-919).
+func EnsureGitignoreLine(gitignorePath, name string) (bool, error) {
 	data, err := os.ReadFile(gitignorePath)
 	if err != nil && !os.IsNotExist(err) {
 		return false, fmt.Errorf("read %s: %w", gitignorePath, err)
@@ -110,7 +119,7 @@ func EnsureGitignoreEntry(gitignorePath string) (bool, error) {
 	if err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			trimmed := strings.TrimRight(strings.TrimLeft(line, " \t"), " \t\r")
-			if trimmed == ".env" || trimmed == "/.env" {
+			if trimmed == name || trimmed == "/"+name {
 				return false, nil
 			}
 		}
@@ -118,13 +127,13 @@ func EnsureGitignoreEntry(gitignorePath string) (bool, error) {
 
 	var out []byte
 	if len(data) == 0 {
-		out = []byte(".env\n")
+		out = []byte(name + "\n")
 	} else {
 		out = data
 		if out[len(out)-1] != '\n' {
 			out = append(out, '\n')
 		}
-		out = append(out, ".env\n"...)
+		out = append(out, (name + "\n")...)
 	}
 
 	if err := atomicWrite(gitignorePath, out, 0644); err != nil {
@@ -171,11 +180,32 @@ func isEnvKey(k string) bool {
 	return true
 }
 
+// ParseKey is parseEnvKey for callers outside the package: the KEY of a
+// `KEY=VALUE` line, false for blank lines, comments and malformed content.
+func ParseKey(line string) (string, bool) { return parseEnvKey(line) }
+
+// WriteFile replaces path with data, atomically and with 0600 permissions on
+// Unix — the same guarantees MergeEnvFile gives a file it rewrites.
+func WriteFile(path string, data []byte) error { return atomicWrite(path, data, 0600) }
+
+// FormatLine is formatLine for callers outside the package (env pull writes
+// whole files and stdout with it).
+func FormatLine(key, value string) string { return formatLine(key, value) }
+
 // formatLine renders a KEY=VALUE line. Values without whitespace, quotes,
 // backslashes, or shell metacharacters are written raw — matching how the
 // steprunner injects env into subprocesses. Values that need escaping are
 // double-quoted with minimal backslash escaping.
+//
+// A value holding `$` is single-quoted when it can be: every dotenv loader
+// (godotenv, dotenv-expand, Next.js, Vite) leaves single-quoted values
+// unexpanded, while `$` inside double quotes or bare is expanded by several
+// of them — and a secret that happens to contain `$FOO` must round-trip
+// through `dibbla env pull` byte for byte.
 func formatLine(key, value string) string {
+	if strings.ContainsRune(value, '$') && !strings.ContainsAny(value, "'\n\r") {
+		return key + "='" + value + "'"
+	}
 	if needsQuoting(value) {
 		var b strings.Builder
 		b.WriteString(key)
@@ -208,7 +238,7 @@ func needsQuoting(v string) bool {
 	}
 	for _, r := range v {
 		switch r {
-		case '\n', '\r', '"', '\\', '\'', '#':
+		case '\n', '\r', '"', '\\', '\'', '#', '$', ' ', '\t':
 			return true
 		}
 	}

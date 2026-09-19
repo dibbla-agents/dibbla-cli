@@ -25,7 +25,7 @@ Mandatory for every deploy. Scan all application source files for:
 | SQL injection (string concatenation/interpolation in queries) | BLOCKER | `` `SELECT * FROM users WHERE id = ${id}` ``, `"SELECT * FROM users WHERE id = " + id` |
 | Command injection (unsanitized input in shell commands) | BLOCKER | `exec("rm " + userInput)`, `os.system(f"ls {path}")`, `child_process.exec(userInput)` |
 | XSS (unsanitized user input rendered in HTML) | BLOCKER | `innerHTML = userInput`, `dangerouslySetInnerHTML` without sanitization |
-| `.env` files present in the deploy directory | BLOCKER | `.env`, `.env.local` not in `.gitignore` / `.dockerignore` |
+| A dotenv file with values that git could see | BLOCKER | `.env` or `.env.local` present **and not listed in `.gitignore`**. A `.env.local` that *is* in `.gitignore` is expected — it is what `dibbla env pull` writes for local runs. `.env.example` (names only, committed) is expected too, never a finding. The platform strips/refuses every `.env*` except `.env.example`/`.env.sample` anyway; the check is that git never sees the values. |
 | Missing CSRF protection on state-changing endpoints | WARNING | POST/PUT/DELETE routes with no CSRF token or SameSite cookie |
 | Insecure deserialization / eval | WARNING | `eval()` on user input, `pickle.loads()` on untrusted data, `yaml.load()` without `SafeLoader` |
 | Missing input validation on API endpoints | WARNING | No request body validation, no type checking on route params |

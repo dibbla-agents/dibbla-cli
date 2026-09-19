@@ -211,7 +211,7 @@ func TestVerifyFallsOnEveryDirectionOfDrift(t *testing.T) {
 // a re-vendoring would replace. If the Go canonicalisation drifted from
 // Python's, those comparisons would move together and stay green. These
 // constants were copied out of architecture/docs/contract/contract.lock by
-// hand on 2026-08-29 and refreshed for DIB-764 on 2026-09-07; they are what the canonical verifier produced, and they
+// hand on 2026-08-29 and refreshed for DIB-764 on 2026-09-07 and DIB-919 on 2026-09-19; they are what the canonical verifier produced, and they
 // are the same four literals app-hosting-service and dibbla-docs pin.
 //
 // If this falls right after a re-vendoring, the constants are stale — replace
@@ -221,8 +221,8 @@ func TestCanonicalDigestMatchesTheCheckedInConstants(t *testing.T) {
 	const (
 		scopesDigest       = "sha256:af594f1b609a8f28faa7db323458b11b27d5ca8a925b4fb502d99d50b7e1b7d9"
 		errorsDigest       = "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d"
-		capabilitiesDigest = "sha256:852a047e2140ed358a505162a790dc60930f8926f960d31f866292496e846b7f"
-		contractDigest     = "sha256:c0b9dc5d8f380721fc6ab87a8ffccc4554e10121f19c85999ca2912081ab99f2"
+		capabilitiesDigest = "sha256:83db75d1952e35f8245e4df19f78390bb72353b641122ea61d09beeeb0e72f38"
+		contractDigest     = "sha256:e796d217a590c09b79f02623bf63b49af1601aead569d4dc99230cdb03bf30fb"
 	)
 	want := map[string]string{
 		"v1/scopes.json":       scopesDigest,
