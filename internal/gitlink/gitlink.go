@@ -395,17 +395,30 @@ func Toplevel(dir string) string {
 	return filepath.Clean(strings.TrimSpace(out))
 }
 
+// gitRemotes maps remote name to its configured fetch URL. Read from the
+// config rather than `git remote -v`, which shows URLs after url.*.insteadOf
+// rewriting — the configured URL is the one that says whether a remote is
+// Dibbla's.
 func gitRemotes(dir string) (map[string]string, error) {
-	out, err := git(dir, "remote", "-v")
+	out, err := git(dir, "config", "--get-regexp", `^remote\..*\.url$`)
 	if err != nil {
+		// Exit 1 with no output is "no remotes", not a failure.
+		if strings.TrimSpace(err.Error()) == "exit status 1" {
+			return map[string]string{}, nil
+		}
 		return nil, err
 	}
 	m := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) >= 2 && (len(f) < 3 || f[2] == "(fetch)") {
-			m[f[0]] = f[1]
+		key, u, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
 		}
+		name := strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".url")
+		if name == "" || name == key {
+			continue
+		}
+		m[name] = u
 	}
 	return m, nil
 }
@@ -440,4 +453,53 @@ func gitOut(dir string, stderr io.Writer, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return out.String(), nil
+}
+
+// Dirty reports whether dir's working tree or index holds anything a commit
+// would pick up: modified or deleted tracked files, or untracked files that
+// .gitignore does not exclude.
+func Dirty(dir string) (bool, error) {
+	out, err := git(dir, "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// CommitAll stages everything in the repository — tracked and untracked
+// alike, .gitignore respected — and commits it with message. With allowEmpty
+// a commit is written even when nothing changed (a redeploy of the same
+// tree). Returns the new commit's SHA.
+func CommitAll(dir, message string, allowEmpty bool, stderr io.Writer) (string, error) {
+	if _, err := gitOut(dir, stderr, "add", "--all"); err != nil {
+		return "", err
+	}
+	args := []string{"commit", "--quiet", "-m", message}
+	if allowEmpty {
+		args = append(args, "--allow-empty")
+	}
+	if _, err := gitOut(dir, stderr, args...); err != nil {
+		return "", err
+	}
+	out, err := git(dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Push sends HEAD to <remote>'s branch as a fast-forward. git's own output —
+// including the "remote:" lines a Dibbla push answers with — is streamed to
+// stderr and returned, so a caller can both show it and read from it.
+func Push(dir, remote, branch string, stderr io.Writer) (string, error) {
+	cmd := exec.Command("git", "-C", dir, "push", remote, "HEAD:refs/heads/"+branch)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	var buf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(&buf, stderr)
+	cmd.Stderr = io.MultiWriter(&buf, stderr)
+	err := cmd.Run()
+	if err != nil {
+		return buf.String(), fmt.Errorf("git push: %w", err)
+	}
+	return buf.String(), nil
 }
