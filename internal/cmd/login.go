@@ -219,6 +219,14 @@ func runLogin(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// git push/pull/clone against this instance read the login through the
+	// credential helper; register it now so "logged in" means git works too.
+	// --no-keychain leaves nothing for the helper to read, so nothing is
+	// registered either.
+	if !loginNoKeychain {
+		setupGitCredentialHelper(baseURL)
+	}
+
 	if loginWriteEnv {
 		if err := writeEnvAndGitignore(token, baseURL); err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
