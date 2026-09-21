@@ -545,6 +545,8 @@ Idempotent — calling twice in a row produces two pod rollouts.
 ```bash
 dibbla apps get myapp                # status, running commit, size, health, login policy + per-service breakdown
 dibbla apps get myapp --json | jq '.services[].name'
+dibbla apps card myapp               # the same, as the app card: adds review / scan / agent
+dibbla apps get myapp --review       # the REVIEW.md the running app was deployed with
 ```
 
 `apps get` is what `logs --pod-stream` 404s point at when the service name doesn't match a pod.

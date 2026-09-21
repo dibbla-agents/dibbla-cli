@@ -49,6 +49,82 @@ type Deployment struct {
 	// was built from (DIB-902). Empty for apps last deployed before the
 	// server recorded it.
 	CommitSHA string `json:"commit_sha,omitempty"`
+	// ReviewBody is the REVIEW.md as deployed (GET only).
+	ReviewBody string `json:"review_body,omitempty"`
+	// Security is the app card's security section (DIB-965): the guardrails
+	// review and which version it applies to, the build-time scan and when
+	// its findings last changed, the maintenance agent's standing. GET only;
+	// nil from a server that predates it.
+	Security *Security `json:"security,omitempty"`
+}
+
+// Security mirrors deploy-api's `security` on GET /deployments/{alias}.
+type Security struct {
+	Review      *SecurityReview      `json:"review,omitempty"`
+	Scan        *SecurityScan        `json:"scan,omitempty"`
+	Maintenance *SecurityMaintenance `json:"maintenance,omitempty"`
+}
+
+// SecurityReview is the pre-deploy guardrails review as it applies to the
+// running revision.
+type SecurityReview struct {
+	Status  string `json:"status,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	// Present is false when the app never carried a REVIEW.md.
+	Present bool `json:"present"`
+	// ReviewedAt is when this exact review was first deployed and CommitSHA
+	// the commit it was written for; both absent for reviews the server only
+	// knows from the workload.
+	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
+	CommitSHA  string     `json:"commit_sha,omitempty"`
+	// CodeChangedSince: the running commit is not the reviewed one.
+	CodeChangedSince bool `json:"code_changed_since"`
+}
+
+// SecuritySeverityCounts is the per-severity tally of vulnerability findings.
+type SecuritySeverityCounts struct {
+	Critical   int `json:"critical"`
+	High       int `json:"high"`
+	Medium     int `json:"medium"`
+	Low        int `json:"low"`
+	Negligible int `json:"negligible"`
+	Unknown    int `json:"unknown"`
+	Total      int `json:"total"`
+}
+
+// SecurityScan is the build-time scan of the running revision.
+type SecurityScan struct {
+	// Status is running | completed | partial | failed.
+	Status          string                 `json:"status"`
+	DeploymentID    string                 `json:"deployment_id"`
+	CommitSHA       string                 `json:"commit_sha,omitempty"`
+	StartedAt       time.Time              `json:"started_at"`
+	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
+	Vulnerabilities SecuritySeverityCounts `json:"vulnerabilities"`
+	Secrets         int                    `json:"secrets"`
+	Images          int                    `json:"images"`
+	Packages        int                    `json:"packages"`
+	Errors          []string               `json:"errors,omitempty"`
+	// FindingsChangedAt is when the app's finding SET last changed, carried
+	// forward across revisions that raised the same findings.
+	FindingsChangedAt *time.Time `json:"findings_changed_at,omitempty"`
+}
+
+// SecurityMaintenance is the maintenance agent's standing for the app.
+type SecurityMaintenance struct {
+	// Configured: the organization has the agent on at all. Enabled: the
+	// effective per-app switch.
+	Configured    bool       `json:"configured"`
+	Enabled       bool       `json:"enabled"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	LastRunStatus string     `json:"last_run_status,omitempty"`
+	LastRunCode   string     `json:"last_run_code,omitempty"`
+	// LastChangeAt is the latest of the running revision's rollout and the
+	// finding set changing; ChangedSinceLastRun whether that is newer than
+	// the last run.
+	LastChangeAt        *time.Time `json:"last_change_at,omitempty"`
+	ChangedSinceLastRun bool       `json:"changed_since_last_run"`
+	PendingProposals    int        `json:"pending_proposals"`
 }
 
 // DeploymentService is one service of a multi-service deployment, as returned

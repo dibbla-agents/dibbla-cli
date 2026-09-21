@@ -724,19 +724,23 @@ dibbla apps rollback myapp --json -y
 
 ### apps get
 
-Show one deployment's record. This is the command `logs --pod-stream` 404s point at ("check `dibbla apps get <alias>`") to see which services exist.
+Show one deployment's record — the app's card, as the console and the connector's app card show it. `dibbla apps card <alias>` is an alias of the same command. This is also the command `logs --pod-stream` 404s point at ("check `dibbla apps get <alias>`") to see which services exist.
 
 | Item | Details |
 |------|---------|
-| **Usage** | `dibbla apps get <alias>` |
+| **Usage** | `dibbla apps get <alias>` / `dibbla apps card <alias>` |
 | **Arguments** | `alias` (required) — regex `^[a-z][a-z0-9-]{2,62}[a-z0-9]$`, validated locally (zero requests on failure, exit 5) |
-| **Flags** | `--json` — print the raw API document verbatim |
-| **Output** | Default: URL, status, deployed/updated times, the commit the app runs (`Commit:`), replicas, size, health, login policy; for multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker. When the app's `main` is ahead of the running commit (a `git push` whose deploy failed or is still building), a `Main: <sha> — NOT running` block follows with the failure (`BUILD_FAILED — …`) and the `dibbla deploy status <id>` to read; the fix is a new commit, never a rewind |
+| **Flags** | `--json` — print the raw API document verbatim. `--review` — print the REVIEW.md the running app was deployed with, and nothing else (exit 1 when there is none) |
+| **Output** | Default: URL, status, deployed/updated times, the commit the app runs (`Commit:`), replicas, size, health, login policy, then a **Security** section: `Review:` the guardrails status (OK / warnings / blockers found / none) with **the version it was written for** and when, plus a warning when the running version is newer than the review; `Scan:` the build-time scan's findings (leaked secrets, then critical/high/medium/low) with when the finding set last changed; `Agent:` whether the maintenance agent is on and whether anything has changed since it last looked, its last run, and proposals waiting for a decision. For multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker. When the app's `main` is ahead of the running commit (a `git push` whose deploy failed or is still building), a `Main: <sha> — NOT running` block follows with the failure (`BUILD_FAILED — …`) and the `dibbla deploy status <id>` to read; the fix is a new commit, never a rewind |
 | **Errors** | `404` exit 4 with a hint to `apps list`; `401/403` exit 3 |
+| **Notes** | The Security section is absent on a server that predates it (it is not "no review"). "Nothing has changed since the agent last looked" means neither the running version nor the scan's finding set is newer than the last maintenance run. Findings **per severity and per package** are in `--json` under `security.scan` only as a tally; the list itself is the API's `GET /deployments/{alias}/security-scan` |
 
 **Examples:**
 ```bash
 dibbla apps get myapp
+dibbla apps card myapp                       # same thing
+dibbla apps get myapp --review               # the deployed REVIEW.md
+dibbla apps get myapp --json | jq '.security'
 dibbla apps get myapp --json | jq '.services[].name'
 ```
 
