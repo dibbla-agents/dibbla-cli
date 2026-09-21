@@ -740,7 +740,7 @@ Before calling `dibbla deploy`, you MUST review the application code and present
 
 Run these five checks and report each as BLOCKER or WARNING:
 
-1. **Security (OWASP Top 10)** — Hardcoded secrets, SQL/command injection, XSS, `.env` files in deploy dir are **BLOCKERs**. Missing CSRF, input validation, security headers are warnings.
+1. **Security (OWASP Top 10)** — Hardcoded secrets, SQL/command injection, XSS, `.env` files in deploy dir, broken access control/IDOR (A01), SSRF (A10) and weak app-managed login (A07: unsalted/fast hashes, non-expiring sessions) are **BLOCKERs**. Missing CSRF, input validation, security headers, vulnerable dependencies (A06: `npm audit`/`govulncheck`/`pip-audit`) and missing rate limiting on login/reset/OTP (A04) are warnings.
 2. **Database usage** — N+1 queries (query inside a loop) are **BLOCKERs**. Unbounded SELECTs, missing connection pooling, missing error handling are warnings.
 3. **REST/API calls** — Outbound HTTP calls without timeouts are **BLOCKERs**. Missing retry/backoff, excessive polling (<5s), hardcoded URLs are warnings.
 4. **External write safety** — Unbounded write loops to external systems are **BLOCKERs**. Missing rate limiting, missing idempotency, fire-and-forget writes are warnings.
