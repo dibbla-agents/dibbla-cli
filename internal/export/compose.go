@@ -52,7 +52,7 @@ func composeServices(m *Manifest, sourceManifest *manifest.Manifest) []composeSe
 		}
 	case len(m.App.Services) > 0:
 		for _, s := range m.App.Services {
-			cs := composeService{Name: s.Name, Port: s.Port, Public: s.IsPublic}
+			cs := composeService{Name: s.Name, Port: s.Port, Public: s.IsPublic || m.singlePublicService()}
 			if s.IsBuilt || s.Image == "" {
 				cs.BuildContext = "./source"
 			} else {

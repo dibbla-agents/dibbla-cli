@@ -552,7 +552,7 @@ func generatedManifest(m *Manifest) string {
 		if s.Port != nil {
 			fmt.Fprintf(&b, "    port: %d\n", *s.Port)
 		}
-		if s.IsPublic {
+		if s.IsPublic || m.singlePublicService() {
 			b.WriteString("    public: true\n")
 		}
 		if s.Replicas > 0 {
@@ -560,6 +560,14 @@ func generatedManifest(m *Manifest) string {
 		}
 	}
 	return b.String()
+}
+
+// singlePublicService is true for a legacy single-container app: the server
+// reports its one service with is_public=false because the flag belongs to
+// the manifest path, yet the app has a public URL. The export treats that
+// service as the public one so the compose sketch publishes a port.
+func (m *Manifest) singlePublicService() bool {
+	return len(m.App.Services) == 1 && m.App.URL != ""
 }
 
 func isNotConfigured(err error) bool {

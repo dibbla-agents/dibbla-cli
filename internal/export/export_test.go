@@ -297,6 +297,35 @@ func TestRun_NoVersionControlGeneratesManifest(t *testing.T) {
 	}
 }
 
+func TestRun_LegacySingleServiceIsPublished(t *testing.T) {
+	// A legacy single-container app: the server reports one service "app"
+	// with is_public=false, yet the app has a public URL — the compose
+	// sketch must still publish it.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/deploy/deployments/legacy", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"alias":"legacy","url":"https://legacy.example","port":80,"services":[{"name":"app","image":"reg/legacy:1","port":80,"is_public":false,"is_built":true,"replicas":1}]}`)
+	})
+	mux.HandleFunc("GET /api/deploy/deployments/legacy/vcs/info", func(w http.ResponseWriter, r *http.Request) { http.Error(w, `{}`, 404) })
+	mux.HandleFunc("GET /api/deploy/deployments/legacy/env", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"deployment_alias":"legacy","variables":[]}`)
+	})
+	mux.HandleFunc("GET /api/deploy/secrets", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"secrets":[]}`) })
+	mux.HandleFunc("GET /api/deploy/databases/info", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"databases":[]}`) })
+	mux.HandleFunc("GET /api/deploy/buckets/info", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"buckets":[]}`) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "x")
+	if _, err := Run(Options{APIURL: srv.URL, APIToken: "tok", Alias: "legacy", OutDir: out}); err != nil {
+		t.Fatal(err)
+	}
+	if compose := read(t, filepath.Join(out, "docker-compose.yml")); !strings.Contains(compose, "    ports:\n      - \"8080:80\"\n") {
+		t.Errorf("compose should publish the sole service:\n%s", compose)
+	}
+	if manifest := read(t, filepath.Join(out, "dibbla.yaml")); !strings.Contains(manifest, "    public: true\n") {
+		t.Errorf("generated manifest should mark the sole service public:\n%s", manifest)
+	}
+}
+
 func TestRun_RefusesNonEmptyOutDir(t *testing.T) {
 	srv := fakeAPI(t, true)
 	out := t.TempDir()
