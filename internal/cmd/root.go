@@ -82,6 +82,7 @@ func init() {
 	contextcmd.Register(rootCmd)
 	rootCmd.AddCommand(feedbackCmd)
 	deploycmd.Register(rootCmd)
+	deploycmd.SetVersion(Version)
 	wf.Register(rootCmd)
 	run.Register(rootCmd)
 	logs.Register(rootCmd)

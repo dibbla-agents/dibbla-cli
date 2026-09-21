@@ -566,6 +566,24 @@ Connect a local folder to the Dibbla-managed git repo of a deployed app. Every `
 
 ---
 
+## export
+
+Take everything an app keeps on Dibbla with you, in formats other tools read. One directory, no lock-in: a git repository, pg_dump archives, plain files per bucket object, dotenv files, the app's own `dibbla.yaml`, and a docker compose sketch that runs them together. This is the Data Act exit path (`dibbla-docs` → "Moving away from Dibbla"); it is also a fine offline backup.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla export <alias> [--out <dir>] [--include-secrets] [--yes]` |
+| **Flags** | `--out`, `-o` — destination (default `./<alias>-export`); must not exist or be empty — nothing is ever overwritten. `--include-secrets` — write secret values in plaintext into the env files; asks `Write secret values in plain text into the export?` (default **no**). `--yes`, `-y` — answer that question for scripts; without it on a non-TTY the command refuses with exit 5 before writing anything. |
+| **Layout** | `source/` — git clone of the app's Dibbla repo (every deploy is a commit; latest SHA in the summary). `dibbla.yaml` — copied from the source when it has one, else generated from the deployed configuration (`dibbla-export.json` says which). `databases/<name>.dump` — one pg_dump custom archive per managed database bound to this app (`pg_restore`). `buckets/<name>/` — every object of each bucket bound to this app, the key as the relative path. `env/app.env` — the environment the container sees, resolved global < app; `env/<service>.env` — per-service entries where a service has its own. `docker-compose.yml` + `compose/restore-databases.sh` — the local run. `README.md` — what is here, how to start it, how to move each piece elsewhere. `dibbla-export.json` — machine-readable inventory (format `dibbla-export/v1`): every file, size, commit, variable **names** and sources, warnings. |
+| **Env files** | Inline variables (from `dibbla.yaml` / `-e`) keep their values. Secret values are blank lines `NAME=` with a comment naming the scope, unless `--include-secrets`. Platform-generated values (`DATABASE_URL_*`, `STORAGE_*`, `DIBBLA_*`) are written as comments — they point at Dibbla; the compose file sets local replacements (`postgres://postgres:postgres@postgres:5432/<db>?sslmode=disable`, `http://minio:9000` with `minioadmin`/`minioadmin`, `DIBBLA_SVC_<NAME>_HOST/PORT/URL` as compose DNS). |
+| **Behavior** | Requires a token and `git` on `PATH`. 1. `GET /deployments/<alias>` (404 → exit 4, "check `dibbla apps list`"). 2. Source via `/vcs/info` and the credential helper; no version control → recorded as `source_unavailable`, not an error. 3. `GET /databases/info` and `GET /buckets/info`, filtered on `deployment_alias`; dumps via `GET /databases/<name>/dump`, objects via `GET /buckets/<name>/objects` (paginated) and `…/objects/<key>`. 4. `GET /deployments/<alias>/env` (needs the deploy roles, like `env pull`). A key that cannot be a file path (`..` segments) is skipped and named in `skipped_keys` and the README. On any failure the partial directory is left for inspection and named on stderr. |
+| **Run it** | `cd <dir> && docker compose up --build`. Postgres (`pgvector/pgvector:pg17`, since Dibbla databases carry the vector extension) restores every dump on the first start of the `pgdata` volume; `minio-seed` mirrors `buckets/` on every start; public services are published from `localhost:8080` upwards in name order. Not there: login and `X-User-*` headers, custom domains/TLS, scheduled jobs. |
+| **Output** | `📦 Exporting <alias> → <dir>`, a line per database/bucket/env file, then `✅ Exported <alias> to <abs dir>` with `source: source (<sha>)` (or `not exported — <reason>`), counts, whether secret values are on disk, warnings, and the compose one-liner. Exit 0. |
+| **Errors** | Invalid alias → exit 5. `<dir> exists and is not empty` → exit 1 (pick another `--out`). `--include-secrets` declined → `Cancelled: nothing exported.` exit 5; on a non-TTY without `--yes` → exit 5 with the hint. Transport errors follow the ladder (401 → 3, 403 → 4 with the org named, 404 → 4). |
+| **When to use** | The user is leaving Dibbla, wants to run the app somewhere else, or wants a complete offline copy including data. For code alone, `dibbla clone`; for the environment alone, `dibbla env pull`; for one database, `dibbla db dump`. Never run it "to have a look" at a database — `apps get`, `db list` and the console answer questions without moving the customer's data around. |
+
+---
+
 ## manifest
 
 Local-only schema validation for `dibbla.yaml`. No server roundtrip; useful in CI, pre-commit hooks, and editor integrations.
