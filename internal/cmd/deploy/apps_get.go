@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -14,38 +15,51 @@ import (
 )
 
 var appsGetCmd = &cobra.Command{
-	Use:   "get <alias>",
-	Short: "Show one deployed application",
+	Use:     "get <alias>",
+	Aliases: []string{"card"},
+	Short:   "Show one deployed application (its card)",
 	Long: `Show the deployment record for one app: URL, status, the git commit it
-runs, replicas, size, health check, login policy and — for multi-service
-deployments — the per-service breakdown.
+runs, replicas, size, health check, login policy, the security section —
+guardrails review and which version it applies to, the build-time scan and
+when its findings last changed, the maintenance agent and whether anything
+changed since it last ran, proposals waiting — and, for multi-service
+deployments, the per-service breakdown.
+
+` + "`dibbla apps card <alias>`" + ` is the same command: the app as the console and
+the connector's app card show it.
 
 Referenced by ` + "`dibbla logs --pod-stream`" + ` errors as the way to check
 an app's services without the console.
 
 Examples:
   dibbla apps get myapp
+  dibbla apps card myapp
+  dibbla apps get myapp --review        # print the deployed REVIEW.md
   dibbla apps get myapp --json | jq .`,
 	Args: cobra.ExactArgs(1),
 	Run:  runAppsGet,
 }
 
-var appsGetJSON bool
+var (
+	appsGetJSON   bool
+	appsGetReview bool
+)
 
 func init() {
 	appsGetCmd.Flags().BoolVar(&appsGetJSON, "json", false, "Print the raw API document")
+	appsGetCmd.Flags().BoolVar(&appsGetReview, "review", false, "Print the REVIEW.md the running app was deployed with, and nothing else")
 }
 
 func runAppsGet(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 	requireToken(cfg)
-	os.Exit(runAppsGetCore(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0], appsGetJSON))
+	os.Exit(runAppsGetCore(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0], appsGetJSON, appsGetReview))
 }
 
 // runAppsGetCore is the testable inner implementation of `apps get`.
 // Returns the exit code. Side effects: writes to the given writers and one
 // HTTP GET.
-func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, jsonOut bool) int {
+func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, jsonOut, reviewOut bool) int {
 	if !apps.AliasRe.MatchString(alias) {
 		fmt.Fprintf(stderr, "%s alias %q does not match %s\n",
 			platform.Icon("❌", "[X]"), alias, apps.AliasRe.String())
@@ -61,6 +75,15 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 		// Emit the server document verbatim — the machine contract mirrors
 		// the API rather than a CLI-shaped subset of it.
 		fmt.Fprintln(stdout, string(raw))
+		return 0
+	}
+	if reviewOut {
+		// The REVIEW.md as deployed — the "link to REVIEW.md" of the card.
+		if dep.ReviewBody == "" {
+			fmt.Fprintf(stderr, "%s %s was deployed without a REVIEW.md\n", platform.Icon("❌", "[X]"), alias)
+			return 1
+		}
+		fmt.Fprintln(stdout, dep.ReviewBody)
 		return 0
 	}
 
@@ -93,6 +116,7 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 	if dep.Error != "" {
 		fmt.Fprintf(stdout, "   Error:    %s\n", dep.Error)
 	}
+	printSecurity(stdout, alias, dep)
 	if len(dep.Services) > 0 {
 		fmt.Fprintln(stdout)
 		fmt.Fprintf(stdout, "   Services (%d):\n", len(dep.Services))
@@ -131,6 +155,145 @@ func printMainBehind(stdout io.Writer, apiURL, apiToken, alias, running string) 
 		fmt.Fprintf(stdout, "             the deploy of main was cancelled; push a new commit or run `dibbla deploy --update`\n")
 	default:
 		fmt.Fprintf(stdout, "             the deploy of main is %s: dibbla deploy status %s --follow\n", info.MainDeploy.Phase, info.MainDeploy.OperationID)
+	}
+}
+
+// printSecurity is the card's security section (DIB-965): review, scan,
+// agent — each with WHEN and FOR WHICH VERSION, because "Ok" without a
+// version is what the old review dot said. Nothing is printed for a server
+// that predates the section (nil), so an old server does not read as an
+// app with no review.
+func printSecurity(stdout io.Writer, alias string, dep *apps.Deployment) {
+	sec := dep.Security
+	if sec == nil {
+		return
+	}
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "   Security:")
+	if r := sec.Review; r != nil {
+		switch {
+		case !r.Present:
+			fmt.Fprintf(stdout, "     Review:  %s none — no REVIEW.md was deployed\n", platform.Icon("❌", "[X]"))
+		default:
+			line := reviewWord(r.Status)
+			if r.CommitSHA != "" {
+				line += " — for version " + shortSHA(r.CommitSHA)
+			}
+			if r.ReviewedAt != nil {
+				line += ", written " + r.ReviewedAt.Local().Format("2006-01-02 15:04")
+			}
+			fmt.Fprintf(stdout, "     Review:  %s\n", line)
+			if r.Summary != "" {
+				fmt.Fprintf(stdout, "              %s\n", r.Summary)
+			}
+			if r.CodeChangedSince {
+				fmt.Fprintf(stdout, "              %s the running version (%s) is newer than the review\n", platform.Icon("⚠️", "[!]"), shortSHA(dep.CommitSHA))
+			}
+			if dep.ReviewBody != "" {
+				fmt.Fprintf(stdout, "              REVIEW.md: dibbla apps get %s --review\n", alias)
+			}
+		}
+	}
+	if s := sec.Scan; s != nil {
+		fmt.Fprintf(stdout, "     Scan:    %s\n", scanLine(s))
+		if s.Status != "running" && s.Status != "failed" {
+			if s.FindingsChangedAt != nil {
+				fmt.Fprintf(stdout, "              findings last changed %s\n", s.FindingsChangedAt.Local().Format("2006-01-02 15:04"))
+			}
+			if at := s.CompletedAt; at != nil {
+				fmt.Fprintf(stdout, "              scanned %s (%d image(s), %d packages)\n", at.Local().Format("2006-01-02 15:04"), s.Images, s.Packages)
+			}
+		}
+		if len(s.Errors) > 0 {
+			fmt.Fprintf(stdout, "              %d part(s) of the scan did not run\n", len(s.Errors))
+		}
+	} else {
+		fmt.Fprintf(stdout, "     Scan:    this version has not been scanned\n")
+	}
+	if m := sec.Maintenance; m != nil {
+		fmt.Fprintf(stdout, "     Agent:   %s\n", agentLine(m))
+		if m.LastRunAt != nil {
+			fmt.Fprintf(stdout, "              last run %s", m.LastRunAt.Local().Format("2006-01-02 15:04"))
+			if m.LastRunCode != "" {
+				fmt.Fprintf(stdout, " (%s)", m.LastRunCode)
+			}
+			fmt.Fprintln(stdout)
+		}
+		if m.PendingProposals > 0 {
+			fmt.Fprintf(stdout, "              %d proposal(s) waiting for a decision: dibbla apps proposals list %s\n", m.PendingProposals, alias)
+		}
+	}
+}
+
+func reviewWord(status string) string {
+	switch status {
+	case "Ok":
+		return platform.Icon("✅", "[OK]") + " OK"
+	case "Warnings":
+		return platform.Icon("⚠️", "[!]") + " warnings"
+	case "Critical":
+		return platform.Icon("❌", "[X]") + " blockers found"
+	default:
+		return "present"
+	}
+}
+
+// scanLine is the tally in words: secrets first (a leaked key is never
+// "just" a CVE), then the worst severities; medium and below are counted
+// but never alarm on their own.
+func scanLine(s *apps.SecurityScan) string {
+	switch s.Status {
+	case "running":
+		return "running…"
+	case "failed":
+		return "could not run"
+	}
+	v := s.Vulnerabilities
+	var parts []string
+	if s.Secrets > 0 {
+		parts = append(parts, fmt.Sprintf("%d leaked secret(s)", s.Secrets))
+	}
+	if v.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", v.Critical))
+	}
+	if v.High > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", v.High))
+	}
+	if v.Medium > 0 {
+		parts = append(parts, fmt.Sprintf("%d medium", v.Medium))
+	}
+	if v.Low > 0 {
+		parts = append(parts, fmt.Sprintf("%d low", v.Low))
+	}
+	if rest := v.Negligible + v.Unknown; rest > 0 {
+		parts = append(parts, fmt.Sprintf("%d other", rest))
+	}
+	if len(parts) == 0 {
+		if s.Status == "partial" {
+			return platform.Icon("✅", "[OK]") + " clean (partial scan)"
+		}
+		return platform.Icon("✅", "[OK]") + " clean"
+	}
+	icon := platform.Icon("⚠️", "[!]")
+	if s.Secrets > 0 || v.Critical > 0 || v.High > 0 {
+		icon = platform.Icon("❌", "[X]")
+	}
+	return icon + " " + strings.Join(parts, " · ")
+}
+
+// agentLine reads a quiet agent as quiet on purpose, not as absent.
+func agentLine(m *apps.SecurityMaintenance) string {
+	switch {
+	case !m.Configured:
+		return "not set up for this organization"
+	case !m.Enabled:
+		return "off for this app"
+	case m.LastRunAt == nil:
+		return "on — has not run for this app yet"
+	case m.ChangedSinceLastRun:
+		return "on — something changed since it last looked"
+	default:
+		return "on — nothing has changed since it last looked"
 	}
 }
 
