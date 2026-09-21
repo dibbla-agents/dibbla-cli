@@ -4,7 +4,7 @@ Before calling `dibbla deploy`, you **MUST** complete every check below that app
 
 Most checks are mandatory on every deploy. The exceptions are the three that state their own trigger in their heading line — read each check's opening sentence rather than a list here, because a list here is a second inventory that can disagree with the file. Today those three are Check 6 (running task files from URLs), Check 7 (a `dibbla.yaml` at the deploy root) and Check 9 (that manifest setting `support.enabled: true`). Check 5 (personal data) is mandatory even when the app holds none — the report then says so in one line.
 
-> **Enforced by the CLI.** `dibbla deploy` refuses to upload when `REVIEW.md` is missing at the deploy root, when no user handbook (`docs/index.md` or `APP.md`) is present, or when that handbook's `subtitle:` frontmatter is missing, empty, still a placeholder (`TBD`/`TODO`/`{{…}}`/`<one short…>`), or over the 140-byte hard cap. The only way past the gate is `--skip-review`, which is reserved for humans making one-line fixes — agents must run this checklist and write `REVIEW.md` (see Step 3.5) rather than passing the flag.
+> **Enforced by the platform, on every deploy path.** `dibbla deploy` refuses to upload when `REVIEW.md` is missing at the deploy root, when no user handbook (`docs/index.md` or `APP.md`) is present, or when that handbook's `subtitle:` frontmatter is missing, empty, still a placeholder (`TBD`/`TODO`/`{{…}}`/`<one short…>`), or over the 140-byte hard cap. The server applies the same gate to the extracted source of **every** deploy — a `git push` to `main` of a linked folder, `platform_deployment_start` over MCP, a linked GitHub repository — and answers `REVIEW_INCOMPLETE` with the same message and hints, so a deploy that never touches the CLI is gated too. The only way past the gate is `dibbla deploy --skip-review` on an archive deploy, which is reserved for humans making one-line fixes — agents must run this checklist and write `REVIEW.md` (see Step 3.5) rather than passing the flag. A push has no flag: the commit itself must carry `REVIEW.md` and the handbook.
 
 ---
 
@@ -166,7 +166,7 @@ Mandatory for every deploy. The platform renders a user-facing handbook inside `
 
 | What to check | Severity | Examples |
 |----------------|----------|----------|
-| At least one of `docs/index.md` or `APP.md` exists at the project root | BLOCKER | Neither file present at the deploy root. The platform will accept the deploy, but the user-facing handbook will be empty — refuse to deploy until the user agrees to ship documentation. |
+| At least one of `docs/index.md` or `APP.md` exists at the project root | BLOCKER | Neither file present at the deploy root. The platform refuses the deploy (`REVIEW_INCOMPLETE`) on every path — refuse to deploy until the user agrees to ship documentation. |
 | When `docs/` exists, `docs/index.md` is present | BLOCKER | A `docs/` folder with no `index.md` — the deploy will fail with a clear error. Generate the landing page from the template in [user-docs.md](user-docs.md). |
 | The landing page (`docs/index.md` or `APP.md`) has a `subtitle:` frontmatter, and it is end-user-facing | BLOCKER | Missing frontmatter, or `subtitle:` absent, or the value still contains placeholders (`TBD`, `TODO`, `<one short…>`, `{{app_name}}`), or it leaks technical detail (framework names, "deployed via X", "Node.js", env-var names). The card on the My Apps grid relies on this single line — without it, end users see "Deployed application" as the blurb. Write a real subtitle following the rules in [user-docs.md](user-docs.md). |
 | Subtitle is ≤ 140 bytes (target ≤ 70 chars), one sentence, plain text | BLOCKER | The bundler rejects subtitles over 140 bytes. The auth-ui My Apps card is ~180px wide and CSS-clamps to two lines, so anything past ~70 English chars gets visually clipped. Trim until it fits one tight sentence — start with a verb ("Track…", "Send…", "Manage…"), drop filler like "This is an app for…". No emoji, no markdown, no multi-line. |
@@ -295,7 +295,7 @@ One-Sentence-Summary: "<brief summary of findings>"
 - `Warnings` — no blockers found, but warnings are present (user chose to proceed)
 - `Critical` — blockers were found and fixed before deploying
 
-Always write this file, even when all checks pass. The platform shows a red indicator when REVIEW.md is missing, **and `dibbla deploy` will refuse to upload without it.**
+Always write this file, even when all checks pass. The platform shows a red indicator when REVIEW.md is missing, **and every deploy — `dibbla deploy`, `git push`, MCP — is refused without it (`REVIEW_INCOMPLETE`).**
 
 ### Step 4: Deploy only after confirmation
 

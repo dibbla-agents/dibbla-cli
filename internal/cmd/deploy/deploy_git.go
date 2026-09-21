@@ -88,6 +88,15 @@ func checkGitModeFlags(cmd *cobra.Command, stderr io.Writer, app string) bool {
 		fmt.Fprintln(stderr, "  hint: change runtime settings with `dibbla apps update`, or put them in dibbla.yaml and commit.")
 		return false
 	}
+	// The platform gates every deploy on REVIEW.md and the handbook
+	// (DIB-966). An archive deploy carries --skip-review to the server; a
+	// push carries only the commit, so the flag would skip the local check
+	// and then fail on the server's — say so before pushing.
+	if cmd.Flags().Changed("skip-review") {
+		fmt.Fprintf(stderr, "%s --skip-review cannot be set on a deploy from a linked folder: the platform gates a push on the commit itself.\n", bad)
+		fmt.Fprintln(stderr, "  hint: commit REVIEW.md and the user handbook (docs/index.md or APP.md) and deploy again.")
+		return false
+	}
 	return true
 }
 
