@@ -209,7 +209,7 @@ The deploy-api runs a quota check on the resolved set BEFORE building anything. 
 
 - [manifest.md](manifest.md) — schema, env-aware fields, profiles, init, healthcheck, cron, build secrets, custom domains, **stateful services + TCP routes (§ 10.5)**.
 - [examples.md](examples.md) — runnable transcripts for each pattern.
-- [guardrails.md](guardrails.md) Check 6 — pre-deploy multi-service safety.
+- [guardrails.md](guardrails.md) Check 7 — pre-deploy multi-service safety.
 
 ---
 

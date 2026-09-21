@@ -1338,4 +1338,4 @@ with `APPLICATION_CHECKS_DISABLED`.
 - [reference.md](reference.md) — exhaustive flag tables for `dibbla manifest validate`, `dibbla preview`, the new `--target-env` / `--profile` / `--no-public` flags on `deploy`, and the per-service `--service` flag on `apps restart` / `logs` / `secrets`.
 - [examples.md](examples.md) — runnable bash transcripts for each multi-service pattern (init container, healthcheck, custom domain, cron, build secret, etc.).
 - [platform.md § 8.5](platform.md) — runtime contract under multi-service: discovery env vars, NetworkPolicy, public URL shape, what does and doesn't work compared to the single-Dockerfile path.
-- [guardrails.md](guardrails.md) Check 6 — pre-deploy multi-service safety (quota fit, no `depends_on:` cycles, init exit, healthcheck thresholds, build-secret existence, multi-public confirmation).
+- [guardrails.md](guardrails.md) Check 7 — pre-deploy multi-service safety (quota fit, no `depends_on:` cycles, init exit, healthcheck thresholds, build-secret existence, multi-public confirmation).
