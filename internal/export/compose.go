@@ -215,7 +215,7 @@ func composeFile(m *Manifest, env envFileSet, services []composeService) string 
 	}
 	if len(m.Buckets) > 0 {
 		b.WriteString(`  minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -231,7 +231,7 @@ func composeFile(m *Manifest, env envFileSet, services []composeService) string 
       timeout: 3s
       retries: 20
   minio-seed:
-    image: minio/mc
+    image: quay.io/minio/mc
     depends_on:
       minio:
         condition: service_healthy
