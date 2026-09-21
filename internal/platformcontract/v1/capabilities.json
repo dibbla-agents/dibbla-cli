@@ -532,16 +532,12 @@
     },
     {
       "id": "platform.secrets.set",
-      "title": "Set or rotate a secret",
-      "state": "remote-write",
-      "scopes": [
-        "platform:secrets:write"
-      ],
-      "auth": "oauth",
-      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. A secret value is never returned by any tool. A set on an existing name rotates it; routine write with an idempotency key. DIB-704 merged setting and deleting a secret into platform_secret_write; action=set is this row.",
-      "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_write",
-      "production": "live",
+      "title": "Set or rotate a secret from the terminal",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Takes the value as an argument or from stdin on the caller’s machine. Since DIB-928 the connector has no input path for a secret value at all: platform_secret_write action=set is gone from the schema, and a call that still carries a value or action=set is refused server-side with UNSUPPORTED before the arguments are decoded — nothing stored, echoed or logged — with the request flow named in the answer. A value in a tool argument has been read by the model and kept by the client before it reaches Dibbla, which is what OpenAI’s directory guidelines forbid and what platform.secrets.request exists to avoid. The remote counterpart of this row is therefore platform.secrets.request (the person enters the value on a signed-in Dibbla page) followed by platform.secrets.request_status; a rotation is the same request on an existing name. Until DIB-928 this row was remote-write via action=set (DIB-538, DIB-704).",
+      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:186; app-hosting-service/mcp-server/platform_secrets.go (secretWriteGate); app-hosting-service/deploy-api/internal/handler/secrets/create.go (delegated_agent refused)",
       "cli_commands": [
         "secrets set"
       ]
@@ -554,13 +550,37 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion. DIB-704 merged setting and deleting a secret into platform_secret_write; action=delete is this row.",
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion. DIB-704 merged setting and deleting a secret into platform_secret_write; action=delete is this row. Since DIB-928 the tool’s actions are request, status and delete.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_secret_write",
       "production": "live",
       "cli_commands": [
         "secrets delete"
       ]
+    },
+    {
+      "id": "platform.secrets.request",
+      "title": "Ask the person to enter a secret's value on a secure Dibbla page",
+      "state": "remote-write",
+      "scopes": [
+        "platform:secrets:write"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-927 as platform_secret_write action=request(name, title, explanation, alias, service, idempotency_key), and since DIB-928 THE way a secret value reaches the platform from a connector: the value never passes through the conversation because no tool takes one (platform.secrets.set is local-only). title and explanation (DIB-928, required, 80 and 600 bytes, plain text) are the agent’s words for the person — what the secret is, why the app needs it and where to find it — shown as the page’s heading and paragraph so a non-technical person understands what they are asked for; the technical name is shown beneath them. It answers a time-limited https link on the console (/connector/secrets/<request_id>, 15 minutes) and a request_id, and never a value; the tool refuses a value argument on this action. The link is not a bearer capability: deploy-api answers the page only to a signed-in console session of the user this grant acts for, in this organization, holding a role that may write secrets at that moment, and it stores the value only while THIS grant is still live (auth-service's grant validation, live, fail-closed). Another user, another organization or a stranger with the link sees an absence. The page shows the fixed target — organization, application, service, secret name, whether an existing value is replaced — plus the title and explanation as text (never markup), and nothing on it can retarget the write; the value travels once, browser to deploy-api, into the same secrets store the console and the CLI write to, and is not logged, echoed or kept anywhere else. Saving is single-use: pending → saving → completed is atomic, a second save is refused without a rotation, and a store failure returns the request to pending rather than reporting it done. No service is restarted by the save. Routine write under the idempotency ledger. There is no CLI command: a person with a shell sets the value with secrets set directly (platform.secrets.set, local-only), which is the local half this row replaces for an agent.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secret_write"
+    },
+    {
+      "id": "platform.secrets.request_status",
+      "title": "Check whether a requested secret has been entered",
+      "state": "remote-write",
+      "scopes": [
+        "platform:secrets:write"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-927 as platform_secret_write action=status(request_id). Answers pending, completed, expired or cancelled with the target's metadata and timestamps, and nothing about the value; a pending answer repeats the link, a finished one does not. The request is answered only to the identical delegated binding that created it — organization, user, client and grant — so another grant's status read is an absence. A completed answer means the value is stored under the requested name and scope and the agent continues as if it had set it. A pre-existing secret of the same name never makes a pending, expired or cancelled request read as completed; an expired one is replaced through a new action=request. Classified remote-write rather than remote-read because it sits under the write scope on the write tool: the request it reads about is the write's own receipt, and a read-only grant is meant to see neither.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secret_write"
     },
     {
       "id": "platform.databases.list",
@@ -1030,7 +1050,7 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Reads a .env-style file from the caller’s filesystem. The values it sets are reachable remotely one at a time through platform.secrets.set; the file walk is what cannot travel.",
+      "reason": "Reads a .env-style file from the caller’s filesystem. Since DIB-928 there is no remote path for the values either: each secret goes in through platform.secrets.request, one page per secret, entered by the person. The file walk and the values both stay local.",
       "source": "dibbla-cli/internal/cmd/deploy/secrets.go:288",
       "cli_commands": [
         "secrets import"
@@ -1058,6 +1078,18 @@
       "source": "dibbla-cli/internal/cmd/clone.go:55",
       "cli_commands": [
         "clone"
+      ]
+    },
+    {
+      "id": "cli.export",
+      "title": "Export an app — source, databases, buckets, environment, manifest — to the caller’s disk",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Writes an export directory on the caller’s filesystem — a git working copy made with the caller’s git binary, pg_dump archives, one file per bucket object, dotenv files and a docker compose sketch — and, with --include-secrets, secret values in plaintext after a confirmation on the caller’s terminal. The bytes it moves are the customer’s data leaving the platform (EU Data Act ch. VI, DIB-979), which has no place in a model’s context window. Each piece read remotely is its own row: platform.files.get for the source, platform.databases.rows.query for data, platform.storage.list for buckets.",
+      "source": "dibbla-cli/internal/cmd/deploy/export.go, dibbla-cli/internal/export/export.go",
+      "cli_commands": [
+        "export"
       ]
     },
     {

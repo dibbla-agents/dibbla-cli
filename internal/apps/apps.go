@@ -38,6 +38,7 @@ type Deployment struct {
 	// rendered by `apps get`. They stay optional so the update response (which
 	// carries fewer fields) parses into the same struct.
 	Replicas      *int                `json:"replicas,omitempty"`
+	Port          *int                `json:"port,omitempty"`
 	CPU           string              `json:"cpu,omitempty"`
 	Memory        string              `json:"memory,omitempty"`
 	Description   string              `json:"description,omitempty"`

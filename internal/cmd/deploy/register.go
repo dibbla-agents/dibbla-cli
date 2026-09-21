@@ -20,7 +20,12 @@ func Register(root *cobra.Command) {
 	root.AddCommand(secretsCmd)
 	root.AddCommand(envCmd)
 	root.AddCommand(domainsCmd)
+	root.AddCommand(exportCmd)
 }
+
+// SetVersion stamps the CLI version into exports. Called from root so the
+// ldflags value reaches this package without an import cycle.
+func SetVersion(v string) { exportVersion = v }
 
 func requireToken(cfg *config.Config) {
 	if !cfg.HasToken() {

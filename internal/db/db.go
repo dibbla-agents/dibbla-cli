@@ -269,3 +269,49 @@ func DumpDatabase(apiURL, apiToken, name string, out io.Writer) error {
 	_, err = io.Copy(out, resp.Body)
 	return err
 }
+
+// DatabaseInfo is one entry of GET /databases/info: the richer listing with
+// size and, since DIB-979, the app the database was provisioned for.
+type DatabaseInfo struct {
+	Name            string `json:"name"`
+	DeploymentAlias string `json:"deployment_alias,omitempty"`
+	DisplayName     string `json:"display_name,omitempty"`
+	Description     string `json:"description,omitempty"`
+	SizeBytes       int64  `json:"size_bytes"`
+	TableCount      *int   `json:"table_count"`
+}
+
+// DatabasesInfoResponse is the response for GET /databases/info.
+type DatabasesInfoResponse struct {
+	Databases []DatabaseInfo `json:"databases"`
+}
+
+// ListDatabasesInfo returns the org's databases with size and deployment alias.
+func ListDatabasesInfo(apiURL, apiToken string) (*DatabasesInfoResponse, error) {
+	client := &http.Client{Timeout: requestTimeout}
+	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/databases/info"), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseError(body, resp.StatusCode)
+	}
+	var out DatabasesInfoResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &out, nil
+}
