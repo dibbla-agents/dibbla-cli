@@ -44,7 +44,10 @@ var (
 	// --skip-review bypasses the pre-deploy gate that requires REVIEW.md
 	// and a user handbook at the deploy root. Reserved for humans who
 	// know what they're doing; coding agents should run the guardrails
-	// workflow and emit REVIEW.md instead.
+	// workflow and emit REVIEW.md instead. The server applies the same
+	// gate to every deploy (DIB-966), so the flag is sent along with the
+	// archive; a linked folder deploys by git push, where nothing can
+	// carry it, and the pushed commit has to hold the artifacts itself.
 	deploySkipReview bool
 )
 
@@ -201,6 +204,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		TargetEnv:       deployTargetEnv,
 		Profiles:        deployProfiles,
 		NoPublic:        deployNoPublic,
+		SkipReview:      deploySkipReview,
 	}
 
 	os.Exit(runWithRenderer(opts, r))

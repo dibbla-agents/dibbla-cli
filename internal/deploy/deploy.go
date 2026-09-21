@@ -135,6 +135,13 @@ type Options struct {
 	TargetEnv string
 	Profiles  []string
 	NoPublic  bool
+
+	// SkipReview asks the server to bypass its pre-deploy review gate
+	// (REVIEW.md + handbook), the same gate the CLI checks locally before
+	// uploading. The server applies it to every deploy path (DIB-966), so
+	// --skip-review has to travel with the request or the upload would be
+	// refused by the check the flag was meant to skip.
+	SkipReview bool
 }
 
 // excludedPaths are paths that should not be included in the archive
@@ -602,6 +609,9 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 	}
 	if opts.NoPublic {
 		_ = writeField("no_public", "true")
+	}
+	if opts.SkipReview {
+		_ = writeField("skip_review", "true")
 	}
 
 	if err := writer.Close(); err != nil {
