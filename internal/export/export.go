@@ -304,7 +304,7 @@ func exportDatabases(opts Options, m *Manifest, logf func(string, ...any)) error
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) // readable by the postgres user in the compose container
 		if err != nil {
 			return err
 		}
