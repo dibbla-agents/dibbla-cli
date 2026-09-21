@@ -187,13 +187,16 @@ func TestRun_FullExport(t *testing.T) {
 
 	// Env: secrets blanked, inline kept, platform values commented out.
 	env := read(t, filepath.Join(out, "env", "app.env"))
-	for _, want := range []string{"\nAPI_KEY=\n", "\nGLOBAL_KEY=\n", "\nLOG_LEVEL=debug\n", "# DATABASE_URL_SHOPDB=", "# STORAGE_UPLOADS_BUCKET="} {
+	for _, want := range []string{"\nAPI_KEY=\n", "\nGLOBAL_KEY=\n", "\nLOG_LEVEL=debug\n", "# DATABASE_URL_SHOPDB=  (platform-generated", "# STORAGE_UPLOADS_BUCKET=  (platform-generated"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("env/app.env lacks %q:\n%s", want, env)
 		}
 	}
-	if strings.Contains(env, "s3cret") {
-		t.Errorf("secret value exported without --include-secrets:\n%s", env)
+	// A DATABASE_URL_* carries the role's password: it is a secret too.
+	for _, leak := range []string{"s3cret", "postgres://x@db.dibbla/shopdb"} {
+		if strings.Contains(env, leak) {
+			t.Errorf("value %q exported without --include-secrets:\n%s", leak, env)
+		}
 	}
 	worker := read(t, filepath.Join(out, "env", "worker.env"))
 	if !strings.Contains(worker, "\nWORKER_TOKEN=\n") || strings.Contains(worker, "API_KEY") {
@@ -258,6 +261,9 @@ func TestRun_IncludeSecretsWritesValues(t *testing.T) {
 	env := read(t, filepath.Join(out, "env", "app.env"))
 	if !strings.Contains(env, "\nAPI_KEY=s3cret\n") {
 		t.Errorf("value missing:\n%s", env)
+	}
+	if !strings.Contains(env, "# DATABASE_URL_SHOPDB=postgres://x@db.dibbla/shopdb\n") {
+		t.Errorf("platform value should be exported, commented out:\n%s", env)
 	}
 	if !strings.Contains(read(t, filepath.Join(out, "README.md")), "**are included**") {
 		t.Error("README should warn that secrets are included")

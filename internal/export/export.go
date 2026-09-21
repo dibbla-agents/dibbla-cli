@@ -437,7 +437,15 @@ func exportEnv(opts Options, app *apps.Deployment, m *Manifest, logf func(string
 			m.Env.Variables = append(m.Env.Variables, EnvVariable{Name: v.Name, Source: v.Source, Service: service, File: rel})
 			switch {
 			case isPlatformVar(v.Name) || v.Source == "platform":
-				b.WriteString("# " + envfile.FormatLine(v.Name, v.Value) + "\n")
+				// Platform values carry credentials (a DATABASE_URL_* has the
+				// role's password, STORAGE_*_SECRET_ACCESS_KEY is a key), so
+				// they follow the secrets rule — and stay commented out even
+				// when exported, because they point at Dibbla.
+				if opts.IncludeSecrets {
+					b.WriteString("# " + envfile.FormatLine(v.Name, v.Value) + "\n")
+				} else {
+					b.WriteString("# " + v.Name + "=  (platform-generated; value not exported)\n")
+				}
 			case v.Source == "inline":
 				b.WriteString(envfile.FormatLine(v.Name, v.Value) + "\n")
 			case opts.IncludeSecrets:
