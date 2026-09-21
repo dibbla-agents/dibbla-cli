@@ -505,6 +505,25 @@ A local run with that file talks to the app's real database and buckets. A new
 secret goes in with `dibbla secrets set` first, then its name into
 `.env.example`, then `dibbla env pull` again.
 
+### Export an App (leave Dibbla with everything)
+
+`dibbla export <alias>` writes everything the app keeps on Dibbla into one
+directory, in formats other tools read: the source as a git repository,
+`pg_dump` archives of its databases, one file per bucket object, dotenv files
+with the environment, the app's `dibbla.yaml`, and a `docker-compose.yml` that
+runs it all locally (Postgres restored from the dumps, MinIO seeded from the
+buckets). Read-only — the app keeps running.
+
+```bash
+dibbla export myapp                       # → ./myapp-export/
+dibbla export myapp --out /tmp/myapp      # elsewhere (must be empty or absent)
+dibbla export myapp --include-secrets     # with secret values, after confirming (-y for scripts)
+cd myapp-export && docker compose up --build
+```
+
+Secret values are blanked unless you pass `--include-secrets`, and
+`dibbla-export.json` is a machine-readable inventory of what was exported.
+
 ### Prompts
 
 | Prompt | Required | Default |

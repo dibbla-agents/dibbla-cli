@@ -287,9 +287,11 @@ Two implications:
 1. List IngressRouteTCP CRDs by `<base-domain>/app-name=<alias>` label, extract the SNI hostname from each spec, call `RemoveTCPRoute` (which deletes the DNS record), then delete the CRD.
 2. Call the legacy `RemoveRoute` (HTTP route DNS cleanup).
 3. Label-based delete of K8s objects: Ingresses, Services (both regular and headless), Deployments, StatefulSets, ConfigMaps, **PVCs**.
-4. Remove local project files.
+4. Remove local project files, the app's secrets, its git repository and its images in the registry.
 
 The PVC delete step is the destructive part. Tell users to back up first if the data matters.
+
+What `apps delete` does **not** remove: managed databases and buckets. They belong to the organization, not the app — a database created with `db create --deployment <alias>` survives the app's deletion and is reported in the command's output (`Database 'x' belongs to your organization and still exists — delete with dibbla db delete <name>`). Remove them with `dibbla db delete` / `dibbla storage delete`, or by deleting the organization, which removes everything it owns.
 
 ---
 
@@ -701,9 +703,11 @@ something on the caller's own machine that no remote call can reach:
 | `cli.run` | `run` | Executes commands on the caller's machine. |
 | `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`, which is `platform_deployment_preflight`). |
 | `cli.credentials.reveal` | `secrets get`, `env pull`, `storage credentials`, `db connect` | Returns credential material in plaintext — to the terminal, or as `.env.local` on the caller's disk. Keeping credentials out of a model's context window is an invariant, not a precaution. |
-| `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting one secret at a time *is* remote. |
+| `platform.secrets.set` | `secrets set` | Takes the value as an argument or on stdin on the caller's machine. Since DIB-928 no tool takes a secret value at all: remotely an agent asks the person to enter it on a signed-in Dibbla page (`platform.secrets.request`, `platform_secret_write` action=request) and polls `platform.secrets.request_status`. |
+| `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting a value remotely goes through the request page above, never through a tool argument. |
 | `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
 | `cli.clone` | `clone` | Writes a git working copy locally. Reading the same source remotely is `platform.files.get`. |
+| `cli.export` | `export` | Writes the whole app — source, database dumps, bucket objects, env files, compose sketch — to the caller's disk; with `--include-secrets`, secret values in plaintext after a terminal confirmation. The customer's data leaving the platform has no place in a model's context. |
 | `cli.scaffold` | `create go-worker`, `template install`, `skills install` | Materialises files in a directory on the caller's machine. |
 | `cli.login`, `cli.context`, `cli.org.select` | `login`, `logout`, `context …`, `org use/clear` | The OS keyring, a TTY, and local config. Remotely, who you are and which org you act as are fixed by the grant — a model-controlled context or org switch is forbidden outright. |
 | `cli.update` | `update`, `uninstall` | Replaces a binary on the caller's machine. |

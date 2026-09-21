@@ -38,6 +38,7 @@ type Deployment struct {
 	// rendered by `apps get`. They stay optional so the update response (which
 	// carries fewer fields) parses into the same struct.
 	Replicas      *int                `json:"replicas,omitempty"`
+	Port          *int                `json:"port,omitempty"`
 	CPU           string              `json:"cpu,omitempty"`
 	Memory        string              `json:"memory,omitempty"`
 	Description   string              `json:"description,omitempty"`
@@ -197,6 +198,45 @@ type ValidationError struct {
 type DeleteResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
+	// RetainedDatabases and RetainedBuckets name the databases and buckets
+	// that were scoped to the app (`--deployment <alias>`) and survive its
+	// deletion: they belong to the organization, not the app (DIB-959).
+	RetainedDatabases []string `json:"retained_databases,omitempty"`
+	RetainedBuckets   []string `json:"retained_buckets,omitempty"`
+}
+
+// RetainedResourcesNotice is what `apps delete` prints after the success
+// line when the app left databases or buckets behind — so "the app is gone"
+// is never read as "its data is". Empty when nothing was retained.
+func RetainedResourcesNotice(r *DeleteResponse) string {
+	if r == nil || (len(r.RetainedDatabases) == 0 && len(r.RetainedBuckets) == 0) {
+		return ""
+	}
+	var lines []string
+	if len(r.RetainedDatabases) > 0 {
+		lines = append(lines, retainedLine("Database", r.RetainedDatabases, "dibbla db delete <name>"))
+	}
+	if len(r.RetainedBuckets) > 0 {
+		lines = append(lines, retainedLine("Bucket", r.RetainedBuckets, "dibbla storage delete <name>"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func retainedLine(noun string, names []string, command string) string {
+	verb := "belongs to your organization and still exists"
+	if len(names) > 1 {
+		noun += "s"
+		verb = "belong to your organization and still exist"
+	}
+	return fmt.Sprintf("%s %s %s — delete with `%s`.", noun, quoteList(names), verb, command)
+}
+
+func quoteList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = "'" + n + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // UpdateDeploymentRequest is the request body for PUT /deployments/{alias}.

@@ -34,10 +34,27 @@ type BucketCreateResponse struct {
 
 // BucketUsage describes one bucket's usage vs quota.
 type BucketUsage struct {
-	Name       string `json:"name"`
-	SizeBytes  int64  `json:"size_bytes"`
-	Objects    int64  `json:"objects"`
-	QuotaBytes int64  `json:"quota_bytes"`
+	Name            string `json:"name"`
+	DeploymentAlias string `json:"deployment_alias,omitempty"`
+	SizeBytes       int64  `json:"size_bytes"`
+	Objects         int64  `json:"objects"`
+	QuotaBytes      int64  `json:"quota_bytes"`
+}
+
+// Object is one stored object as listed by GET /buckets/{name}/objects.
+type Object struct {
+	Key          string    `json:"key"`
+	SizeBytes    int64     `json:"size_bytes"`
+	ETag         string    `json:"etag,omitempty"`
+	LastModified time.Time `json:"last_modified"`
+}
+
+// ObjectsPage is one page of a bucket listing (DIB-979).
+type ObjectsPage struct {
+	Bucket         string   `json:"bucket"`
+	Objects        []Object `json:"objects"`
+	Truncated      bool     `json:"truncated"`
+	NextStartAfter string   `json:"next_start_after,omitempty"`
 }
 
 // BucketsInfoResponse is the response for bucket usage info.
@@ -234,4 +251,54 @@ func FormatBytes(n int64) string {
 	default:
 		return fmt.Sprintf("%dB", n)
 	}
+}
+
+// ListObjects returns one page of the bucket's objects, recursively, lexically
+// after startAfter. Follow Truncated/NextStartAfter for the rest.
+func ListObjects(apiURL, apiToken, name, prefix, startAfter string, max int) (*ObjectsPage, error) {
+	q := url.Values{}
+	if prefix != "" {
+		q.Set("prefix", prefix)
+	}
+	if startAfter != "" {
+		q.Set("start_after", startAfter)
+	}
+	if max > 0 {
+		q.Set("max", fmt.Sprint(max))
+	}
+	u := makeAPIURL(apiURL, "/api/deploy/buckets/"+url.PathEscape(name)+"/objects")
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	var out ObjectsPage
+	if err := doJSON("GET", u, apiToken, nil, http.StatusOK, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DownloadObject streams one object into w. Caller owns w.
+func DownloadObject(apiURL, apiToken, name, key string, w io.Writer) (int64, error) {
+	// Keys may contain "/" — escape each segment so the path stays a path.
+	segs := strings.Split(key, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	u := makeAPIURL(apiURL, "/api/deploy/buckets/"+url.PathEscape(name)+"/objects/"+strings.Join(segs, "/"))
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	client := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to make API request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, parseError(body, resp.StatusCode)
+	}
+	return io.Copy(w, resp.Body)
 }
