@@ -217,7 +217,7 @@ func TestRun_FullExport(t *testing.T) {
 		"STORAGE_UPLOADS_BUCKET: uploads",
 		"DIBBLA_SVC_WEB_URL: http://web:3000",
 		"      - env/worker.env\n",
-		"  postgres:\n    image: postgres:17-alpine",
+		"    image: pgvector/pgvector:pg17\n",
 		"mc mirror --overwrite /seed/uploads local/uploads",
 		"      - \"8080:3000\"\n",
 	} {
@@ -226,7 +226,7 @@ func TestRun_FullExport(t *testing.T) {
 		}
 	}
 	restore := read(t, filepath.Join(out, "compose", "restore-databases.sh"))
-	if !strings.Contains(restore, `pg_restore -U postgres --no-owner --no-privileges -d "shopdb" /dumps/shopdb.dump`) {
+	if !strings.Contains(restore, `pg_restore -U postgres --no-owner --no-privileges -d "shopdb" /dumps/shopdb.dump || echo`) {
 		t.Errorf("restore script:\n%s", restore)
 	}
 

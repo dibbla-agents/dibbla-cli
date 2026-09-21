@@ -197,7 +197,9 @@ func composeFile(m *Manifest, env envFileSet, services []composeService) string 
 
 	if len(m.Databases) > 0 {
 		b.WriteString(`  postgres:
-    image: postgres:17-alpine
+    # pgvector's image is stock Postgres plus the vector extension, which
+    # Dibbla databases carry and a dump therefore restores.
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
@@ -268,7 +270,10 @@ func restoreScript(m *Manifest) string {
 	for _, d := range m.Databases {
 		fmt.Fprintf(&b, "echo \"restoring %s from /dumps/%s.dump\"\n", d.Name, d.Name)
 		fmt.Fprintf(&b, "createdb -U postgres %q\n", d.Name)
-		fmt.Fprintf(&b, "pg_restore -U postgres --no-owner --no-privileges -d %q /dumps/%s.dump\n", d.Name, d.Name)
+		// pg_restore keeps going past a failed statement and exits 1 at the
+		// end; the data is in, and an init script that stops here would
+		// leave the container unable to start at all. Say so instead.
+		fmt.Fprintf(&b, "pg_restore -U postgres --no-owner --no-privileges -d %q /dumps/%s.dump || echo \"warning: pg_restore reported errors for %s (see above); the rest was restored\"\n", d.Name, d.Name, d.Name)
 	}
 	return b.String()
 }
