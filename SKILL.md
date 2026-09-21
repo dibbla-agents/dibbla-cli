@@ -738,13 +738,14 @@ Before calling `dibbla deploy`, you MUST review the application code and present
 
 **Enforced by the CLI.** `dibbla deploy` refuses to upload unless `REVIEW.md` and a user handbook (`docs/index.md` or `APP.md`) are present at the deploy root. The `--skip-review` flag exists for humans making trivial one-line fixes; agents must run the full checklist and emit `REVIEW.md` instead of passing the flag.
 
-Run these five checks and report each as BLOCKER or WARNING:
+Run these six checks and report each as BLOCKER or WARNING:
 
 1. **Security (OWASP Top 10)** — Hardcoded secrets, SQL/command injection, XSS, `.env` files in deploy dir, broken access control/IDOR (A01), SSRF (A10) and weak app-managed login (A07: unsalted/fast hashes, non-expiring sessions) are **BLOCKERs**. Missing CSRF, input validation, security headers, vulnerable dependencies (A06: `npm audit`/`govulncheck`/`pip-audit`) and missing rate limiting on login/reset/OTP (A04) are warnings.
 2. **Database usage** — N+1 queries (query inside a loop) are **BLOCKERs**. Unbounded SELECTs, missing connection pooling, missing error handling are warnings.
 3. **REST/API calls** — Outbound HTTP calls without timeouts are **BLOCKERs**. Missing retry/backoff, excessive polling (<5s), hardcoded URLs are warnings.
 4. **External write safety** — Unbounded write loops to external systems are **BLOCKERs**. Missing rate limiting, missing idempotency, fire-and-forget writes are warnings.
-5. **Support reachability** — When `dibbla.yaml` enables `support:` but the app exposes no visible way to reach it (no `/_platform/support.js` widget tag, no portal support link), report a **warning** and suggest the one-line tag. Never a blocker.
+5. **Personal data (GDPR)** — Write the inventory into the report even when all is well: which fields hold personal data and in which tables/buckets, how one person is deleted, whether they appear in logs, and which third parties receive them (mail, AI gateway, analytics, error trackers). Personal data stored without that inventory, or with no way to delete a person, is a **BLOCKER**. Incomplete deletion (no cascade, copies in indexes/storage), personal data in logs, unnamed third-party recipients and consent-less trackers are warnings. An app with no personal data says so in one line. This inventory is the owner's GDPR checklist.
+6. **Support reachability** — When `dibbla.yaml` enables `support:` but the app exposes no visible way to reach it (no `/_platform/support.js` widget tag, no portal support link), report a **warning** and suggest the one-line tag. Never a blocker.
 
 Present a checklist report to the user. If any BLOCKER is found, offer to fix it and wait for confirmation — do NOT deploy. If only warnings, ask the user whether to fix or proceed. If all clear, ask "Ready to deploy?" and wait for confirmation. Then write the report to `REVIEW.md` at the deploy root (see `.claude/skills/dibbla/guardrails.md` § Step 3.5 for the exact format).
 

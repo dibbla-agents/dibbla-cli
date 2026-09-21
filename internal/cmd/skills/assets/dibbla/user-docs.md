@@ -272,7 +272,7 @@ When you create a new project with `dibbla template install` or by hand:
 2. **Write the `subtitle:` frontmatter on `docs/index.md` first** — it forces you to articulate the app's one-line value proposition before you start drafting longer prose. If you can't write the subtitle, you don't yet know what the app does for the user.
 3. Fill in `{{app_name}}` placeholders and replace the example sections with content specific to the app you're building.
 4. Confirm content with the user before deploying — never invent feature documentation for features that don't exist yet.
-5. Deploy. The platform's pre-deploy guardrail (Check 7 in [guardrails.md](guardrails.md)) verifies the handbook is present **and that the subtitle is set**.
+5. Deploy. The platform's pre-deploy guardrail (Check 8 in [guardrails.md](guardrails.md)) verifies the handbook is present **and that the subtitle is set**.
 
 When you redeploy an existing app:
 

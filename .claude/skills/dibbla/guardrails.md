@@ -2,7 +2,7 @@
 
 Before calling `dibbla deploy`, you **MUST** complete every check below that applies, and present findings to the user. **Never deploy autonomously** — always wait for explicit user confirmation.
 
-Most checks are mandatory on every deploy. The exceptions are the three that state their own trigger in their heading line — read each check's opening sentence rather than a list here, because a list here is a second inventory that can disagree with the file. Today those three are Check 5 (running task files from URLs), Check 6 (a `dibbla.yaml` at the deploy root) and Check 8 (that manifest setting `support.enabled: true`).
+Most checks are mandatory on every deploy. The exceptions are the three that state their own trigger in their heading line — read each check's opening sentence rather than a list here, because a list here is a second inventory that can disagree with the file. Today those three are Check 6 (running task files from URLs), Check 7 (a `dibbla.yaml` at the deploy root) and Check 9 (that manifest setting `support.enabled: true`). Check 5 (personal data) is mandatory even when the app holds none — the report then says so in one line.
 
 > **Enforced by the CLI.** `dibbla deploy` refuses to upload when `REVIEW.md` is missing at the deploy root, when no user handbook (`docs/index.md` or `APP.md`) is present, or when that handbook's `subtitle:` frontmatter is missing, empty, still a placeholder (`TBD`/`TODO`/`{{…}}`/`<one short…>`), or over the 140-byte hard cap. The only way past the gate is `--skip-review`, which is reserved for humans making one-line fixes — agents must run this checklist and write `REVIEW.md` (see Step 3.5) rather than passing the flag.
 
@@ -29,7 +29,7 @@ Mandatory for every deploy. Scan all application source files for:
 | Missing CSRF protection on state-changing endpoints | WARNING | POST/PUT/DELETE routes with no CSRF token or SameSite cookie |
 | Insecure deserialization / eval | WARNING | `eval()` on user input, `pickle.loads()` on untrusted data, `yaml.load()` without `SafeLoader` |
 | Missing input validation on API endpoints | WARNING | No request body validation, no type checking on route params |
-| Sensitive data in logs | WARNING | Logging passwords, tokens, or PII to stdout/console |
+| Sensitive data in logs | WARNING | Logging passwords, tokens, session ids or API keys to stdout/console. Personal data in logs (names, emails, IPs) belongs to Check 5 — report it there, not twice. |
 | Missing security headers | WARNING | No `helmet()` (Node), no CORS configuration, no `Content-Security-Policy` |
 | Broken access control / IDOR (A01) — a route returns customer data without requiring login, or without filtering on the caller's user/org | BLOCKER | `app.get("/orders/:id", (req, res) => db.orders.find(req.params.id))` with no auth middleware and no `WHERE user_id = <caller>`; `/api/users/:id` where `:id` comes from the URL and is never compared to the session user; an `X-User-Id`/`X-Org-Id` header or `?org=` param trusted as-is. For every route that reads or writes customer data, confirm two things: it requires authentication, and every query is scoped to the caller (`user_id`/`org_id` from the session, never from the request). Behind Dibbla's `require_login`, the `X-User-*` headers set by the proxy are the trusted identity — anything the client sends is not. |
 | Server-side request forgery, SSRF (A10) — the server fetches a URL the user supplied | BLOCKER | `fetch(req.body.url)`, `requests.get(request.args["callback"])`, `http.Get(webhookURL)` where the URL comes from the request or from user-editable settings (webhooks, avatar URLs, "import from URL", link previews, PDF/image fetchers). Allowlist scheme (`https` only) and host, resolve and reject private/link-local ranges (`10/8`, `172.16/12`, `192.168/16`, `127/8`, `169.254.169.254`, `::1`), disable redirects or re-validate after each one, and never forward the response body raw. |
@@ -82,7 +82,48 @@ Mandatory for every deploy. Scan code that writes to external systems (APIs, que
 
 ---
 
-## Check 5: Running task files from URLs
+## Check 5: Personal data (GDPR)
+
+Mandatory for every deploy. Most apps hold data about identifiable people — an email in a `users` table, a name on an invoice, an IP address in a request log — and under the GDPR the app's owner must be able to say what is held, where, how it is deleted and who else receives it. This check produces that inventory. **Its output is the customer's GDPR checklist, so write it down even when everything passes.** If the app genuinely stores or processes no personal data, the report says so in one line and you are done.
+
+Personal data is any information relating to an identifiable person: names, email addresses, phone numbers, postal addresses, national ID numbers, IP addresses, device ids, user ids from an identity provider (including the `X-User-*` headers the platform injects), location, photos, free-text fields a person types about themselves or others, and anything that can be joined back to such a field.
+
+| What to check | Severity | Examples |
+|----------------|----------|----------|
+| Personal data stored without an inventory in the report | BLOCKER | Any table, collection, bucket, file or cache that holds a personal-data field, when `REVIEW.md` does not list it as `<store>.<field>` under this check. `users.email`, `orders.shipping_address`, `sessions.ip`, `uploads/avatars/`, a Redis key holding a profile. The inventory is the deliverable of this check; a missing inventory is the finding. |
+| Special-category or high-risk data not called out by name | WARNING | Health, ethnicity, religion, political opinions, union membership, sexual orientation, biometrics, criminal records, children's data, national ID / personal identity numbers, payment card numbers. Name each such field explicitly, confirm with the user that it is needed and that they know the stricter rules, and flag it if stored in clear text or reachable by every role. |
+| No way to delete a person | BLOCKER | Personal data is stored, and there is no endpoint, admin action, CLI command or documented SQL procedure that removes one person's rows. A deploy that collects data it cannot erase leaves the owner unable to honour an erasure request. |
+| Deletion is incomplete | WARNING | A delete path exists but leaves copies: missing `ON DELETE CASCADE` or explicit child deletes on `orders`, `comments`, `audit_log`; derived tables, search indexes, object-storage files, caches, queued jobs or exports still hold the person. Name each store the delete path does not reach. |
+| Personal data in logs | WARNING | `console.log(req.body)`, `logger.info("login", user)`, request logging that prints emails, names or full IPs to stdout, error reports carrying the request payload. Platform logs are retained and readable by the whole org; log the id, not the person. Special-category data or national ID numbers in logs are a BLOCKER. |
+| Personal data sent to a third party that the report does not name | WARNING | Email/SMS providers, AI gateways and model APIs (prompts containing customer text), analytics, error trackers (`Sentry`, `Bugsnag`), payment providers, CRMs, geocoders, translation APIs. Sending is the owner's decision; **not saying so is the finding.** List each recipient and which fields leave the platform. |
+| Trackers or analytics load before consent | WARNING | Google Analytics, Meta pixel, Hotjar, ad tags or third-party fonts in the HTML `<head>` that fire for every visitor with no consent gate. Flag it and offer a consent-gated load. |
+| No retention limit on data that has served its purpose | INFO | Sessions, invitation tokens, password-reset tokens, uploads, logs and exports with no expiry or cleanup job. Suggest a TTL or a scheduled purge; a `dibbla.yaml` cron job is the platform's way to run it. |
+
+**Write the inventory into the report, under this check's row, even when the result is OK:**
+
+```
+- [x] Personal data (GDPR): OK
+  - Stored: `users.email`, `users.name`, `sessions.ip`, `uploads/avatars/` (S3)
+  - Deletion: `DELETE /api/me` — cascades to `orders`, `comments`; removes the avatar object
+  - Logs: request log prints `user_id` only; no emails or IPs
+  - Third parties: Resend (email, name — transactional mail), Dibbla AI gateway (ticket text)
+  - Special categories: none
+```
+
+When the app holds no personal data at all (a static site, a public dashboard over aggregate data), one line is enough: `- [x] Personal data (GDPR): none stored or processed`.
+
+**If found:**
+
+1. Show the user the store and field (or the log line / outbound call) with file path and line number.
+2. For a missing inventory, write it — that is a report change, not a code change, and needs no confirmation.
+3. For a missing or incomplete delete path, propose the endpoint or procedure and the cascade it needs; wait for confirmation before changing code.
+4. For logs and third parties, propose the redaction or name the recipient in the report; let the user decide whether the transfer itself stays.
+
+Reference fixtures for this check live in `testdata/guardrail-fixtures/` — one handler that must trip it and one that must not.
+
+---
+
+## Check 6: Running task files from URLs
 
 When the user asks you to run a `dibbla-task.yaml` from a URL (via `dibbla run <url>` or `dibbla template install <id>`), apply these checks before executing:
 
@@ -94,7 +135,7 @@ When the user asks you to run a `dibbla-task.yaml` from a URL (via `dibbla run <
 
 ---
 
-## Check 6: Multi-service manifest safety
+## Check 7: Multi-service manifest safety
 
 Run when a `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root. Skip otherwise.
 
@@ -119,7 +160,7 @@ When a `dibbla.yaml` is present, run `dibbla manifest validate` before the deplo
 
 ---
 
-## Check 7: User handbook (end-user documentation)
+## Check 8: User handbook (end-user documentation)
 
 Mandatory for every deploy. The platform renders a user-facing handbook inside `app.dibbla.com` under "My Apps → {alias}" — this is the only documentation surface end users see. See [user-docs.md](user-docs.md) for the full audience guidance, file conventions, tone rules, and paste-ready templates.
 
@@ -149,11 +190,11 @@ Mandatory for every deploy. The platform renders a user-facing handbook inside `
 
 1. Show the user the offending lines (with file path + line number).
 2. Propose a rewrite that strips dev-stack info and reframes the content for an end user.
-3. Apply the rewrite and re-run Check 7.
+3. Apply the rewrite and re-run Check 8.
 
 ---
 
-## Check 8: Support reachability (P-0024)
+## Check 9: Support reachability (P-0024)
 
 Run when `dibbla.yaml` sets `support.enabled: true`. Skip otherwise.
 
@@ -164,7 +205,7 @@ Run when `dibbla.yaml` sets `support.enabled: true`. Skip otherwise.
 
 ---
 
-## Check 9: Build-context readiness (P-0009)
+## Check 10: Build-context readiness (P-0009)
 
 Runs on **every** deploy that has a `Dockerfile` — which is every deploy.
 
@@ -182,13 +223,13 @@ The eight: `node_modules/` · `.git/` · `__pycache__/` · `.venv/` · `vendor/`
 1. **`COPY --from=<stage>` is exempt — always.** `COPY --from=builder /app/dist ./dist` copies from an earlier *build stage*, not from the upload archive. It is the pattern this check steers people towards, so flagging it would be actively harmful. The same applies to `COPY --from=<image>`.
 2. **Match on the source operand, not on the line.** The check fires when a `COPY`/`ADD` *source* path resolves into one of the eight directories. It does **not** fire because one of the names appears somewhere else on the line. `COPY . .` does not fire (it copies whatever survived, which is correct). `COPY src/dist.go ./` does not fire — `dist.go` is a file, not the `dist/` directory. `COPY dist/ ./dist` does fire.
 
-**Why BLOCKER and not WARNING** — this is a deliberate departure from the precedent Check 8 set (decision log D27 made support reachability a warning). Check 8 predicts a product-quality shortfall whose worst case is still a working deploy. This one predicts a **deterministic build failure**: the file is not there, `COPY` fails, the deploy fails, every time. That is the definition of BLOCKER above.
+**Why BLOCKER and not WARNING** — this is a deliberate departure from the precedent Check 9 set (decision log D27 made support reachability a warning). Check 9 predicts a product-quality shortfall whose worst case is still a working deploy. This one predicts a **deterministic build failure**: the file is not there, `COPY` fails, the deploy fails, every time. That is the definition of BLOCKER above.
 
 **If found:**
 
 1. Show the user the offending `COPY`/`ADD` line with its file path and line number.
 2. Explain that the directory is stripped server-side and will not be in the build context, however present it looks locally.
-3. Propose the in-build regeneration (or the `--from=` stage) and apply it, then re-run Check 9.
+3. Propose the in-build regeneration (or the `--from=` stage) and apply it, then re-run Check 10.
 
 Reference fixtures for this check live in `testdata/guardrail-fixtures/` — one Dockerfile that must trip it and one that must not.
 
@@ -215,6 +256,11 @@ Show the user a guardrails report in this format:
 - [x] REST/API calls: 1 warning
   - WARNING: No timeout on fetch in `src/services/payment.js:23` — add a timeout
 - [x] External writes: OK
+- [ ] Personal data (GDPR): 1 warning
+  - Stored: `users.email`, `users.name`, `orders.shipping_address`
+  - Deletion: `DELETE /api/me` — cascades to `orders`
+  - WARNING: `src/middleware/log.js:14` logs `req.body` on every request, including email and address — log `user_id` only
+  - Third parties: Stripe (email, address — payment), Postmark (email, name — receipts)
 - [ ] User handbook: 1 BLOCKER
   - BLOCKER: No `docs/index.md` or `APP.md` at project root — generate from templates in user-docs.md.
 - [ ] Build-context readiness: 1 BLOCKER

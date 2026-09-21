@@ -474,7 +474,7 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 The same applies to Python (`pip install -r requirements.txt` rather than shipping `.venv/`) and to Next.js (`npm run build` rather than shipping `.next/`).
 
-**Pre-deploy check:** `guardrails.md` Check 9 catches this before a deploy is attempted.
+**Pre-deploy check:** `guardrails.md` Check 10 catches this before a deploy is attempted.
 
 ### Flags
 
