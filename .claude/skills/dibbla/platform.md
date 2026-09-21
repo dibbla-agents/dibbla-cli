@@ -287,9 +287,11 @@ Two implications:
 1. List IngressRouteTCP CRDs by `<base-domain>/app-name=<alias>` label, extract the SNI hostname from each spec, call `RemoveTCPRoute` (which deletes the DNS record), then delete the CRD.
 2. Call the legacy `RemoveRoute` (HTTP route DNS cleanup).
 3. Label-based delete of K8s objects: Ingresses, Services (both regular and headless), Deployments, StatefulSets, ConfigMaps, **PVCs**.
-4. Remove local project files.
+4. Remove local project files, the app's secrets, its git repository and its images in the registry.
 
 The PVC delete step is the destructive part. Tell users to back up first if the data matters.
+
+What `apps delete` does **not** remove: managed databases and buckets. They belong to the organization, not the app — a database created with `db create --deployment <alias>` survives the app's deletion and is reported in the command's output (`Database 'x' belongs to your organization and still exists — delete with dibbla db delete <name>`). Remove them with `dibbla db delete` / `dibbla storage delete`, or by deleting the organization, which removes everything it owns.
 
 ---
 

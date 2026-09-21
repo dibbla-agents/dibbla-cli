@@ -176,6 +176,9 @@ func runAppsDelete(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("\r%s %s\n", platform.Icon("✅", "[OK]"), deleteResponse.Message)
+	if notice := apps.RetainedResourcesNotice(deleteResponse); notice != "" {
+		fmt.Printf("%s %s\n", platform.Icon("ℹ️", "[i]"), notice)
+	}
 }
 
 func runAppsUpdate(cmd *cobra.Command, args []string) {
