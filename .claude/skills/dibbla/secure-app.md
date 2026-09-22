@@ -22,13 +22,13 @@ from where the code runs.
 | Can put a login in front of the whole app, and tells the app who the caller is | Rate-limit your own login, signup and reset endpoints |
 | Refuses to deploy without a written security review (`REVIEW.md`) | Run that review — your agent writes it |
 | Keeps your data in the EU (Hetzner, Germany and Finland) and never trains AI on it | Know which personal data you hold and be able to delete it |
+| Scans every build — a bill of materials per image, its known vulnerabilities, and secrets in the source | Decide what to do about a finding, and fix it |
 | Runs scheduled checks and an overnight maintenance agent that proposes changes you approve | Approve or reject those proposals |
 
-**Three things Dibbla deliberately does not do**, because they belong to the app and
-guessing on your behalf would break working apps: it does not scan your container
-image for known vulnerabilities, it does not filter your app's outbound network
-traffic, and it applies no request-size or rate limits in front of your app.
-Points 6, 7 and 8 below are yours because of this.
+**Two things Dibbla deliberately does not do**, because they belong to the app and
+guessing on your behalf would break working apps: it does not filter your app's
+outbound network traffic, and it applies no request-size or rate limits in front
+of your app. Points 6 and 8 below are yours because of this.
 
 ## How to use this file
 
@@ -212,9 +212,21 @@ listed; if one is missing, ask why.
 had a security flaw published last month, and the fixed version is one line away —
 but nobody looked.
 
-**Dibbla does.** Builds your image in the cluster, and does **not** scan it for
-known vulnerabilities today. Nobody will tell you unless you ask, so this one is
-genuinely on you until that changes.
+**Dibbla does.** Scans every build, after the rollout is live, and stores the
+result on that revision: a bill of materials for each image, that inventory
+matched against the known-vulnerability database with a severity, a fix version
+and an advisory link per finding, and a scan of the built source for leaked
+secrets. Services that run a pulled image — the `postgres:16` beside your app —
+are scanned too, so the list covers the whole revision. The scan does not block
+the deploy, and the overnight maintenance agent reads it when it decides what to
+propose. Nothing of yours leaves the platform to make it happen.
+
+What the scan cannot do is decide. It tells you a library has a published flaw
+and which version fixes it; whether that flaw is reachable from your code, and
+whether the upgrade is safe, is the part your agent does — which is what the
+sentence below is for. Run it anyway: the audit for your language sees things a
+scan of the finished image does not, such as a development dependency or a
+version pin you have not built yet.
 
 **Ask your agent.**
 
@@ -225,8 +237,11 @@ genuinely on you until that changes.
 
 **How you know it's done.** `REVIEW.md` says which audit tool was run and what it
 reported. "None found" is a fine answer; "no audit was run" is the one you should
-push back on. Re-run this before each release — it goes stale faster than anything
-else in this file.
+push back on. The platform's own findings for the running revision are on the
+application — `dibbla apps get <alias>` shows them — and the two are worth reading
+together: the scan is the list, your agent's answer is what you did about it.
+Re-run this before each release; it goes stale faster than anything else in this
+file.
 
 ---
 
