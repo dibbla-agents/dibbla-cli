@@ -101,7 +101,7 @@ Persistence:
   --write-env          Also write DIBBLA_API_TOKEN + DIBBLA_API_URL to ./.env in the
                        current directory (atomic, preserves existing keys/comments) and
                        ensure .env is listed in ./.gitignore.
-  --no-keychain        Skip the OS keyring entirely — validate only. Useful on cloud
+  --no-keychain        Skip all machine-wide persistence — validate only. Useful on cloud
                        VMs / SSH / Docker where libsecret/gnome-keyring isn't
                        installed. Combine with --write-env to persist credentials
                        to the project's .env instead.
@@ -128,6 +128,15 @@ func init() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
+	// A mistyped $DIBBLA_CREDENTIAL_STORE is refused here rather than silently
+	// read as "auto": this is the one command where the user is choosing where
+	// the token goes, and believing you have pinned the store when you have
+	// not is exactly the confusion the override exists to remove.
+	if err := credential.ValidateStorePreference(); err != nil {
+		fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
+		os.Exit(1)
+	}
+
 	baseURL, err := resolveLoginBaseURL(args)
 	if err != nil {
 		fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
@@ -202,22 +211,24 @@ func runLogin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	usedFileFallback := false
-	ctxName := ""
-	switched := false
+	var stored loginStorage
 	if !loginNoKeychain {
 		var err error
-		ctxName, usedFileFallback, switched, err = storeLoginAsContext(baseURL, token, cred.SessionID)
+		stored, err = storeLoginAsContext(baseURL, token, cred.SessionID)
 		if err != nil {
 			fmt.Printf("%s Error: %v\n", platform.Icon("❌", "[X]"), err)
 			os.Exit(1)
 		}
-		if usedFileFallback {
-			fmt.Printf("%s OS keyring unavailable on this host (no org.freedesktop.secrets).\n"+
-				"  Stored credentials in %s instead.\n",
-				platform.Icon("⚠", "[!]"), credential.ContextTokenFilePath(ctxName))
+		if stored.Store == credential.StoreFile {
+			fmt.Printf("%s No OS keyring on this host: %v\n"+
+				"  Stored credentials in %s — %s\n",
+				platform.Icon("⚠", "[!]"), stored.FallbackReason,
+				credential.ContextTokenFilePath(stored.Context), credential.PlaintextWarning)
 		}
 	}
+	usedFileFallback := stored.Store == credential.StoreFile
+	ctxName := stored.Context
+	switched := stored.Switched
 
 	// git push/pull/clone against this instance read the login through the
 	// credential helper; register it now so "logged in" means git works too.
@@ -576,6 +587,21 @@ func promptAPIToken(apiBaseURL string) (string, error) {
 	return token, err
 }
 
+// loginStorage is what storeLoginAsContext managed to do: which context the
+// login landed in, which of the two credential stores actually took the token,
+// why the keyring was passed over if it was, and whether this login became the
+// context in use.
+//
+// A struct rather than four return values because the third one is new and
+// four unnamed bools and strings at a call site is how the wrong one gets
+// printed.
+type loginStorage struct {
+	Context        string
+	Store          credential.Store
+	FallbackReason error
+	Switched       bool
+}
+
 // storeLoginAsContext persists a successful login as a named context instead of
 // overwriting the CLI's single credential slot. This is the change P-0011
 // exists to make: logging in to a second server no longer destroys the first.
@@ -592,42 +618,51 @@ func promptAPIToken(apiBaseURL string) (string, error) {
 //
 // Returns the context name, whether the keyring-less file fallback was used,
 // and whether this login became the context in use.
-func storeLoginAsContext(baseURL, token, sessionID string) (name string, usedFile, switched bool, err error) {
+func storeLoginAsContext(baseURL, token, sessionID string) (res loginStorage, err error) {
 	store, err := contextcfg.Load()
 	if err != nil {
-		return "", false, false, err
+		return res, err
 	}
 
+	var name string
 	switch {
 	case strings.TrimSpace(loginContext) != "":
 		name = strings.TrimSpace(loginContext)
 		if !contextcfg.ValidName(name) {
-			return "", false, false, fmt.Errorf("%q is not a usable context name: use letters, digits, dot, dash or underscore (it becomes a filename and a keyring key)", name)
+			return res, fmt.Errorf("%q is not a usable context name: use letters, digits, dot, dash or underscore (it becomes a filename and a keyring key)", name)
 		}
 	case store.FindByURL(baseURL) != "":
 		name = store.FindByURL(baseURL)
 	default:
 		name = contextcfg.UniqueName(contextcfg.DeriveName(baseURL, config.DefaultAPIURL), store.Contexts)
 	}
+	res.Context = name
+	res.Store = credential.StoreKeyring
 
 	// The token first, so config.yaml never names a context whose credential
 	// has not landed.
 	if serr := credential.SetContextToken(name, token); serr != nil {
 		if !credential.IsKeyringUnavailable(serr) {
-			return name, false, false, fmt.Errorf("token validated but could not be stored: %w", serr)
+			return res, fmt.Errorf("token validated but could not be stored: %w", serr)
 		}
-		// Linux SSH / cloud VM / Docker without libsecret. Fall back to this
+		// No keyring on this host — a headless Linux box, or one where the
+		// probe in internal/credential found no session bus. Fall back to this
 		// context's own credentials file, which mirrors keychain semantics
 		// (machine-wide, persists across `cd`) rather than the cwd-bound
 		// --write-env behaviour.
+		//
+		// The reason is carried out rather than restated: this branch used to
+		// print "no org.freedesktop.secrets" whatever had actually gone wrong,
+		// which on the most common headless failure was simply untrue.
 		if ferr := credential.SetContextTokenFile(name, token, baseURL); ferr != nil {
-			return name, false, false, fmt.Errorf("OS keyring unavailable on this host AND the file fallback failed: %w", ferr)
+			return res, fmt.Errorf("OS keyring unavailable on this host AND the file fallback failed: %w", ferr)
 		}
-		usedFile = true
+		res.Store = credential.StoreFile
+		res.FallbackReason = serr
 	}
 
 	existing, existed := store.Get(name)
-	ctx := contextcfg.Context{APIURL: baseURL, SessionID: sessionID}
+	ctx := contextcfg.Context{APIURL: baseURL, SessionID: sessionID, Store: string(res.Store)}
 	if existed && strings.TrimSuffix(existing.APIURL, "/") == strings.TrimSuffix(baseURL, "/") {
 		// A refresh of the same server keeps that context's organization pin:
 		// re-authenticating is not a request to change which org you act as.
@@ -639,16 +674,16 @@ func storeLoginAsContext(baseURL, token, sessionID string) (name string, usedFil
 
 	if !loginNoSwitch {
 		store.Current = name
-		switched = true
+		res.Switched = true
 	}
 	if serr := store.Save(); serr != nil {
-		return name, usedFile, switched, serr
+		return res, serr
 	}
-	if switched {
+	if res.Switched {
 		// Repoint the legacy single-slot storage, so a dibbla binary older than
 		// contexts — and every script that sources credentials.env — follows
 		// this login rather than staying on the previous server.
 		config.SyncLegacyMirror()
 	}
-	return name, usedFile, switched, nil
+	return res, nil
 }

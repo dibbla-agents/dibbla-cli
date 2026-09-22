@@ -101,18 +101,30 @@ func ResolveContext() Resolved {
 	r.OrgID = strings.TrimSpace(ctx.Org)
 	r.OrgName = strings.TrimSpace(ctx.OrgName)
 
-	// Keyring first (one read, so one OS prompt at most), then the
-	// per-context credentials file. Same order the single-slot code used,
-	// now keyed per context.
-	if t, terr := credential.GetContextToken(r.Name); terr == nil && t != "" {
-		r.Token, r.TokenStore = t, TokenStoreKeyring
-		return r
+	readContextToken(&r, ctx.Store)
+	return r
+}
+
+// readContextToken fills in a context's token and the store it came from.
+//
+// Keyring first (one read, so one OS prompt at most), then the per-context
+// credentials file — the order the single-slot code used, now keyed per
+// context. The one exception is the recorded hint: a context whose token was
+// written to the file on a host with no keyring says so, and then the keyring
+// read is skipped rather than re-failing on every command. Any other hint
+// value, including none, takes the normal order, so a hint that has gone stale
+// costs a wasted lookup and never a missed token.
+func readContextToken(r *Resolved, hint string) {
+	if hint != string(credential.StoreFile) {
+		if t, terr := credential.GetContextToken(r.Name); terr == nil && t != "" {
+			r.Token, r.TokenStore = t, TokenStoreKeyring
+			return
+		}
 	}
 	if t, _, ferr := credential.GetContextTokenFile(r.Name); ferr == nil && t != "" {
 		r.Token, r.TokenStore = t, TokenStoreFile
-		return r
+		return
 	}
-	return r
 }
 
 // --- Migration ---------------------------------------------------------------
@@ -198,10 +210,12 @@ func Migrate() (name string, migrated bool, err error) {
 
 	// Write the per-context token before writing config.yaml, so the file
 	// never claims a context whose token has not landed yet.
+	store := credential.StoreKeyring
 	if fromFile {
 		if werr := credential.SetContextTokenFile(name, legacyToken, effectiveURL); werr != nil {
 			return name, false, werr
 		}
+		store = credential.StoreFile
 	} else {
 		if werr := credential.SetContextToken(name, legacyToken); werr != nil {
 			return name, false, werr
@@ -213,6 +227,10 @@ func Migrate() (name string, migrated bool, err error) {
 		Contexts: map[string]contextcfg.Context{
 			name: {
 				APIURL: effectiveURL,
+				// Where the legacy credential was found is where the migrated
+				// one now lives, so a keyring-less host records it and stops
+				// probing for a keyring on every subsequent command.
+				Store: string(store),
 				// The machine-wide org pin becomes this context's pin. On a
 				// single-server machine — which is every machine before this
 				// change — that is exactly what it already meant.
@@ -332,13 +350,6 @@ func ResolveContextNamed(name string) Resolved {
 	r.APIURL = strings.TrimSuffix(strings.TrimSpace(ctx.APIURL), "/")
 	r.OrgID = strings.TrimSpace(ctx.Org)
 	r.OrgName = strings.TrimSpace(ctx.OrgName)
-	if t, terr := credential.GetContextToken(name); terr == nil && t != "" {
-		r.Token, r.TokenStore = t, TokenStoreKeyring
-		return r
-	}
-	if t, _, ferr := credential.GetContextTokenFile(name); ferr == nil && t != "" {
-		r.Token, r.TokenStore = t, TokenStoreFile
-		return r
-	}
+	readContextToken(&r, ctx.Store)
 	return r
 }

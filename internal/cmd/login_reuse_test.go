@@ -35,7 +35,7 @@ func TestLoginReusesACredentialThatStillWorks(t *testing.T) {
 	statusIsolate(t)
 	srv := validateServer(t, true)
 
-	if _, _, _, err := storeLoginAsContext(srv.URL, "ds_still_good", "cs_1"); err != nil {
+	if _, err := storeLoginAsContext(srv.URL, "ds_still_good", "cs_1"); err != nil {
 		t.Fatalf("seed login: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestLoginDoesNotReuseARejectedCredential(t *testing.T) {
 	statusIsolate(t)
 	srv := validateServer(t, false)
 
-	if _, _, _, err := storeLoginAsContext(srv.URL, "ds_expired", "cs_2"); err != nil {
+	if _, err := storeLoginAsContext(srv.URL, "ds_expired", "cs_2"); err != nil {
 		t.Fatalf("seed login: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestLoginReusesAnAPIKeyContextToo(t *testing.T) {
 	statusIsolate(t)
 	srv := validateServer(t, true)
 
-	if _, _, _, err := storeLoginAsContext(srv.URL, "ak_pasted_by_hand", ""); err != nil {
+	if _, err := storeLoginAsContext(srv.URL, "ak_pasted_by_hand", ""); err != nil {
 		t.Fatalf("seed login: %v", err)
 	}
 

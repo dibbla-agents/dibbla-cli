@@ -25,6 +25,10 @@ type fakeKeyring struct {
 
 func newFakeKeyring(t *testing.T) *fakeKeyring {
 	t.Helper()
+	// See credtest.Install: on headless Linux the guard in backend.go would
+	// short-circuit before any of these seams were reached.
+	t.Cleanup(SetKeyringUsableForTest(true))
+
 	fk := &fakeKeyring{items: map[string]string{}}
 	g, s, d := KeyringGet, KeyringSet, KeyringDelete
 	KeyringGet = func(_, key string) (string, error) {

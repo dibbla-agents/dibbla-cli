@@ -53,7 +53,21 @@ dibbla deploy .          # reads env vars directly; no login needed
 # `dibbla login` auto-detects a missing keyring and falls back to a user-level
 # credentials file at ~/.config/dibbla/credentials.env (mode 0600). Behaves
 # like the keyring: machine-wide, persists across `cd`. No flags needed.
+#
+# NOTE: that file holds the token in PLAINTEXT. 0600 keeps out other users on
+# the host; it does not keep out root, a backup, or anything running as you.
+# On a long-lived server prefer DIBBLA_API_TOKEN from your secrets manager
+# (see the block above) so nothing is written to disk at all.
 dibbla login --api-key=ak_... --api-url=https://api.dibbla.com
+
+# Force the file store even where a keyring is reachable, or force the keyring
+# where the auto-detection guesses wrong:
+DIBBLA_CREDENTIAL_STORE=file dibbla login --api-key=ak_...
+DIBBLA_CREDENTIAL_STORE=keyring dibbla login --api-key=ak_...
+
+# `dibbla status` names which store the active token came from, and flags it
+# when that store is the plaintext file.
+dibbla status
 
 # Add --write-env if you also want credentials materialized in ./.env (e.g.
 # for `docker compose` to pick them up):

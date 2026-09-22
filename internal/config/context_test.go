@@ -39,6 +39,11 @@ type fakeKeyring struct {
 
 func newFakeKeyring(t *testing.T) *fakeKeyring {
 	t.Helper()
+	// See credtest.Install: on headless Linux the guard in
+	// internal/credential/backend.go short-circuits before these seams are
+	// reached, and the fake would never be consulted.
+	t.Cleanup(credential.SetKeyringUsableForTest(true))
+
 	fk := &fakeKeyring{items: map[string]string{}}
 
 	origGet, origSet, origDel := credential.KeyringGet, credential.KeyringSet, credential.KeyringDelete
@@ -86,17 +91,29 @@ func (f *fakeKeyring) has(key string) bool {
 
 func (f *fakeKeyring) get(key string) string { return f.items["dibbla-cli/"+key] }
 
-// noKeyring makes every keyring operation behave as it does on a Linux host
-// with no libsecret: the read fails with the exact wording credential's own
-// IsKeyringUnavailable matches on, so the file-fallback path is exercised for
-// the same reason it fires in production rather than by a test-only flag.
+// noKeyring makes this host look like a headless Linux box with no session
+// bus, which is what credential.KeyringUsable() decides and the only thing
+// that decides it in production since DIB-1016.
+//
+// It used to work by having the seams return the literal string
+// "failed to unlock correct collection '/org/freedesktop/secrets/aliases/...'"
+// and relying on IsKeyringUnavailable to match it. That was doubly wrong: the
+// string has slashes where the needle had dots, so it never matched, and the
+// answer therefore depended on which OS the test ran on. Driving the real
+// switch instead makes the test say what it means and mean the same thing
+// everywhere.
+//
+// The seams are still made to fail, so that anything reaching past the guard
+// is a test failure rather than a silent success.
 func noKeyring(t *testing.T) {
 	t.Helper()
-	unavailable := errors.New("failed to unlock correct collection '/org/freedesktop/secrets/aliases/default'")
+	t.Cleanup(credential.SetKeyringUsableForTest(false))
+
+	unreached := errors.New("keyring reached on a host that has none")
 	origGet, origSet, origDel := credential.KeyringGet, credential.KeyringSet, credential.KeyringDelete
-	credential.KeyringGet = func(string, string) (string, error) { return "", unavailable }
-	credential.KeyringSet = func(string, string, string) error { return unavailable }
-	credential.KeyringDelete = func(string, string) error { return unavailable }
+	credential.KeyringGet = func(string, string) (string, error) { return "", unreached }
+	credential.KeyringSet = func(string, string, string) error { return unreached }
+	credential.KeyringDelete = func(string, string) error { return unreached }
 	t.Cleanup(func() {
 		credential.KeyringGet, credential.KeyringSet, credential.KeyringDelete = origGet, origSet, origDel
 	})

@@ -12,6 +12,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/credential"
 	"github.com/dibbla-agents/dibbla-cli/internal/gitlink"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 )
@@ -108,6 +109,14 @@ type folderReport struct {
 }
 
 func runStatus(cmd *cobra.Command, args []string) {
+	// status's whole job is saying where things came from, so a store
+	// preference that is set but unreadable is exactly the kind of thing it
+	// must not quietly resolve to the default. Warn rather than exit: unlike
+	// login, this command still has a useful answer to give.
+	if err := credential.ValidateStorePreference(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v (continuing with auto)\n", platform.Icon("⚠", "[!]"), err)
+	}
+
 	report := buildStatusReport(statusNoValidate)
 	report.Folder = buildFolderReport(".", report.APIURL, resolvedToken(), statusNoValidate || !report.TokenConfigured)
 
@@ -338,6 +347,12 @@ func printStatusHuman(r statusReport) {
 	fmt.Printf("API:     %s  (%s)\n", r.APIURL, r.APIURLSource)
 	if r.TokenConfigured {
 		fmt.Printf("Token:   configured  (source: %s)\n", r.TokenSource)
+		// Say it where someone asking "where is my token?" will read it.
+		// A credential in the file store is not protected the way a keychain
+		// entry is, and the difference is invisible unless it is named.
+		if strings.HasPrefix(r.TokenSource, string(config.TokenStoreFile)) {
+			fmt.Printf("         %s %s\n", platform.Icon("⚠", "[!]"), credential.PlaintextWarning)
+		}
 	} else {
 		fmt.Printf("Token:   not configured\n")
 	}

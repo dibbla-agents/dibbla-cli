@@ -60,6 +60,23 @@ type Context struct {
 	// Empty for contexts created by --api-key, and for any created before this
 	// existed: those hold a user API token, which has no session to end.
 	SessionID string `yaml:"session_id,omitempty"`
+
+	// Store records which credential store this context's token was actually
+	// written to — "keyring" or "file" — at the moment it was written.
+	//
+	// It is a hint, not an authority, and it is only ever allowed to skip a
+	// read that is known to be pointless: "file" means the keyring is not
+	// consulted, because on the host that wrote it there was no keyring to
+	// consult. "keyring" and empty both mean the normal keyring-then-file
+	// order. That asymmetry is deliberate — a stale hint can then cost a
+	// wasted keyring miss, but can never hide a token that is really there.
+	//
+	// The value it earns is on headless Linux, where without it every single
+	// command re-runs the session-bus probe before falling to the file it was
+	// always going to read.
+	//
+	// Not a secret, so it belongs here rather than in the credential store.
+	Store string `yaml:"store,omitempty"`
 }
 
 // Config is the on-disk shape of ~/.config/dibbla/config.yaml.
