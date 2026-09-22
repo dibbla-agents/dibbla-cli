@@ -240,7 +240,7 @@ func runOrgClear(cmd *cobra.Command, args []string) {
 func storeOrgPin(cfg *config.Config, orgID, orgName string) (where string, err error) {
 	if cfg.Context == "" {
 		if orgID == "" {
-			if derr := credential.DeleteOrg(); derr != nil && !credential.IsKeyringUnavailable(derr) {
+			if derr := credential.DeleteOrg(); derr != nil && !credential.IsKeyringAbsent(derr) {
 				return "", derr
 			}
 			return "", credential.DeleteOrgFile()

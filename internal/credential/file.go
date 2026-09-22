@@ -212,8 +212,31 @@ func DeleteTokenFile() error {
 	return nil
 }
 
-// IsKeyringUnavailable reports whether err means "this host has no usable
-// keyring", and therefore that the file store should be used instead.
+// IsKeyringAbsent reports whether err means there was no keyring to talk to at
+// all — the probe found no session bus, or the call timed out.
+//
+// This is the strict question, and it is the one REMOVAL asks. Deleting a
+// credential from a store that does not exist has succeeded; a delete that was
+// attempted and refused has not, and must be reported, because telling someone
+// their token is gone while it is still live in their keyring is the one
+// outcome `dibbla logout` must never produce.
+//
+// IsKeyringUnavailable below is the loose question, and it is the one STORAGE
+// asks: "should I write to the file instead?" Storage may answer yes to a much
+// wider set of failures, because the fallback is harmless — the credential
+// still lands somewhere the CLI can read. Removal may not, because its fallback
+// is silence.
+//
+// The two were briefly the same function. On Linux that made `dibbla logout`
+// swallow a keyring delete that had genuinely failed, since the loose rule
+// treats an unrecognised Linux error as "no keyring here".
+func IsKeyringAbsent(err error) bool {
+	return err != nil && errors.Is(err, ErrKeyringUnavailable)
+}
+
+// IsKeyringUnavailable reports whether err means the file store should be used
+// for STORAGE instead of the keyring. See IsKeyringAbsent for the stricter
+// question that removal asks, and why they must differ.
 //
 // It used to be an allowlist of four substrings matched against the error text
 // of two external libraries. That was the wrong shape, and it was wrong in

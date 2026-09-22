@@ -112,6 +112,13 @@ func TestGetContextToken_KeyringErrorIsNotSilentlyEmpty(t *testing.T) {
 	// "Absent" and "broken" must not look the same: a caller that treats a
 	// keyring failure as "no token" falls through to the file path and then
 	// reports "not logged in" for what is actually a locked keyring.
+	// The claim is about a keyring that EXISTS and is broken, so this host
+	// must have one. Without this the guard in backend.go short-circuits on a
+	// headless CI runner and the failure never reaches the seam below — the
+	// test would then assert that "no keyring" surfaces an error, which is the
+	// opposite of what it should do.
+	t.Cleanup(SetKeyringUsableForTest(true))
+
 	boom := errors.New("keyring is locked")
 	g := KeyringGet
 	KeyringGet = func(string, string) (string, error) { return "", boom }

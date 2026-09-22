@@ -21,6 +21,11 @@ func setupCleanCredStores(t *testing.T) {
 		t.Skip("os.UserConfigDir is not redirectable on darwin; cannot isolate credentials file")
 	}
 	keyring.MockInit()
+	// MockInit tells go-keyring this host has a keyring; this tells the guard
+	// in internal/credential the same thing. Without it the guard
+	// short-circuits on a headless CI runner and every SetToken below fails
+	// before go-keyring's mock is ever reached.
+	t.Cleanup(credential.SetKeyringUsableForTest(true))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 

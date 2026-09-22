@@ -2,6 +2,7 @@ package credential
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -174,5 +175,38 @@ func TestWithTimeout_PassesThroughTheNormalAnswer(t *testing.T) {
 	boom := errors.New("keyring said no")
 	if _, err := withTimeout(5*time.Second, func() (string, error) { return "", boom }); !errors.Is(err, boom) {
 		t.Errorf("err = %v, want the underlying error preserved", err)
+	}
+}
+
+// Storage and removal ask different questions of a keyring failure, and
+// conflating them is a real bug rather than a tidiness point: on Linux the
+// loose rule treats an unrecognised error as "no keyring here", which made
+// `dibbla logout` report success for a keyring delete that had actually been
+// refused — the user told their token was gone while it was still live.
+func TestKeyringAbsentIsStricterThanKeyringUnavailable(t *testing.T) {
+	// A keyring that was there and refused the operation.
+	refused := errors.New("keyring delete refused")
+	if IsKeyringAbsent(refused) {
+		t.Error("a refused operation is not an absent keyring; removal must surface it")
+	}
+	if runtime.GOOS == "linux" && !IsKeyringUnavailable(refused) {
+		t.Error("on linux, storage must still fall back to the file for an unrecognised error")
+	}
+
+	// No keyring at all: both agree, and removal is vacuously satisfied.
+	for _, err := range []error{
+		ErrKeyringUnavailable,
+		fmt.Errorf("the OS keyring did not respond within 2s: %w", ErrKeyringUnavailable),
+	} {
+		if !IsKeyringAbsent(err) {
+			t.Errorf("IsKeyringAbsent(%v) = false, want true", err)
+		}
+		if !IsKeyringUnavailable(err) {
+			t.Errorf("IsKeyringUnavailable(%v) = false, want true", err)
+		}
+	}
+
+	if IsKeyringAbsent(nil) {
+		t.Error("nil is not an absent keyring")
 	}
 }

@@ -157,7 +157,7 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 				// leaving a bearer token on disk after "uninstall" reported
 				// success is the failure worth spending an extra readdir on.
 				for _, name := range contextNames() {
-					if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringUnavailable(err) {
+					if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringAbsent(err) {
 						return err
 					}
 					if err := credential.DeleteContextTokenFile(name); err != nil {
@@ -171,7 +171,7 @@ func buildPlan(method updatecmd.Method, binPath string) []step {
 				// the keyring lookup. Don't fail uninstall over it —
 				// nothing to delete there is the same outcome as
 				// successfully deleted.
-				if err := credential.DeleteToken(); err != nil && !credential.IsKeyringUnavailable(err) {
+				if err := credential.DeleteToken(); err != nil && !credential.IsKeyringAbsent(err) {
 					return err
 				}
 				_ = credential.DeleteAPIURL()

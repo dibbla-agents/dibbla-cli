@@ -322,7 +322,7 @@ func (o *opts) runRm(cmd *cobra.Command, args []string) error {
 	// been told the context was removed. This way the worst partial state is a
 	// context whose token is gone, which `dibbla context list` reports as "no
 	// token stored" and a second `rm` finishes cleaning up.
-	if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringUnavailable(err) {
+	if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringAbsent(err) {
 		return fmt.Errorf("remove the stored token for %s: %w", name, err)
 	}
 	if err := credential.DeleteContextTokenFile(name); err != nil {
