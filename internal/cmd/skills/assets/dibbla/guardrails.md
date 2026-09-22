@@ -8,6 +8,8 @@ Most checks are mandatory on every deploy. The exceptions are the three that sta
 
 **Explaining any of this to the person who owns the app?** Use [secure-app.md](secure-app.md) — the same ten risks in one plain sentence each, with who handles what, a sentence the owner can paste back to you, and what this report should show them afterwards. It is written for a reader who does not read code.
 
+**Check 5 (personal data) is the one an owner gets asked about by their customers.** [gdpr.md](gdpr.md) is that check written for them: what the platform handles (EU hosting, log and backup retention, what deletion removes), and the seven things that stay theirs — the inventory, their privacy policy, a data processing agreement for their own customers, access and erasure requests, retention in their own code, and personal data in logs and third parties.
+
 ---
 
 ## Severity levels

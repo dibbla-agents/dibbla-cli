@@ -281,6 +281,12 @@ That section is the piece you can hand to a customer who asks how you handle the
 data — it is the only part of the report written to be read outside your team. If
 the app holds no personal data, one line saying so is the correct answer.
 
+**If a customer is actually asking** — a questionnaire, a data processing agreement,
+"where is our data stored", "delete our user" — read [gdpr.md](gdpr.md). It is this
+point written out in full: what Dibbla handles and with what figures, and the seven
+things that stay yours, including your own privacy policy and the agreement your
+customers will ask you to sign.
+
 ---
 
 ## 10. It was all true the day you deployed, and nobody has looked since
@@ -331,6 +337,10 @@ one corresponds to a row your agent checks in [guardrails.md](guardrails.md).
 | 8. Fetching a user-supplied address | A10:2021 Server-Side Request Forgery |
 | 9. Personal data you cannot delete, or log | GDPR Art. 5(1)(c) and (e), Art. 17, Art. 28 — not an OWASP category |
 | 10. Nobody looked since | A08:2021 Software and Data Integrity Failures · A09:2021 Security Logging and Monitoring Failures |
+
+Point 9 is the only one that is not an OWASP category, and the only one a customer
+is likely to raise with you directly. [gdpr.md](gdpr.md) is that point in full —
+the articles, what the platform handles, and the documents you are expected to have.
 
 Dibbla's own controls are described as aligned with ISO/IEC 27001:2022 Annex A.
 Dibbla AB is not ISO 27001 certified, and nothing in this file should be presented
