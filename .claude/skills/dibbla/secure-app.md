@@ -42,6 +42,14 @@ review your agent writes at the root of your project before deploying — `dibbl
 deploy` refuses to upload without it, and it is committed with your code, so you can
 read it, diff it, and show it to a customer.
 
+**One file, added to — never replaced.** If your project already has a `REVIEW.md`,
+everything here goes *into* it. Its `---` header block at the top (`Review-status:`
+and `One-Sentence-Summary:`) is what the deployments dashboard reads to show whether
+your app was reviewed; an agent that rewrites the file from scratch and drops that
+header leaves the deploy working and the status blank. If you are ever unsure, tell
+your agent: *"add this to REVIEW.md, keep the header and the sections that are
+already there."*
+
 **One honest distinction, which matters if anyone asks you about it.** `REVIEW.md`
 is an *agent's judgement of your source code*, recorded in writing and versioned
 with the code. It is not a scan, not a penetration test and not a certification.
@@ -67,8 +75,9 @@ which customer; only your app knows that.
 > "Go through every route that reads or writes customer data and confirm two things
 > for each: it requires a signed-in user, and the database query filters on the
 > caller's own user or organization id taken from the session — never from the URL
-> or a request header the client controls. List the routes you checked in REVIEW.md
-> and fix any that fail."
+> or from something the browser could have set. On Dibbla the `X-User-*` headers are
+> set by the platform in front of the app and are the trusted identity; treat them as
+> the session. Add the routes you checked to REVIEW.md and fix any that fail."
 
 **How you know it's done.** `REVIEW.md` has no `BLOCKER: broken access control` or
 `IDOR` line under the Security check, and the check's entry names the routes that
@@ -259,10 +268,12 @@ will ask you about.
 
 **Ask your agent.**
 
-> "Write the personal-data inventory for this app in REVIEW.md: every table, file
-> and bucket that holds data about a person and which field it is, how one person is
-> deleted and what that delete reaches, whether any personal data is written to the
-> logs, and which third parties receive personal data and which fields they get."
+> "Add a personal-data inventory to REVIEW.md, keeping whatever header and sections
+> the file already has, under four headings. **Stored:** every table, file and bucket
+> that holds data about a person, and which field it is. **Deletion:** how one person
+> is deleted, and which stores that delete does not reach. **Logs:** whether any
+> personal data is written to the logs. **Third parties:** who receives personal data
+> and which fields they get."
 
 **How you know it's done.** `REVIEW.md` contains the Personal data (GDPR) section
 with four things filled in: **Stored**, **Deletion**, **Logs**, **Third parties**.
