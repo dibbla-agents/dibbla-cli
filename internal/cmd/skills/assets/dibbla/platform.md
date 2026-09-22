@@ -590,11 +590,15 @@ The platform is intentionally minimal at the container boundary. It does **not**
 
 - Force a non-root user (your Dockerfile owns this).
 - Mount the root filesystem read-only.
-- Run image vulnerability scans.
 - Filter outbound network egress.
 - Apply request-size limits or rate limits.
 
-These are application-side concerns. For the security review before deploy, run the OWASP-driven checklist in `guardrails.md` — it is distinct from the compatibility checklist in §12.
+It *does* scan every build once the rollout is live — SBOM, known
+vulnerabilities and secrets in the source, stored on the revision and readable
+with `dibbla apps get <alias>` — but the scan never blocks a deploy, so treat it
+as a report, not a gate.
+
+The rest are application-side concerns. For the security review before deploy, run the OWASP-driven checklist in `guardrails.md` — it is distinct from the compatibility checklist in §12.
 
 ---
 
