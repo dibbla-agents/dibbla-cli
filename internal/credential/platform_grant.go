@@ -38,7 +38,7 @@ func platformGrantKey(context string) string {
 
 // SetPlatformGrant stores a context's platform grant in the OS keyring.
 func SetPlatformGrant(context string, payload []byte) error {
-	return KeyringSet(serviceName, platformGrantKey(context), string(payload))
+	return guardedSet(platformGrantKey(context), string(payload))
 }
 
 // GetPlatformGrant returns a context's platform grant from the OS keyring.
@@ -54,7 +54,7 @@ func GetPlatformGrant(context string) ([]byte, error) {
 // DeletePlatformGrant removes a context's platform grant from the OS keyring.
 // "Not found" is success.
 func DeletePlatformGrant(context string) error {
-	err := KeyringDelete(serviceName, platformGrantKey(context))
+	err := guardedDelete(platformGrantKey(context))
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}

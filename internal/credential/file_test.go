@@ -162,28 +162,73 @@ func TestDeleteTokenFile_RemovesIt(t *testing.T) {
 }
 
 func TestIsKeyringUnavailable(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil", nil, false},
-		// The exact wording from go-keyring on a Linux box without
-		// libsecret/gnome-keyring — the failure that motivated this
-		// whole change.
-		{"libsecret missing", errors.New("The name org.freedesktop.secrets was not provided by any .service files"), true},
-		{"no secret service", errors.New("no secret service available"), true},
-		{"dbus socket missing", errors.New("could not connect: dial unix /run/dbus: connect: no such file or directory"), true},
-		{"unrelated error", errors.New("user dismissed the unlock prompt"), false},
-		{"item not found", errors.New("Item not found"), false},
+	// The strings below are the ones godbus v5.1.0 and go-keyring v0.2.6
+	// actually produce on a headless Linux host, copied from their source
+	// rather than imagined. The previous version of this test asserted
+	// "could not connect: dial unix ...", which neither library emits: it was
+	// written to match the needle instead of the world, so it passed while
+	// the production path it certified was broken on every host it mattered
+	// on. If a dependency bump changes these, this test is where it should
+	// surface.
+	realHeadlessErrors := []struct{ name, msg string }{
+		// godbus conn_other.go:18 — no dbus-x11 installed, the common case
+		// in a container or a minimal cloud image.
+		{"no dbus-launch binary", `exec: "dbus-launch": executable file not found in $PATH`},
+		// godbus conn.go:85 / conn_other.go:31
+		{"no session bus address", "dbus: couldn't determine address of session bus"},
+		// godbus transport_unix.go:54 returns net.Dial's error verbatim.
+		{"session bus socket dead", "dial unix /run/user/1000/bus: connect: no such file or directory"},
+		// go-keyring/secret_service reaching the bus but finding no provider.
+		{"libsecret missing", "The name org.freedesktop.secrets was not provided by any .service files"},
+		{"no secret service", "no secret service available"},
+		// go-keyring secret_service.go:126, a locked collection that cannot
+		// be unlocked because there is nothing to draw a prompt.
+		{"locked collection", `failed to unlock correct collection '/org/freedesktop/secrets/aliases/default'`},
 	}
-	for _, tt := range tests {
+	for _, tt := range realHeadlessErrors {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsKeyringUnavailable(tt.err); got != tt.want {
-				t.Errorf("IsKeyringUnavailable(%q) = %v, want %v", tt.err, got, tt.want)
+			got := IsKeyringUnavailable(errors.New(tt.msg))
+			// On Linux every one of these must fall back. Elsewhere only the
+			// two that name the secret service are recognised, because a
+			// keyring failure on macOS or Windows is a real fault rather than
+			// a host that never had one.
+			want := runtime.GOOS == "linux" ||
+				strings.Contains(tt.msg, "org.freedesktop.secrets") ||
+				strings.Contains(tt.msg, "no secret service")
+			if got != want {
+				t.Errorf("IsKeyringUnavailable(%q) = %v, want %v on %s", tt.msg, got, want, runtime.GOOS)
 			}
 		})
 	}
+
+	t.Run("nil is not a failure", func(t *testing.T) {
+		if IsKeyringUnavailable(nil) {
+			t.Error("nil must not read as an unavailable keyring")
+		}
+	})
+
+	t.Run("the sentinel is recognised without text matching", func(t *testing.T) {
+		wrapped := fmt.Errorf("the OS keyring did not respond within 2s: %w", ErrKeyringUnavailable)
+		if !IsKeyringUnavailable(wrapped) {
+			t.Error("a wrapped ErrKeyringUnavailable must be recognised")
+		}
+	})
+
+	// A keyring that exists and was refused is NOT an absent keyring. Writing
+	// a plaintext copy of the token here would override a decision the user
+	// had just made by hand, so these keep failing on every platform.
+	t.Run("a refused prompt is kept as a failure", func(t *testing.T) {
+		for _, msg := range []string{
+			"user dismissed the unlock prompt",
+			"prompt was cancelled by the user",
+			"access denied",
+			"operation not permitted",
+		} {
+			if IsKeyringUnavailable(errors.New(msg)) {
+				t.Errorf("%q must not trigger a silent plaintext fallback", msg)
+			}
+		}
+	})
 }
 
 // Regression: GetTokenFile must tolerate a hand-edited file with

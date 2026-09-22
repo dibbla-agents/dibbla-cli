@@ -47,6 +47,13 @@ func Install(t *testing.T) (*Fake, string) {
 	dir := filepath.Join(t.TempDir(), "dibbla")
 	t.Cleanup(cfgdir.SetForTest(dir))
 
+	// The CI runner is headless Linux, where credential.KeyringUsable() is
+	// false and every keyring call short-circuits before reaching the seams
+	// below. Without this the fake would never be consulted and every test
+	// that believes it is exercising the keyring path would pass while
+	// exercising nothing.
+	t.Cleanup(credential.SetKeyringUsableForTest(true))
+
 	f := &Fake{Items: map[string]string{}}
 	g, s, d := credential.KeyringGet, credential.KeyringSet, credential.KeyringDelete
 	credential.KeyringGet = func(_, key string) (string, error) {

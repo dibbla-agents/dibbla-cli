@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -124,6 +125,15 @@ func readCredFileAt(path string) (map[string]string, error) {
 	if path == "" {
 		return map[string]string{}, nil
 	}
+	// Refuse a symlink rather than following it. The credentials file is
+	// created 0600 in a 0700 directory, but neither mode stops something that
+	// got there first from leaving a symlink at the name we are about to read
+	// — and then a later MergeEnvFile write would land wherever it points.
+	// Lstat is what distinguishes "the file" from "a pointer to a file".
+	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink; refusing to read credentials through it", path)
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -202,26 +212,88 @@ func DeleteTokenFile() error {
 	return nil
 }
 
-// IsKeyringUnavailable reports whether err indicates the OS keyring
-// service is not running on this host (vs. some other keyring failure
-// like a denied unlock prompt or a malformed entry). On Linux this
-// matches the wording libsecret/D-Bus produces when neither
-// gnome-keyring nor KWallet provides the org.freedesktop.secrets
-// service. Used to decide whether to fall back to file-based
-// credential storage — we only auto-fallback when the keyring is
-// genuinely absent, not when the user actively rejected it.
+// IsKeyringAbsent reports whether err means there was no keyring to talk to at
+// all — the probe found no session bus, or the call timed out.
+//
+// This is the strict question, and it is the one REMOVAL asks. Deleting a
+// credential from a store that does not exist has succeeded; a delete that was
+// attempted and refused has not, and must be reported, because telling someone
+// their token is gone while it is still live in their keyring is the one
+// outcome `dibbla logout` must never produce.
+//
+// IsKeyringUnavailable below is the loose question, and it is the one STORAGE
+// asks: "should I write to the file instead?" Storage may answer yes to a much
+// wider set of failures, because the fallback is harmless — the credential
+// still lands somewhere the CLI can read. Removal may not, because its fallback
+// is silence.
+//
+// The two were briefly the same function. On Linux that made `dibbla logout`
+// swallow a keyring delete that had genuinely failed, since the loose rule
+// treats an unrecognised Linux error as "no keyring here".
+func IsKeyringAbsent(err error) bool {
+	return err != nil && errors.Is(err, ErrKeyringUnavailable)
+}
+
+// IsKeyringUnavailable reports whether err means the file store should be used
+// for STORAGE instead of the keyring. See IsKeyringAbsent for the stricter
+// question that removal asks, and why they must differ.
+//
+// It used to be an allowlist of four substrings matched against the error text
+// of two external libraries. That was the wrong shape, and it was wrong in
+// practice: on a headless Linux box the failure usually happens a layer below
+// the one those substrings describe. go-keyring never reaches
+// org.freedesktop.secrets because godbus cannot resolve a session bus first,
+// and the errors it actually returns are
+//
+//	exec: "dbus-launch": executable file not found in $PATH
+//	dbus: couldn't determine address of session bus
+//	dial unix /run/user/1000/bus: connect: no such file or directory
+//
+// none of which matched. The consequence was that `dibbla login` failed
+// outright on exactly the hosts the file fallback was built for. (The fourth
+// needle, "could not connect: dial unix", is emitted by neither library — it
+// existed only in this package's own test.)
+//
+// The shape is now: an allowlist of the cases where we KEEP the failure, and
+// everything else falls back. The kept cases are the ones where a keyring
+// demonstrably exists and a human said no to it — auto-writing a plaintext
+// copy of a token there would override a decision the user just made. On
+// macOS and Windows nothing falls back, because a keyring failure there is a
+// real fault worth surfacing rather than a host that never had one.
 func IsKeyringUnavailable(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	needles := []string{
-		"org.freedesktop.secrets",      // canonical libsecret-on-DBus error
-		"the name org.freedesktop",     // partial match for the full DBus message
-		"no secret service",            // alternate go-keyring wording
-		"could not connect: dial unix", // DBus socket missing entirely
+	// The probe and the timeout in backend.go speak through this sentinel, so
+	// no text matching is involved on the paths this package controls.
+	if errors.Is(err, ErrKeyringUnavailable) {
+		return true
 	}
-	for _, n := range needles {
+
+	msg := strings.ToLower(err.Error())
+
+	// A keyring that is present and refused. Not a host without one.
+	for _, kept := range []string{"dismissed", "cancel", "denied", "not permitted"} {
+		if strings.Contains(msg, kept) {
+			return false
+		}
+	}
+
+	if runtime.GOOS == "linux" {
+		// Anything else on Linux: treat as no keyring. Enumerating the ways
+		// dbus and libsecret can fail is what produced the bug above, and the
+		// list would have to be re-derived every time either dependency moves.
+		// Storing a validated token beats refusing to store it.
+		return true
+	}
+
+	// macOS / Windows: keep the original narrow matching, for the case of a
+	// dibbla binary running on a Unix host that is neither.
+	for _, n := range []string{
+		"org.freedesktop.secrets",  // canonical libsecret-on-DBus error
+		"the name org.freedesktop", // partial match for the full DBus message
+		"no secret service",        // alternate go-keyring wording
+	} {
 		if strings.Contains(msg, n) {
 			return true
 		}

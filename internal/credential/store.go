@@ -35,9 +35,14 @@ var (
 )
 
 func get(key string) (string, error) {
-	val, err := KeyringGet(serviceName, key)
+	val, err := guardedGet(key)
 	if err != nil {
-		if errors.Is(err, keyring.ErrNotFound) {
+		// "there is no keyring on this host" and "the keyring has no such
+		// entry" are the same answer to the question a reader is asking, and
+		// both must read as ("", nil) so the caller falls through to the
+		// credentials file. Only a keyring that exists and then failed is
+		// worth reporting.
+		if errors.Is(err, keyring.ErrNotFound) || errors.Is(err, ErrKeyringUnavailable) {
 			return "", nil
 		}
 		return "", err
@@ -90,17 +95,17 @@ func GetOrg() (orgID, orgName string, err error) {
 
 // SetToken stores the API token in the OS credential store.
 func SetToken(token string) error {
-	return KeyringSet(serviceName, keyToken, token)
+	return guardedSet(keyToken, token)
 }
 
 // SetAPIURL stores the API URL in the OS credential store.
 func SetAPIURL(url string) error {
-	return KeyringSet(serviceName, keyAPIURL, url)
+	return guardedSet(keyAPIURL, url)
 }
 
 // DeleteToken removes the stored API token.
 func DeleteToken() error {
-	err := KeyringDelete(serviceName, keyToken)
+	err := guardedDelete(keyToken)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
@@ -109,17 +114,17 @@ func DeleteToken() error {
 
 // SetOrg stores the pinned organization id and display name.
 func SetOrg(orgID, orgName string) error {
-	if err := KeyringSet(serviceName, keyOrgID, orgID); err != nil {
+	if err := guardedSet(keyOrgID, orgID); err != nil {
 		return err
 	}
-	return KeyringSet(serviceName, keyOrgName, orgName)
+	return guardedSet(keyOrgName, orgName)
 }
 
 // DeleteOrg removes the pinned organization, returning the CLI to the org
 // that the account itself defaults to.
 func DeleteOrg() error {
 	for _, k := range []string{keyOrgID, keyOrgName} {
-		if err := KeyringDelete(serviceName, k); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		if err := guardedDelete(k); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			return err
 		}
 	}
@@ -128,7 +133,7 @@ func DeleteOrg() error {
 
 // DeleteAPIURL removes the stored API URL.
 func DeleteAPIURL() error {
-	err := KeyringDelete(serviceName, keyAPIURL)
+	err := guardedDelete(keyAPIURL)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
@@ -154,7 +159,7 @@ func contextTokenKey(name string) string {
 
 // SetContextToken stores a context's API token in the OS credential store.
 func SetContextToken(name, token string) error {
-	return KeyringSet(serviceName, contextTokenKey(name), token)
+	return guardedSet(contextTokenKey(name), token)
 }
 
 // GetContextToken returns the stored token for a context. Returns ("", nil)
@@ -166,7 +171,7 @@ func GetContextToken(name string) (string, error) {
 
 // DeleteContextToken removes a context's token. "Not found" is success.
 func DeleteContextToken(name string) error {
-	err := KeyringDelete(serviceName, contextTokenKey(name))
+	err := guardedDelete(contextTokenKey(name))
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}

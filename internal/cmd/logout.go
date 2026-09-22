@@ -131,7 +131,7 @@ func logoutEverything(out io.Writer, store *contextcfg.Config) error {
 // A hard keyring error is NOT swallowed, though — silently reporting a logout
 // that did not remove the credential is worse than failing.
 func forgetContextCredentials(name string) error {
-	if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringUnavailable(err) {
+	if err := credential.DeleteContextToken(name); err != nil && !credential.IsKeyringAbsent(err) {
 		return fmt.Errorf("remove the stored token for %s: %w", name, err)
 	}
 	if err := credential.DeleteContextTokenFile(name); err != nil {
