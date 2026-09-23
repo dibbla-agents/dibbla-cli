@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -272,5 +273,39 @@ func TestHostMismatch_GitHostDifferentFromAPIHostIsFineWhenTheServerSaysSo(t *te
 	}
 	if got := hostMismatch("https://api.dibbla.com", target, nil); got != "api.dibbla.com" {
 		t.Errorf("with nothing to ask, a different host is a mismatch, got %q", got)
+	}
+}
+
+// After the trial ended the platform refuses main in pre-receive and says why
+// on its own "remote:" lines (DIB-1045). The CLI adds only what the push did,
+// never a bare "git push: exit status 1".
+func TestGitDeployAfterTheTrialEndedSaysNothingWasDeployed(t *testing.T) {
+	gitEnv(t)
+	work, _ := linkedRepo(t)
+	os.WriteFile(filepath.Join(work, "app.py"), []byte("print('v2')\n"), 0o644)
+	refusal := "remote: Your free trial has ended — thanks for trying Dibbla!\n" +
+		"remote: Your apps keep running exactly as they are. To deploy again, upgrade to Business:\n" +
+		"remote:   https://console.dibbla.com/org-settings/plan?upgrade=review\n" +
+		" ! [remote rejected] HEAD -> main (pre-receive hook declined)\n"
+	orig := pushMain
+	pushMain = func(dir, remote, branch string, stderr io.Writer) (string, error) {
+		io.WriteString(stderr, refusal)
+		return refusal, errors.New("git push: exit status 1")
+	}
+	t.Cleanup(func() { pushMain = orig })
+
+	var stdout, stderr bytes.Buffer
+	code := runGitDeploy(input(work, "feat: v2", false), &stdout, &stderr, func(string) int { t.Fatal("nothing to follow"); return 0 })
+	if code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	got := stderr.String()
+	for _, want := range []string{"https://console.dibbla.com/org-settings/plan?upgrade=review", "Nothing was deployed", "keeps running"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "exit status") {
+		t.Errorf("a bare git exit reached the customer:\n%s", got)
 	}
 }

@@ -144,6 +144,18 @@ type APIError struct {
 	// Documentation is an optional docs URL the server attaches to the error
 	// (first real producer: the plan-limit errors, P-0027).
 	Documentation string `json:"documentation,omitempty"`
+	// UpgradeURL is the console page that lifts a plan refusal
+	// (TRIAL_EXPIRED, PLAN_LIMIT_EXCEEDED — DIB-1045). The server's message
+	// already names it; renderers use the field to tell a plan refusal
+	// apart and to make the link clickable.
+	UpgradeURL string `json:"upgrade_url,omitempty"`
+}
+
+// IsPlanRefusal reports whether the error is a plan refusal that names its
+// way forward. Those are not faults — the trial ended, or the plan is full —
+// and are drawn as a calm note rather than a red failure.
+func IsPlanRefusal(e *DeployError) bool {
+	return e != nil && e.APIError != nil && e.APIError.UpgradeURL != ""
 }
 
 type ParsedBuildError struct {

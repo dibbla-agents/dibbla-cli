@@ -54,6 +54,28 @@ type APIError struct {
 	Details       []ValidationError `json:"details"`
 	RequestID     string            `json:"request_id"`
 	Documentation string            `json:"documentation"`
+	UpgradeURL    string            `json:"upgrade_url"`
+}
+
+// PlanRefusal is a TRIAL_EXPIRED / PLAN_LIMIT_EXCEEDED answer that names its
+// way forward (DIB-1045). The command prints it as the note it is — the
+// server's own words, the upgrade link, the docs line — not as a failure.
+type PlanRefusal struct {
+	Code          string
+	Message       string
+	UpgradeURL    string
+	Documentation string
+}
+
+func (e *PlanRefusal) Error() string {
+	msg := strings.TrimRight(e.Message, "\n")
+	if !strings.Contains(msg, e.UpgradeURL) {
+		msg += "\n  " + e.UpgradeURL
+	}
+	if e.Documentation != "" {
+		msg += "\n\nDocs: " + e.Documentation
+	}
+	return msg
 }
 
 // ValidationError represents a single validation error detail.
@@ -70,6 +92,10 @@ func makeAPIURL(base, path string) string {
 func parseError(body []byte, statusCode int) error {
 	var errResp ErrorResponse
 	if err := json.Unmarshal(body, &errResp); err == nil {
+		if errResp.Error.UpgradeURL != "" {
+			return &PlanRefusal{Code: errResp.Error.Code, Message: errResp.Error.Message,
+				UpgradeURL: errResp.Error.UpgradeURL, Documentation: errResp.Error.Documentation}
+		}
 		msg := fmt.Sprintf("%s: %s", errResp.Error.Code, errResp.Error.Message)
 		if len(errResp.Error.Details) > 0 {
 			msg += "\n"
