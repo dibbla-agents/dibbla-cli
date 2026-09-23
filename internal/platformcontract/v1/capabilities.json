@@ -1404,6 +1404,21 @@
         "functions expose",
         "functions unexpose"
       ]
+    },
+    {
+      "id": "platform.servers.tools",
+      "title": "Call one tool server's exposed functions as that server's own MCP tools",
+      "state": "not-yet-available",
+      "eventual_state": "remote-write",
+      "owner": "DIB-1064",
+      "tracked_by": "DIB-1068",
+      "scopes": [
+        "platform:workflows:read"
+      ],
+      "auth": "oauth",
+      "note": "DIB-1064 Phase 1, ADR 0012 amendment of 2026-09-23. A per-server MCP address, /platform/servers/<name>, serves ONE tool server's exposed functions as native tools, one tool per function, so a person adds only the servers they want to their client instead of reaching every exposed function through platform_tools. It is a second mount on the /platform OAuth resource, not a resource of its own: the same access token, the same actor exchange and the same resource-metadata document (the DIB-764 /platform/tools precedent), so auth-service, the scope registry and consent are unchanged. The tool list is per-organization DATA, which is why mcp_tool is the wildcard: exposure is the authorization (DIB-827), workflow-server re-checks registered AND exposed AND role >= min_role on every invoke, listing and calling follow the one read scope, and platform:tools:execute stays reserved. Every tool is annotated destructiveHint and openWorldHint true (DIB-935), because what a customer's function does is not this contract's to promise. A call takes the platform_tools invoke path unchanged (64 KiB inputs, 16 KiB result cut, narrow-write quota, X-Dibbla-Source: mcp) and is recorded with surface=per_server (DIB-1067). An unknown, disconnected or nothing-exposed server answers the same empty list, so server names are not enumerable. The mount is outside parity.max_tools_full_write, which counts /platform only, and outside the directory listing: these addresses are custom connectors a person adds by hand. mcp-server serves it only behind SERVERS_MCP_ENABLED (default off); DIB-1068 moves this row to remote-write when it ships.",
+      "mcp_toolset": "/platform/servers/*",
+      "mcp_tool": "*"
     }
   ]
 }
