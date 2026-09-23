@@ -542,8 +542,8 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `INVALID_HEALTHCHECK` / `MISSING_HEALTHCHECK` | Healthcheck declaration violates the schema (multiple probes / missing required fields) | See manifest.md § 12 |
 | `HEALTHCHECK_FAILED` / `HEALTHCHECK_TIMEOUT` | Probe didn't pass at deploy time | Check pod logs; relax `failure_threshold` / `initial_delay_seconds` for slow boots |
 | `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars | Shorten the alias or service name |
-| `PLAN_LIMIT_EXCEEDED` | The org's plan is at its app or database limit (checked BEFORE any upload/build) — an at-limit org can always still redeploy its existing apps | Upgrade in the console (Org settings → Plan) or remove an app/database; the error's `Docs:` line links https://docs.dibbla.com/reference/plans |
-| `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Upgrade in the console (Org settings → Plan) — the gate lifts immediately on payment |
+| `PLAN_LIMIT_EXCEEDED` | The org's plan is at its app or database limit (checked BEFORE any upload/build) — an at-limit org can always still redeploy its existing apps | Remove an app/database, or upgrade: show the user the link the error names (`upgrade_url` in `--json`) — do not retry; the error's `Docs:` line links https://docs.dibbla.com/reference/plans |
+| `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Show the user the upgrade link the error names (`upgrade_url` in `--json`, also printed in the message) and stop — do not retry; the gate lifts immediately on payment. Also refuses `git push` to main (same text on the `remote:` lines) |
 
 ---
 
