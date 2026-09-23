@@ -426,7 +426,9 @@ func (t *TTY) printFailure() {
 		fmt.Fprintln(t.w)
 	}
 
-	if t.errEv.APIError != nil {
+	if IsPlanRefusal(t.errEv) {
+		t.printPlanRefusal(t.errEv.APIError)
+	} else if t.errEv.APIError != nil {
 		// "✗ CODE: message" — only the glyph + code carry red weight;
 		// message in white so it's still legible without saturating.
 		fmt.Fprintf(t.w, "  %s %s%s %s\n",
@@ -449,6 +451,44 @@ func (t *TTY) printFailure() {
 			t.paint(t.errEv.RetryCmd, colorBright),
 		)
 	}
+}
+
+// printPlanRefusal draws TRIAL_EXPIRED / PLAN_LIMIT_EXCEEDED (DIB-1045). It
+// is not a failure of anything the customer did, so there is no red cross
+// and no code: the server's thank-you and promise in white, the upgrade link
+// bright and clickable (OSC 8) on its own line, then the Docs line as for
+// every plan error. The code stays in --json.
+func (t *TTY) printPlanRefusal(e *APIError) {
+	linked := false
+	for i, line := range strings.Split(strings.TrimRight(e.Message, "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == e.UpgradeURL:
+			fmt.Fprintf(t.w, "      %s\n", t.link(e.UpgradeURL))
+			linked = true
+		case i == 0:
+			fmt.Fprintf(t.w, "  %s %s\n", t.paint("●", colorBrand+colorBold), t.paint(trimmed, colorWhite+colorBold))
+		default:
+			fmt.Fprintf(t.w, "    %s\n", t.paint(trimmed, colorWhite))
+		}
+	}
+	if !linked {
+		fmt.Fprintf(t.w, "      %s\n", t.link(e.UpgradeURL))
+	}
+	if e.Documentation != "" {
+		fmt.Fprintln(t.w)
+		fmt.Fprintf(t.w, "  %s %s\n", t.paint("Docs:", colorDim), t.paint(e.Documentation, colorBright))
+	}
+}
+
+// link renders url as an OSC 8 hyperlink where ANSI is on, so terminals that
+// support it open it on click; the visible text is the URL itself, so a
+// terminal that ignores OSC 8 still shows (and auto-links) the same thing.
+func (t *TTY) link(url string) string {
+	if !t.enableANSI {
+		return url
+	}
+	return "\033]8;;" + url + "\033\\" + t.paint(url, colorBright+colorBold) + "\033]8;;\033\\"
 }
 
 // ── small helpers ──────────────────────────────────────────────────────

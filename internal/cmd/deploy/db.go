@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -171,6 +172,11 @@ func runDbCreate(cmd *cobra.Command, args []string) {
 	requireToken(cfg)
 
 	created, err := db.CreateDatabase(cfg.APIURL, cfg.APIToken, name, dbCreateDeployment)
+	var refusal *db.PlanRefusal
+	if errors.As(err, &refusal) {
+		fmt.Println(refusal.Error())
+		os.Exit(1)
+	}
 	if err != nil {
 		fmt.Printf("%s Failed to create database: %v\n", platform.Icon("❌", "[X]"), err)
 		os.Exit(1)

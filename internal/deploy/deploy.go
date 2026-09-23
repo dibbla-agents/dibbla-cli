@@ -87,6 +87,7 @@ type ErrorDetail struct {
 	RequestID     string            `json:"request_id,omitempty"`
 	Documentation string            `json:"documentation,omitempty"`
 	Logs          string            `json:"logs,omitempty"`
+	UpgradeURL    string            `json:"upgrade_url,omitempty"`
 }
 
 // ValidationError represents a validation error detail
@@ -705,6 +706,7 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 					RequestID:     errResp.Error.RequestID,
 					Logs:          errResp.Error.Logs,
 					Documentation: errResp.Error.Documentation,
+					UpgradeURL:    errResp.Error.UpgradeURL,
 				},
 				StatusCode: resp.StatusCode,
 			},

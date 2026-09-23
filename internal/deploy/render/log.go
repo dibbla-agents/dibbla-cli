@@ -87,6 +87,19 @@ func (l *Log) handleError(e *DeployError) {
 	if e.APIError != nil {
 		l.line("error", "deploy", fmt.Sprintf("status=fail code=%s msg=%q", e.APIError.Code, e.APIError.Message))
 	}
+	// A plan refusal is written for a person: print it as written, link on
+	// its own line, so it reads the same in CI logs as in a terminal.
+	if IsPlanRefusal(e) {
+		printlnTo(l.out, "")
+		printlnTo(l.out, strings.TrimRight(e.APIError.Message, "\n"))
+		if !strings.Contains(e.APIError.Message, e.APIError.UpgradeURL) {
+			printlnTo(l.out, "  "+e.APIError.UpgradeURL)
+		}
+		if e.APIError.Documentation != "" {
+			printlnTo(l.out, "Docs: "+e.APIError.Documentation)
+		}
+		printlnTo(l.out, "")
+	}
 	// Only print the fenced BUILD OUTPUT block when there's real build
 	// context — pre-build failures (auth, validation, archive size) get a
 	// plain log line and the structured stderr event, no fake fence.
@@ -183,6 +196,8 @@ type structuredFailureEvent struct {
 	// Documentation is the server-attached docs URL for the error, when any
 	// (first producer: the plan-limit errors, P-0027).
 	Documentation string `json:"documentation,omitempty"`
+	// UpgradeURL is the console page that lifts a plan refusal (DIB-1045).
+	UpgradeURL string `json:"upgrade_url,omitempty"`
 }
 
 func structuredFailure(e *DeployError) structuredFailureEvent {
@@ -206,6 +221,7 @@ func structuredFailure(e *DeployError) structuredFailureEvent {
 		out.Reason = strings.ToLower(e.APIError.Code)
 		out.Message = e.APIError.Message
 		out.Documentation = e.APIError.Documentation
+		out.UpgradeURL = e.APIError.UpgradeURL
 	}
 	return out
 }
