@@ -194,7 +194,7 @@ func TestServerConfigOutputs(t *testing.T) {
 				OAuth   map[string]bool `json:"oauth"`
 			} `json:"mcpServers"`
 		}
-		if err := json.Unmarshal([]byte(out), &v); err != nil {
+		if err := json.Unmarshal([]byte(jsonFrom(out)), &v); err != nil {
 			t.Fatalf("not JSON: %v\n%s", err, out)
 		}
 		if v.MCPServers[wantKey].HTTPURL != wantURL || !v.MCPServers[wantKey].OAuth["enabled"] {
@@ -250,6 +250,11 @@ func TestServerConfigOutputs(t *testing.T) {
 			}
 			if !strings.Contains(out, wantURL) {
 				t.Errorf("client %q output lacks the address", client)
+			}
+			// Every form ends with the check, because "Connected" with 0
+			// tools is the one failure a client cannot show.
+			if strings.Count(out, "dibbla mcp server "+name+" --check") != 1 || !strings.Contains(out, "0 tools = wrong server name, or nothing exposed") {
+				t.Errorf("client %q output must end with exactly one verify hint:\n%s", client, out)
 			}
 		}
 		all := renderS("")
