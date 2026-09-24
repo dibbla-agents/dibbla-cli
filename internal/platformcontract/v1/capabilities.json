@@ -1026,7 +1026,8 @@
       "source": "dibbla-cli/internal/cmd/mcp/mcp.go:45",
       "cli_commands": [
         "mcp community",
-        "mcp platform"
+        "mcp platform",
+        "mcp server"
       ]
     },
     {
