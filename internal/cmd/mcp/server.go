@@ -227,8 +227,7 @@ func printServerConfig(w io.Writer, ts toolset, client, endpoint string, source 
 		fmt.Fprintf(w, "# MCP endpoint: %s (%s)\n", endpoint, source.Source)
 		fmt.Fprintf(w, "# One tool per exposed function of the tool server %q. No token in any form:\n", strings.TrimPrefix(ts.ServerName, "dibbla-"))
 		fmt.Fprintf(w, "# the client runs the OAuth flow itself, on the same grant as /platform.\n")
-		fmt.Fprintf(w, "# Connect first, log in second (see `dibbla mcp server --help`). Run\n")
-		fmt.Fprintf(w, "# `dibbla mcp server %s --check` to verify the chain from this machine.\n\n", strings.TrimPrefix(ts.ServerName, "dibbla-"))
+		fmt.Fprintf(w, "# Connect first, log in second (see `dibbla mcp server --help`).\n\n")
 		fmt.Fprintf(w, "## Claude Code\n\n")
 		printServerClaude(w, ts, endpoint)
 		fmt.Fprintf(w, "\n## Codex CLI (~/.codex/config.toml)\n\n")
@@ -242,7 +241,19 @@ func printServerConfig(w io.Writer, ts toolset, client, endpoint string, source 
 	default:
 		return fmt.Errorf("unknown --client %q (expected claude, codex, gemini, cursor, or opencode)", client)
 	}
+	printServerVerifyHint(w, ts)
 	return nil
+}
+
+// printServerVerifyHint closes every config form with the one check that
+// catches the silent failure: the address answers 200 with an empty tool list
+// for an unknown name and for a server with nothing exposed alike, so a
+// client shows "Connected" either way. An agent that pastes the config and
+// sees no tools must not conclude the platform has none.
+func printServerVerifyHint(w io.Writer, ts toolset) {
+	name := strings.TrimPrefix(ts.ServerName, "dibbla-")
+	fmt.Fprintf(w, "\n# Next: run `dibbla mcp server %s --check`.\n", name)
+	fmt.Fprintf(w, "# Connected but 0 tools = wrong server name, or nothing exposed on it. Not \"the platform has no tools\".\n")
 }
 
 // printServerClaude prints the Claude Code form in connect-before-login order.

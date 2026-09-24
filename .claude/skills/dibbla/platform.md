@@ -643,7 +643,10 @@ mcp server <name>` connects one tool server's exposed functions only, at
 off in their client — use it when they want just that server, modularly, and
 nothing else from the platform. Same OAuth grant, same login; find names with
 `dibbla functions exposed`. Neither command runs a server: both only print
-client configuration.
+client configuration. After connecting a client to a server address, run
+`dibbla mcp server <name> --check`: the address answers "Connected" with **0
+tools** both for a wrong name and for a server with nothing exposed, so an
+empty tool list never means the platform has no functions.
 
 ### Parity is measured in capabilities, not in tools
 
