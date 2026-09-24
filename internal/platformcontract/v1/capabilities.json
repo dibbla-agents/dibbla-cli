@@ -1404,6 +1404,18 @@
         "functions expose",
         "functions unexpose"
       ]
+    },
+    {
+      "id": "platform.servers.tools",
+      "title": "Call one tool server's exposed functions as that server's own MCP tools",
+      "state": "remote-write",
+      "scopes": [
+        "platform:workflows:read"
+      ],
+      "auth": "oauth",
+      "note": "DIB-1064 Phase 1, ADR 0012 amendment of 2026-09-23. A per-server MCP address, /platform/servers/<name>, serves ONE tool server's exposed functions as native tools, one tool per function, so a person adds only the servers they want to their client instead of reaching every exposed function through platform_tools. It is a second mount on the /platform OAuth resource, not a resource of its own: the same access token, the same actor exchange and the same resource-metadata document (the DIB-764 /platform/tools precedent), so auth-service, the scope registry and consent are unchanged. The tool list is per-organization DATA, which is why mcp_tool is the wildcard: exposure is the authorization (DIB-827), workflow-server re-checks registered AND exposed AND role >= min_role on every invoke, listing and calling follow the one read scope, and platform:tools:execute stays reserved. Every tool is annotated destructiveHint and openWorldHint true (DIB-935), because what a customer's function does is not this contract's to promise. A call keeps the platform_tools invoke bounds and error mapping (64 KiB inputs, 16 KiB result cut, narrow-write quota, X-Dibbla-Source: mcp, the 400/502 mapping), through its own copy of the invoke so platform_tools is untouched, with a test pinning the two mappings equal; a field violation names the argument itself, not inputs.<field>, because a native tool's arguments are the inputs. It is recorded with surface=per_server (DIB-1067); platform_tools sends no surface, so its rows read NULL. An unknown, disconnected or nothing-exposed server answers the same empty list, so server names are not enumerable. The mount is outside parity.max_tools_full_write, which counts /platform only, and outside the directory listing: these addresses are custom connectors a person adds by hand. Shipped by DIB-1068: mcp-server serves it only behind SERVERS_MCP_ENABLED (default off; helm mcp-server.platform.servers.enabled), so it is opt-in per installation, and /platform's tools/list, scopes and metadata are byte-identical with it on. A client should connect before it logs in: Claude Code's mcp login run first skips the 401 hint and looks for path-suffixed metadata that is not served (DIB-1069).",
+      "mcp_toolset": "/platform/servers/*",
+      "mcp_tool": "*"
     }
   ]
 }
