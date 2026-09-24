@@ -635,6 +635,16 @@ runs the OAuth login). Then the same work — deploy, restart, configure, set
 secrets, provision a database or bucket, apply a workflow, run checks, delete —
 is a tool call rather than a shell command.
 
+**Which `mcp` command to use.** `dibbla mcp platform` connects everything
+through one entry: every platform flow, and the organization's exposed
+functions as the single `platform_tools` tool (the official connector). `dibbla
+mcp server <name>` connects one tool server's exposed functions only, at
+`/platform/servers/<name>`, as separate MCP tools the person can switch on and
+off in their client — use it when they want just that server, modularly, and
+nothing else from the platform. Same OAuth grant, same login; find names with
+`dibbla functions exposed`. Neither command runs a server: both only print
+client configuration.
+
 ### Parity is measured in capabilities, not in tools
 
 The unit is the **contract row**, not the command. Several CLI commands may map

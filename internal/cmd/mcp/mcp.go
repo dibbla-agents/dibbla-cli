@@ -10,6 +10,10 @@
 //
 // The platform toolset (P-0035) is OAuth-protected; `dibbla mcp platform`
 // prints its config, --login authorizes this machine, --check proves the chain.
+//
+// `dibbla mcp server <name>` (DIB-1069) prints config for one tool server's
+// address, /platform/servers/<name>, on the same OAuth resource: that server's
+// exposed functions as separate tools instead of the one platform_tools tool.
 package mcp
 
 import (
@@ -38,13 +42,22 @@ Subcommands:
   dibbla mcp community    print client config for the community toolset
                           (community.dibbla.com over MCP)
   dibbla mcp platform     print client config for the platform toolset,
-                          --login to authorize, --check to verify`,
+                          --login to authorize, --check to verify
+  dibbla mcp server NAME  print client config for one tool server's address
+                          (/platform/servers/NAME), --login, --check
+
+Two ways to reach your organization's exposed functions:
+  platform       all exposed functions through one tool (the official connector)
+  server <name>  one tool server's exposed functions as separate tools
+
+Every mcp command prints configuration; none of them runs a server.`,
 }
 
 // Register attaches `dibbla mcp` to root.
 func Register(root *cobra.Command) {
 	mcpCmd.AddCommand(communityCmd)
 	mcpCmd.AddCommand(platformCmd)
+	mcpCmd.AddCommand(serverCmd)
 	root.AddCommand(mcpCmd)
 }
 
