@@ -89,6 +89,9 @@ type statusReport struct {
 	TrialDaysLeft *int   `json:"trial_days_left,omitempty"`
 	TrialEnded    bool   `json:"trial_ended,omitempty"`
 	UpgradeURL    string `json:"upgrade_url,omitempty"`
+	// UpgradeCommand is the terminal's way to the payment link for a trial
+	// org (DIB-1047): "dibbla upgrade". Absent for any other plan.
+	UpgradeCommand string `json:"upgrade_command,omitempty"`
 	// Folder describes the git repo status was run in when that repo has a
 	// Dibbla remote (DIB-905); nil elsewhere.
 	Folder *folderReport `json:"folder,omitempty"`
@@ -192,6 +195,9 @@ func buildStatusReport(noValidate bool) statusReport {
 	if r.Plan == "trial" && r.TrialEndsAt != "" {
 		r.readTrialClock(apps.GetPlanStatus(apiURL, token))
 	}
+	if r.Plan == "trial" {
+		r.UpgradeCommand = upgradeCommand
+	}
 	return r
 }
 
@@ -253,6 +259,25 @@ func (r *statusReport) planLine() (string, string) {
 	default:
 		return fmt.Sprintf("%s (ends %s)", r.Plan, r.TrialEndsAt), ""
 	}
+}
+
+// upgradeCommand is what status names as the way to pay from a trial.
+const upgradeCommand = "dibbla upgrade"
+
+// upgradeLines are the lines under Plan: for a trial (DIB-1047): always the
+// command that prints the payment link, and in the last week or after the end
+// the console link beside it. Nothing for any other plan.
+func (r *statusReport) upgradeLines(consoleURL string) []string {
+	if r.UpgradeCommand == "" {
+		if consoleURL != "" {
+			return []string{"upgrade: " + consoleURL}
+		}
+		return nil
+	}
+	if consoleURL == "" {
+		return []string{"upgrade: run " + r.UpgradeCommand + " for a payment link"}
+	}
+	return []string{"upgrade: " + consoleURL, "         or run " + r.UpgradeCommand + " for a payment link"}
 }
 
 // resolvedToken is the token the folder check may use — the same one the
@@ -440,8 +465,8 @@ func printStatusHuman(r statusReport) {
 	if r.Plan != "" {
 		line, upgrade := r.planLine()
 		fmt.Printf("Plan:    %s\n", line)
-		if upgrade != "" {
-			fmt.Printf("         upgrade: %s\n", upgrade)
+		for _, l := range r.upgradeLines(upgrade) {
+			fmt.Printf("         %s\n", l)
 		}
 	}
 

@@ -16,7 +16,7 @@ func TestParseError_PlanRefusal(t *testing.T) {
 		t.Fatalf("err = %T %v", err, err)
 	}
 	got := err.Error()
-	if !strings.Contains(got, "To create databases again") || !strings.HasSuffix(got, "\n\nDocs: https://docs.dibbla.com/reference/plans") ||
+	if !strings.Contains(got, "To create databases again") || !strings.Contains(got, "\nOr get the payment link right here: dibbla upgrade\n") || !strings.HasSuffix(got, "\n\nDocs: https://docs.dibbla.com/reference/plans") ||
 		strings.Count(got, "https://c/org-settings/plan?upgrade=review") != 1 || strings.Contains(got, "TRIAL_EXPIRED") {
 		t.Fatalf("text:\n%s", got)
 	}

@@ -79,6 +79,7 @@ func init() {
 	rootCmd.AddCommand(logoutCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(orgCmd)
+	rootCmd.AddCommand(upgradeCmd)
 	contextcmd.Register(rootCmd)
 	rootCmd.AddCommand(feedbackCmd)
 	deploycmd.Register(rootCmd)

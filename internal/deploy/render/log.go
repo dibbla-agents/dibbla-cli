@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/upgrade"
 )
 
 // Log renders the non-TTY (CI / piped) variant: ISO-8601 timestamped log
@@ -101,6 +103,9 @@ func (l *Log) handleError(e *DeployError) {
 		printlnTo(l.out, strings.TrimRight(e.APIError.Message, "\n"))
 		if !strings.Contains(e.APIError.Message, e.APIError.UpgradeURL) {
 			printlnTo(l.out, "  "+e.APIError.UpgradeURL)
+		}
+		if hint := upgrade.CommandHint(e.APIError.Code, e.APIError.UpgradeURL); hint != "" {
+			printlnTo(l.out, hint)
 		}
 		if e.APIError.Documentation != "" {
 			printlnTo(l.out, "Docs: "+e.APIError.Documentation)
@@ -205,6 +210,9 @@ type structuredFailureEvent struct {
 	Documentation string `json:"documentation,omitempty"`
 	// UpgradeURL is the console page that lifts a plan refusal (DIB-1045).
 	UpgradeURL string `json:"upgrade_url,omitempty"`
+	// UpgradeCommand is "dibbla upgrade" when the refusal is lifted by
+	// upgrading a trial (DIB-1047): the payment link, one command away.
+	UpgradeCommand string `json:"upgrade_command,omitempty"`
 }
 
 func structuredFailure(e *DeployError) structuredFailureEvent {
@@ -229,6 +237,9 @@ func structuredFailure(e *DeployError) structuredFailureEvent {
 		out.Message = e.APIError.Message
 		out.Documentation = e.APIError.Documentation
 		out.UpgradeURL = e.APIError.UpgradeURL
+		if upgrade.CommandHint(e.APIError.Code, e.APIError.UpgradeURL) != "" {
+			out.UpgradeCommand = "dibbla upgrade"
+		}
 	}
 	return out
 }

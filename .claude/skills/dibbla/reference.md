@@ -179,10 +179,11 @@ Status:  ✅ logged in
 The `Folder`/`App`/`Sync`/`Running` lines appear only inside a linked folder.
 
 The `Plan` line appears only when the validated organization has a plan
-(P-0027); trials read `Plan:    trial (ends 2026-09-21T00:00:00Z)`. In the
+(P-0027); trials read `Plan:    trial (ends 2026-09-21T00:00:00Z)` with
+`upgrade: run dibbla upgrade for a payment link` on the next line. In the
 trial's last seven days it reads `Plan:    trial (ends in 3 days, Oct 1)` with
-an `upgrade:` link on the next line, and after the end `trial (ended Oct 1 — …)`
-with the same link. Under `--no-validate` no network call is made, so no plan
+the console's `upgrade:` link on the next line and `or run dibbla upgrade …`
+under it, and after the end `trial (ended Oct 1 — …)` with the same two lines. Under `--no-validate` no network call is made, so no plan
 is shown.
 
 The `Org` line reads `account default (none selected)` when no organization has
@@ -209,7 +210,7 @@ been selected — see [org](#org).
 `validation_error` is added when a token was rejected; omitted otherwise.
 `plan` and `trial_ends_at` are present only when validation ran and the
 organization has a plan. A trial adds `trial_days_left` (never negative),
-`trial_ended` and `upgrade_url`.
+`trial_ended`, `upgrade_url` and `upgrade_command` (`"dibbla upgrade"`).
 `org_id` / `org_name` are omitted when no organization is selected, in which
 case `org_source` reads `none (account default)`. `org_name` is also absent
 when the organization came from `--org` or `DIBBLA_ORG_ID`, which carry an id
@@ -224,6 +225,32 @@ dibbla status --json | jq '.api_url'   # script-friendly endpoint extraction
 ```
 
 **Agent guidance:** before running anything that depends on a working login (`deploy`, `wf execute`, etc.), you can use `dibbla status --json` to detect a missing/invalid token and surface a clear error rather than waiting for the downstream 401. In CI, `DIBBLA_API_TOKEN` always wins over any cached keyring/file credential — `status` will report `source: env (DIBBLA_API_TOKEN)` so you can confirm CI is using the token you think it is.
+
+---
+
+## upgrade
+
+Print a Stripe Checkout link that upgrades the organization the CLI acts as
+from its trial (running or ended) to Business — the same link the console's
+Plan tab and a connected agent (`platform_whoami upgrade=true`) hand out.
+Nothing changes until the payment goes through: the link opens Stripe's
+checkout and expires unused after 24 hours. Right after payment, deploys work
+again; running apps and data are untouched either way.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla upgrade` — print the link with a short explanation |
+| **Flags** | `--open` — also open the link in the browser |
+| | `--json` — `{"status":"checkout_ready","checkout_url":"https://checkout.stripe.com/…","message":…,"org_id":…,"org_name":…}`, or `{"status":"not_available","reason":…,"message":…}` with no link |
+| | `--org <id>` — upgrade another organization you belong to |
+| **Who gets a link** | An owner or admin. Everyone else gets `reason: ROLE_REQUIRED` and is told who can upgrade. |
+| **No link, by design** | `ALREADY_SUBSCRIBED` (already on Business — manage billing in the console), `ENTERPRISE_PLAN` and `EXTERNALLY_BILLED` (contact Dibbla), `BILLING_DISABLED` (an installation without card payments) |
+| **Exit codes** | `0` — answered, with or without a link. `3` — not logged in. `1` — the link could not be created; nothing has changed. |
+| **Not here** | Managing or cancelling an existing subscription: console → Org settings → Plan → Manage billing. |
+
+For an agent: show the user `checkout_url` exactly as it is and let them pay;
+do not open it for them unless they ask, and do not retry a `not_available`
+answer — it will say the same thing.
 
 ---
 
@@ -547,7 +574,7 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `HEALTHCHECK_FAILED` / `HEALTHCHECK_TIMEOUT` | Probe didn't pass at deploy time | Check pod logs; relax `failure_threshold` / `initial_delay_seconds` for slow boots |
 | `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars | Shorten the alias or service name |
 | `PLAN_LIMIT_EXCEEDED` | The org's plan is at its app or database limit (checked BEFORE any upload/build) — an at-limit org can always still redeploy its existing apps | Remove an app/database, or upgrade: show the user the link the error names (`upgrade_url` in `--json`) — do not retry; the error's `Docs:` line links https://docs.dibbla.com/reference/plans |
-| `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Show the user the upgrade link the error names (`upgrade_url` in `--json`, also printed in the message) and stop — do not retry; the gate lifts immediately on payment. Also refuses `git push` to main (same text on the `remote:` lines) |
+| `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Show the user the upgrade link the error names (`upgrade_url` in `--json`, also printed in the message) and stop — do not retry; the gate lifts immediately on payment. The message ends with `Or get the payment link right here: dibbla upgrade` (`upgrade_command` in `--json`): run [`dibbla upgrade`](#upgrade) to hand an owner/admin a Stripe Checkout link directly. Also refuses `git push` to main (same text on the `remote:` lines) |
 
 **Trial heads-up (not an error).** In a free trial's last seven days a
 successful deploy ends with `Heads-up: your free trial ends in N days (…)` and
