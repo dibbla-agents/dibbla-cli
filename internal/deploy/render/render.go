@@ -55,6 +55,37 @@ type DeployResult struct {
 	// failed version-control commit and the list of paths excluded from it.
 	VCSError    string   `json:"vcs_error,omitempty"`
 	VCSFiltered []string `json:"vcs_filtered,omitempty"`
+	// TrialWarning is the last-week heads-up (DIB-1048): the org's trial
+	// ends within seven days. Drawn once, last, in a calm style — it is a
+	// reminder on a success, not a notice about this deploy.
+	TrialWarning *TrialWarning `json:"trial_warning,omitempty"`
+}
+
+// TrialWarning mirrors deploy-api's models.TrialWarning. Message is the whole
+// text, link included, as the server wrote it.
+type TrialWarning struct {
+	DaysLeft   int    `json:"days_left"`
+	EndsAt     string `json:"ends_at"`
+	UpgradeURL string `json:"upgrade_url,omitempty"`
+	Message    string `json:"message"`
+}
+
+// Split separates the heads-up's sentence from its link, so a renderer can
+// wrap the one and keep the other whole and clickable on its own line. url is
+// "" when the message carries none (no console on this install).
+func (w *TrialWarning) Split() (text, url string) {
+	var parts []string
+	for _, line := range strings.Split(w.Message, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "":
+		case w.UpgradeURL != "" && line == w.UpgradeURL:
+			url = line
+		default:
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, " "), url
 }
 
 type ResultDeployment struct {
@@ -196,6 +227,27 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 			len(r.VCSFiltered), strings.Join(r.VCSFiltered, ", ")))
 	}
 	return out
+}
+
+// wrapWords breaks text into lines of at most width columns, on spaces.
+func wrapWords(text string, width int) []string {
+	var lines []string
+	cur := ""
+	for _, word := range strings.Fields(text) {
+		switch {
+		case cur == "":
+			cur = word
+		case len([]rune(cur))+1+len([]rune(word)) > width:
+			lines = append(lines, cur)
+			cur = word
+		default:
+			cur += " " + word
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
 }
 
 // formatElapsed renders a duration with the same shape the design uses

@@ -55,6 +55,13 @@ func (q *Quiet) OnDone() int {
 		for _, n := range q.result.Notices() {
 			fmt.Fprintf(q.out, "! %s: %s\n", n.Label, n.Text)
 		}
+		if w := q.result.TrialWarning; w != nil && w.Message != "" {
+			text, url := w.Split()
+			fmt.Fprintf(q.out, "· %s\n", text)
+			if url != "" {
+				fmt.Fprintf(q.out, "  %s\n", url)
+			}
+		}
 	}
 	return 0
 }
