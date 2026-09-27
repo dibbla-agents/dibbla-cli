@@ -146,7 +146,17 @@ func newCatalogClient(stderr io.Writer) (catalogClient, bool) {
 
 func reportError(stderr io.Writer, err error) int {
 	if apiErr, ok := err.(*apiclient.APIError); ok {
-		msg := apiErr.Message
+		// The gateway answers {"error":{"code","message"}}; apiclient keeps
+		// the raw body, so show the message rather than the JSON.
+		msg := strings.TrimSpace(apiErr.Message)
+		var env struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(msg), &env) == nil && env.Error.Message != "" {
+			msg = env.Error.Message
+		}
 		if apiErr.StatusCode == 403 {
 			msg = "the model catalog is for global admins only"
 		}

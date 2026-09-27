@@ -12,6 +12,7 @@ import (
 )
 
 type fakeCatalog struct {
+	putErr  *apiclient.APIError
 	models  []catalogModel
 	puts    map[string]catalogInput
 	deletes []string
@@ -27,6 +28,9 @@ func (f *fakeCatalog) Get(path string) (*apiclient.Response, error) {
 }
 
 func (f *fakeCatalog) Put(path string, body interface{}) (*apiclient.Response, error) {
+	if f.putErr != nil {
+		return nil, f.putErr
+	}
 	in := body.(catalogInput)
 	alias := path[strings.LastIndex(path, "/")+1:]
 	if f.puts == nil {
@@ -156,5 +160,19 @@ func TestPrice(t *testing.T) {
 		if got := price(in); got != want {
 			t.Errorf("price(%v) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The gateway's error envelope is shown as its message, not as raw JSON —
+// measured on dev: a typo printed the whole {"error":{…}} body.
+func TestModelsSetShowsTheGatewayMessage(t *testing.T) {
+	f := &fakeCatalog{models: []catalogModel{sonnet}, putErr: &apiclient.APIError{StatusCode: 400,
+		Message: `{"error":{"code":"MODEL_NOT_FOUND_AT_PROVIDER","message":"anthropic has no model claude-sonet-5"}}` + "\n"}}
+	var out, errb bytes.Buffer
+	if code := runModelsSet(f.factory(), setCommand(t, "--model", "claude-sonet-5"), "sonnet-5", &out, &errb); code == 0 {
+		t.Fatal("must fail")
+	}
+	if got := errb.String(); strings.Contains(got, "{") || !strings.Contains(got, "anthropic has no model claude-sonet-5") {
+		t.Fatalf("stderr = %q", got)
 	}
 }
