@@ -95,3 +95,11 @@ func resolveGatewayURL() resolveResult {
 func deriveFromAPIURL(raw string) (string, error) {
 	return config.SubdomainURL(raw, "ai")
 }
+
+// GatewayURL returns the AI gateway base URL other command groups should
+// call, with the same precedence as `dibbla ai` (DIBBLA_AI_GATEWAY_URL, else
+// derived from the API URL), and an explanation when it cannot be derived.
+func GatewayURL() (url, source string) {
+	r := resolveGatewayURL()
+	return r.URL, r.Source
+}
