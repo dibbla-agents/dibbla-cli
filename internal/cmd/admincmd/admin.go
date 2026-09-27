@@ -1,23 +1,24 @@
-// Package admincmd implements `dibbla admin …`, platform-admin commands
-// gated by DIBBLA_ADMIN_TOKEN. The user's API token is NOT used; admin
-// endpoints require a separate static token that the platform operator
-// configures server-side.
+// Package admincmd implements `dibbla admin …`, platform-admin commands.
+// reconcile is gated by DIBBLA_ADMIN_TOKEN, a static operator token; models
+// uses the logged-in user's token and is allowed for global admins only.
 package admincmd
 
 import "github.com/spf13/cobra"
 
 var adminCmd = &cobra.Command{
 	Use:   "admin",
-	Short: "Platform-admin commands (gated by DIBBLA_ADMIN_TOKEN)",
-	Long: `Platform-admin commands. Each subcommand requires DIBBLA_ADMIN_TOKEN in the
-environment; the user's normal API token is not used.
+	Short: "Platform-admin commands",
+	Long: `Platform-admin commands.
 
 Subcommands:
-  reconcile    Force one orphan-resource sweep on the deploy-api instance`,
+  models       Manage the platform model catalog (global admin login)
+  reconcile    Force one orphan-resource sweep on the deploy-api instance
+               (requires DIBBLA_ADMIN_TOKEN; the user's API token is not used)`,
 }
 
 // Register attaches the admin command group to the given root.
 func Register(root *cobra.Command) {
 	adminCmd.AddCommand(reconcileCmd)
+	adminCmd.AddCommand(modelsCmd)
 	root.AddCommand(adminCmd)
 }

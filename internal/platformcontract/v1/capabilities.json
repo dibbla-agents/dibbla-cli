@@ -1346,6 +1346,20 @@
       ]
     },
     {
+      "id": "cli.admin.models",
+      "title": "Manage the platform model catalog from a global admin’s machine",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "A platform-operator authority: the model catalog is global to every tenant and editable only by a Dibbla global admin (owner/admin of the global organization), checked by the AI gateway on the validated identity. No OAuth scope carries that authority, and inventing one would put an operator power inside a customer consent screen. The catalog is not a tenant’s resource.",
+      "source": "dibbla-cli/internal/cmd/admincmd/models.go",
+      "cli_commands": [
+        "admin models list",
+        "admin models set",
+        "admin models delete"
+      ]
+    },
+    {
       "id": "platform.tools.list",
       "title": "List the functions the organization exposes as tools",
       "state": "remote-read",

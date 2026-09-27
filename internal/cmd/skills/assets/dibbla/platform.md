@@ -730,6 +730,7 @@ something on the caller's own machine that no remote call can reach:
 | `cli.update` | `update`, `uninstall` | Replaces a binary on the caller's machine. |
 | `cli.ai_gateway`, `cli.mcp_client_config` | `ai …`, `mcp …` | Answers about the calling machine's environment and its agent's config file. |
 | `cli.admin` | `admin reconcile` | Gated by `DIBBLA_ADMIN_TOKEN`, an operator marker that lives outside the OAuth grant model entirely. |
+| `cli.admin.models` | `admin models list`, `admin models set`, `admin models delete` | Edits the platform-wide model catalog in the AI gateway, which only a Dibbla global admin may do. That is an operator authority no OAuth scope carries, and the catalog is not a tenant's resource. |
 
 There is nothing else. Every other CLI capability is reachable through
 `/platform` today; a gap would be a `not-yet-available` row with an owner and a
