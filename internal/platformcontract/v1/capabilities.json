@@ -213,12 +213,13 @@
         "platform:identity:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-530 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise.",
+      "note": "Shipped by DIB-530 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. `dibbla upgrade` is platform_whoami upgrade=true (DIB-1046/DIB-1047): the same Stripe Checkout link for an owner or admin, the same refusals for anyone else.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_whoami",
       "production": "live",
       "cli_commands": [
-        "status"
+        "status",
+        "upgrade"
       ]
     },
     {

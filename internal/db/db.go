@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/upgrade"
 )
 
 const requestTimeout = 60 * time.Second
@@ -71,6 +73,9 @@ func (e *PlanRefusal) Error() string {
 	msg := strings.TrimRight(e.Message, "\n")
 	if !strings.Contains(msg, e.UpgradeURL) {
 		msg += "\n  " + e.UpgradeURL
+	}
+	if hint := upgrade.CommandHint(e.Code, e.UpgradeURL); hint != "" {
+		msg += "\n" + hint
 	}
 	if e.Documentation != "" {
 		msg += "\n\nDocs: " + e.Documentation

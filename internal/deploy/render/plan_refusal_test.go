@@ -39,6 +39,7 @@ func TestTTY_TrialExpiredIsACalmNoteWithTheLink(t *testing.T) {
 		"● Your free trial has ended — thanks for trying Dibbla!",
 		"    Your apps keep running exactly as they are.",
 		"      " + trialLink + "\n",
+		"    Or get the payment link right here: dibbla upgrade\n",
 		"Docs: https://docs.dibbla.com/reference/plans",
 	} {
 		if !strings.Contains(out, want) {
@@ -70,7 +71,7 @@ func TestLog_TrialExpiredPrintsTheTextAsWritten(t *testing.T) {
 	scriptedTrialExpired(r)
 	r.OnDone()
 	got := out.String()
-	for _, want := range []string{trialText + "\n", "Docs: https://docs.dibbla.com/reference/plans"} {
+	for _, want := range []string{trialText + "\n", "Or get the payment link right here: dibbla upgrade\n", "Docs: https://docs.dibbla.com/reference/plans"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plain output lacks %q:\n%s", want, got)
 		}
@@ -90,7 +91,7 @@ func TestJSON_TrialExpiredCarriesUpgradeURL(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, buf.String())
 	}
-	if got["upgrade_url"] != trialLink || got["api_error_code"] != "TRIAL_EXPIRED" || got["documentation"] == nil {
+	if got["upgrade_url"] != trialLink || got["api_error_code"] != "TRIAL_EXPIRED" || got["documentation"] == nil || got["upgrade_command"] != "dibbla upgrade" {
 		t.Fatalf("--json: %s", buf.String())
 	}
 }

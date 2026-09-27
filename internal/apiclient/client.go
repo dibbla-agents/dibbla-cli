@@ -182,8 +182,13 @@ func ValidateToken(baseURL, token string) error {
 
 // ValidateInfo is the subset of the validate response the CLI displays
 // (P-0027): the org's plan name and RFC3339 trial end, both empty on installs
-// without billing and on orgs with no plan.
+// without billing and on orgs with no plan. OrganizationID, OrgRole and
+// OrgSlug name the org the answer is about and the caller's role in it
+// (`dibbla upgrade`, DIB-1047).
 type ValidateInfo struct {
+	OrganizationID string `json:"organization_id"`
+	OrgRole        string `json:"org_role"`
+	OrgSlug        string `json:"org_slug"`
 	OrgPlan        string `json:"org_plan"`
 	OrgTrialEndsAt string `json:"org_trial_ends_at"`
 }

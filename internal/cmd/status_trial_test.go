@@ -83,3 +83,18 @@ func TestStatusReadsTheTrialClock(t *testing.T) {
 		t.Fatalf("counted locally: %+v", r)
 	}
 }
+
+// Every trial names dibbla upgrade under Plan: (DIB-1047); in the last week
+// and after the end the console link comes first. Other plans get nothing new.
+func TestStatusUpgradeLines(t *testing.T) {
+	trial := statusReport{Plan: "trial", UpgradeCommand: upgradeCommand}
+	if got := trial.upgradeLines(""); len(got) != 1 || got[0] != "upgrade: run dibbla upgrade for a payment link" {
+		t.Fatalf("trial: %q", got)
+	}
+	if got := trial.upgradeLines(statusUpgrade); len(got) != 2 || got[0] != "upgrade: "+statusUpgrade || got[1] != "         or run dibbla upgrade for a payment link" {
+		t.Fatalf("last week: %q", got)
+	}
+	if got := (&statusReport{Plan: "standard"}).upgradeLines(""); got != nil {
+		t.Fatalf("business: %q", got)
+	}
+}

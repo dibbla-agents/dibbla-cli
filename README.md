@@ -175,6 +175,18 @@ In CI, set environment variables instead of using `login`:
 
 Get your API token at [app.dibbla.com/api-keys](https://app.dibbla.com/api-keys).
 
+### Upgrade from a trial
+
+`dibbla upgrade` prints a Stripe Checkout link that moves the organization the CLI acts as from its free trial to Business — the same link the console's Plan tab and a connected agent give you. Nothing changes until the payment goes through; right after it does, deploys work again. Running apps and data are untouched either way.
+
+```bash
+dibbla upgrade            # print the payment link
+dibbla upgrade --open     # print it and open it in your browser
+dibbla upgrade --json     # {"status":"checkout_ready","checkout_url":"https://checkout.stripe.com/…",…}
+```
+
+Only an owner or admin can upgrade. Anyone else — and an organization already on Business, on an Enterprise agreement or billed by Dibbla directly — gets a short explanation and no link (`"status":"not_available"` with a `reason` in `--json`). `dibbla status` names the command under the `Plan:` line of every trial, and a deploy refused because the trial ended ends with it too. Managing or cancelling a subscription stays in the console (Org settings → Plan → Manage billing).
+
 ### Update notifications
 
 On interactive terminals, `dibbla` checks for new releases in the background at most once every 24 hours. The check is non-blocking, so fast commands like `--help` and `--version` return immediately.

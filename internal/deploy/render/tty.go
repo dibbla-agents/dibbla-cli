@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/upgrade"
 )
 
 // TTY renders the live buildkit-style deploy view from the design — a
@@ -493,6 +495,9 @@ func (t *TTY) printPlanRefusal(e *APIError) {
 	}
 	if !linked {
 		fmt.Fprintf(t.w, "      %s\n", t.link(e.UpgradeURL))
+	}
+	if hint := upgrade.CommandHint(e.Code, e.UpgradeURL); hint != "" {
+		fmt.Fprintf(t.w, "    %s\n", t.paint(hint, colorWhite))
 	}
 	if e.Documentation != "" {
 		fmt.Fprintln(t.w)
