@@ -43,6 +43,13 @@ func (l *Log) OnEvent(ev DeployEvent) {
 			for _, n := range l.result.Notices() {
 				l.line("warn", n.Label, n.Text)
 			}
+			if w := l.result.TrialWarning; w != nil && w.Message != "" {
+				text, url := w.Split()
+				l.line("info", "trial", text)
+				if url != "" {
+					l.line("info", "trial", url)
+				}
+			}
 		}
 	case "error":
 		l.errEv = ev.Error

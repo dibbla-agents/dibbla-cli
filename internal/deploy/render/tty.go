@@ -320,6 +320,25 @@ func (t *TTY) finalize() {
 		t.paint("follow logs ·", colorDim),
 		t.paint(fmt.Sprintf("dibbla logs %s -f", t.result.Deployment.Alias), colorBright),
 	)
+	t.printTrialWarning()
+}
+
+// printTrialWarning ends a successful deploy with the trial's last-week
+// heads-up (DIB-1048): dimmed, wrapped, the link whole on its own line. A
+// reminder, so no icon and no colour that reads as a problem.
+func (t *TTY) printTrialWarning() {
+	w := t.result.TrialWarning
+	if w == nil || w.Message == "" {
+		return
+	}
+	text, url := w.Split()
+	fmt.Fprintln(t.w)
+	for _, line := range wrapWords(text, 72) {
+		fmt.Fprintf(t.w, "  %s\n", t.paint(line, colorDim))
+	}
+	if url != "" {
+		fmt.Fprintf(t.w, "  %s\n", t.link(url))
+	}
 }
 
 // printServicesTable prints a per-service summary line under the DEPLOYED

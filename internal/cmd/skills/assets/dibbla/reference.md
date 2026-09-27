@@ -179,8 +179,11 @@ Status:  ✅ logged in
 The `Folder`/`App`/`Sync`/`Running` lines appear only inside a linked folder.
 
 The `Plan` line appears only when the validated organization has a plan
-(P-0027); trials read `Plan:    trial (ends 2026-09-21T00:00:00Z)`. Under
-`--no-validate` no network call is made, so no plan is shown.
+(P-0027); trials read `Plan:    trial (ends 2026-09-21T00:00:00Z)`. In the
+trial's last seven days it reads `Plan:    trial (ends in 3 days, Oct 1)` with
+an `upgrade:` link on the next line, and after the end `trial (ended Oct 1 — …)`
+with the same link. Under `--no-validate` no network call is made, so no plan
+is shown.
 
 The `Org` line reads `account default (none selected)` when no organization has
 been selected — see [org](#org).
@@ -205,7 +208,8 @@ been selected — see [org](#org).
 
 `validation_error` is added when a token was rejected; omitted otherwise.
 `plan` and `trial_ends_at` are present only when validation ran and the
-organization has a plan.
+organization has a plan. A trial adds `trial_days_left` (never negative),
+`trial_ended` and `upgrade_url`.
 `org_id` / `org_name` are omitted when no organization is selected, in which
 case `org_source` reads `none (account default)`. `org_name` is also absent
 when the organization came from `--org` or `DIBBLA_ORG_ID`, which carry an id
@@ -544,6 +548,12 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `SERVICE_NAME_TOO_LONG` | Computed K8s name `{alias}-{service}` exceeds 63 chars | Shorten the alias or service name |
 | `PLAN_LIMIT_EXCEEDED` | The org's plan is at its app or database limit (checked BEFORE any upload/build) — an at-limit org can always still redeploy its existing apps | Remove an app/database, or upgrade: show the user the link the error names (`upgrade_url` in `--json`) — do not retry; the error's `Docs:` line links https://docs.dibbla.com/reference/plans |
 | `TRIAL_EXPIRED` | The org's free trial has ended; deploys and creates gate while running apps keep serving | Show the user the upgrade link the error names (`upgrade_url` in `--json`, also printed in the message) and stop — do not retry; the gate lifts immediately on payment. Also refuses `git push` to main (same text on the `remote:` lines) |
+
+**Trial heads-up (not an error).** In a free trial's last seven days a
+successful deploy ends with `Heads-up: your free trial ends in N days (…)` and
+the upgrade link (`trial_warning` in `--json`; on a `git push` it is on the
+`remote:` lines). The deploy worked — tell the user once, with the link, and
+carry on.
 
 ---
 

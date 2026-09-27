@@ -59,6 +59,9 @@ func (j *JSONRenderer) OnDone() int {
 		if len(j.result.VCSFiltered) > 0 {
 			out["vcs_filtered"] = j.result.VCSFiltered
 		}
+		if j.result.TrialWarning != nil {
+			out["trial_warning"] = j.result.TrialWarning
+		}
 		_ = enc.Encode(out)
 	}
 	return 0

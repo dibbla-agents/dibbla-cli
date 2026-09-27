@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -80,6 +82,13 @@ type statusReport struct {
 	// --no-validate (no network) and on orgs/installs without a plan.
 	Plan        string `json:"plan,omitempty"`
 	TrialEndsAt string `json:"trial_ends_at,omitempty"`
+	// TrialDaysLeft, TrialEnded and UpgradeURL are a trial org's clock
+	// (DIB-1048), counted the way the console counts: never negative, and
+	// "ended" once the end has passed. UpgradeURL comes from deploy-api's
+	// GET /plan and is absent when that could not be read.
+	TrialDaysLeft *int   `json:"trial_days_left,omitempty"`
+	TrialEnded    bool   `json:"trial_ended,omitempty"`
+	UpgradeURL    string `json:"upgrade_url,omitempty"`
 	// Folder describes the git repo status was run in when that repo has a
 	// Dibbla remote (DIB-905); nil elsewhere.
 	Folder *folderReport `json:"folder,omitempty"`
@@ -180,7 +189,70 @@ func buildStatusReport(noValidate bool) statusReport {
 		r.TrialEndsAt = info.OrgTrialEndsAt
 	}
 	r.LoggedIn = true
+	if r.Plan == "trial" && r.TrialEndsAt != "" {
+		r.readTrialClock(apps.GetPlanStatus(apiURL, token))
+	}
 	return r
+}
+
+// trialWarningDays is the trial's last stretch, in which status says "ends in
+// N days" and links the upgrade: seven days or fewer, as deploy does.
+const trialWarningDays = 7
+
+// readTrialClock fills the trial clock from deploy-api's answer, or — from a
+// server that does not carry it, or none at all — counts it here by the same
+// rule, without the link.
+func (r *statusReport) readTrialClock(ps *apps.PlanStatus, err error) {
+	if err == nil && ps != nil && ps.DaysLeft != nil {
+		days := *ps.DaysLeft
+		r.TrialDaysLeft, r.TrialEnded, r.UpgradeURL = &days, ps.TrialEnded, ps.UpgradeURL
+		return
+	}
+	if days, ended, ok := trialClock(r.TrialEndsAt, time.Now()); ok {
+		r.TrialDaysLeft, r.TrialEnded = &days, ended
+	}
+}
+
+// trialClock is the console's count (deploy-ui/src/lib/plan.ts): whole days
+// left rounded up, never negative, ended once the end is reached.
+func trialClock(endsAt string, now time.Time) (days int, ended, ok bool) {
+	end, err := time.Parse(time.RFC3339, endsAt)
+	if err != nil {
+		return 0, false, false
+	}
+	remaining := end.Sub(now)
+	if remaining <= 0 {
+		return 0, true, true
+	}
+	return int(math.Ceil(float64(remaining) / float64(24*time.Hour))), false, true
+}
+
+// planLine is the Plan: line's value, and the upgrade link to print under it
+// ("" when there is none to print). A trial in its last week says "ends in N
+// days" instead of the bare date; an ended one says so.
+func (r *statusReport) planLine() (string, string) {
+	if r.Plan != "trial" || r.TrialEndsAt == "" {
+		return r.Plan, ""
+	}
+	if r.TrialDaysLeft == nil {
+		return fmt.Sprintf("%s (ends %s)", r.Plan, r.TrialEndsAt), ""
+	}
+	date := r.TrialEndsAt
+	if t, err := time.Parse(time.RFC3339, r.TrialEndsAt); err == nil {
+		date = t.UTC().Format("Jan 2")
+	}
+	switch days := *r.TrialDaysLeft; {
+	case r.TrialEnded:
+		return fmt.Sprintf("%s (ended %s — running apps keep serving, deploys are paused)", r.Plan, date), r.UpgradeURL
+	case days <= trialWarningDays:
+		unit := "days"
+		if days == 1 {
+			unit = "day"
+		}
+		return fmt.Sprintf("%s (ends in %d %s, %s)", r.Plan, days, unit, date), r.UpgradeURL
+	default:
+		return fmt.Sprintf("%s (ends %s)", r.Plan, r.TrialEndsAt), ""
+	}
 }
 
 // resolvedToken is the token the folder check may use — the same one the
@@ -366,10 +438,10 @@ func printStatusHuman(r statusReport) {
 	}
 
 	if r.Plan != "" {
-		if r.Plan == "trial" && r.TrialEndsAt != "" {
-			fmt.Printf("Plan:    %s (ends %s)\n", r.Plan, r.TrialEndsAt)
-		} else {
-			fmt.Printf("Plan:    %s\n", r.Plan)
+		line, upgrade := r.planLine()
+		fmt.Printf("Plan:    %s\n", line)
+		if upgrade != "" {
+			fmt.Printf("         upgrade: %s\n", upgrade)
 		}
 	}
 
