@@ -82,7 +82,7 @@ User-app environment variables come from three places:
 
 Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
 
-**Running the app on your own machine — values live in Dibbla, names live in the code.** Think of it as a safe and a set of keyholes: the values sit in Dibbla's safe, and `.env.example` in the repository lists the keyholes (one `NAME= # what it is` per line, committed, kept by §8). `dibbla env pull` in a linked folder fetches the values — the resolved secret set plus the platform-generated `DATABASE_URL_*`, `STORAGE_*` and `DIBBLA_*` — into `.env.local`, adds that file to `.gitignore` if it is missing, and the VCS filter and the push hook refuse it on top of that, so it can never travel back. Dibbla has **one environment per app**: a local run with that file talks to the app's real database and buckets. Say so before starting, and offer a local Postgres if the person wants isolation. A new variable is `dibbla secrets set NAME value -d <alias>` → the name in `.env.example` → `dibbla env pull`, never a hand-written `.env.local` as the only place.
+**Running the app on your own machine — values live in Dibbla, names live in the code.** Think of it as a safe and a set of keyholes: the values sit in Dibbla's safe, and `.env.example` in the repository lists the keyholes (one `NAME= # what it is` per line, committed, kept by §8). `dibbla env pull` in a linked folder fetches the values — the resolved secret set plus the platform-generated `DATABASE_URL_*`, `STORAGE_*` and `DIBBLA_*` — into `.env.local`, adds that file to `.gitignore` if it is missing, and the VCS filter and the push hook refuse it on top of that, so it can never travel back. Dibbla has **one environment per app**: a local run with that file talks to the app's real database and buckets. Say so before starting, and offer a local Postgres if the person wants isolation. The `DATABASE_URL_*` in the file is the address the app uses inside Dibbla, which on some instances is a cluster-internal host that does not resolve from your machine; a local run sets it in the start command from `dibbla db connect <name> -q` (public proxy, your own login) — never in `.env.local`, which the next pull would overwrite. Details: reference.md → env pull → "Database from your machine". A new variable is `dibbla secrets set NAME value -d <alias>` → the name in `.env.example` → `dibbla env pull`, never a hand-written `.env.local` as the only place.
 
 ---
 
@@ -116,6 +116,8 @@ App database connections go **through the Dibbla database proxy** at `db.<base-d
 - **Never `sslmode=disable`.** That drops encryption.
 
 The proxy uses standard Postgres TLS negotiation, so any driver works without PostgreSQL 17 "direct TLS". The injected credential is a managed per-database proxy secret (not your Postgres role password) and only works through the proxy. Working snippets for `pg`, psycopg2, and Prisma live in `reference.md` → "TLS for application database clients".
+
+Not every Dibbla instance injects the proxy URL yet: on some, `DATABASE_URL_<NAME>` is the database's cluster-internal address. Inside the app the rule is the same — use it as-is. It only matters when you take the value out of Dibbla: from your own machine, connect with `dibbla db connect <name> -q` (always the proxy), never with a pulled `DATABASE_URL_*` (see §5).
 
 ---
 

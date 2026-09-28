@@ -993,16 +993,29 @@ dibbla env pull                  # 2. values → .env.local (0600); .env.local a
 #       added .env.local to .gitignore so git never sees it
 #       This file lives only on this machine. A local run with it uses the app's real database and buckets.
 git status --short               # 3. no .env.local here — ever
-docker build -t my-app . && docker run --rm -p 3000:3000 --env-file .env.local my-app
+docker build -t my-app . && docker run --rm -p 3000:3000 --env-file .env.local \
+  -e DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)" my-app
 #                                # 4. or `npm run dev` / `go run .` with the file loaded — whatever the Dockerfile/template does
 ```
+
+**The database URL comes from `db connect`, not from the file.** The pulled
+`DATABASE_URL_*` is the address the app uses inside Dibbla, and on some
+instances that is a cluster-internal host (`….svc.cluster.local`) your machine
+cannot resolve — the app then dies at startup with `no such host`.
+`dibbla db connect <name> -q` returns the same database through the public
+proxy, signed in with your own Dibbla login, so it works everywhere. Set it in
+the start command as above (`-e` wins over `--env-file`), or run
+`export DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)"` before
+`npm run dev` / `go run .` — dotenv loaders do not override a variable that is
+already set. Do not paste it into `.env.local`: the next `env pull` refreshes
+every key Dibbla knows and puts the internal host back.
 
 Then tell the person, in one sentence and their own language: *the app's
 settings were fetched from Dibbla and live only on this computer; the app runs
 here against the same database as the real app* — and offer a local Postgres
-(`docker run -e POSTGRES_PASSWORD=… postgres`, then override `DATABASE_URL_*`
-in `.env.local`, which `env pull` keeps on the next run) if they want to work
-without touching real data. Do not ask them to understand git, secrets or
+(`docker run -e POSTGRES_PASSWORD=… postgres`, then set `DATABASE_URL_*` to it
+in the start command the same way — not in `.env.local`, where the next pull
+would overwrite it) if they want to work without touching real data. Do not ask them to understand git, secrets or
 environment variables; they said "set up a local environment" and that is all
 they need to know.
 
