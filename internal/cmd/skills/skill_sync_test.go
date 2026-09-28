@@ -139,3 +139,44 @@ func TestSkill_DocumentsEnvPull(t *testing.T) {
 		t.Error("guardrails.md still calls every .env file in the folder a BLOCKER")
 	}
 }
+
+// TestSkill_LocalRunTakesDatabaseURLFromDBConnect pins where a local run gets
+// its database URL. On instances that do not inject the proxy URL, the
+// DATABASE_URL_* that `env pull` writes is a cluster-internal host: an agent
+// that starts the app with it gets `no such host`, and one that pastes the
+// `db connect` URL into .env.local has it overwritten by the next pull. The
+// skill must send local runs to `dibbla db connect`, set in the start command.
+func TestSkill_LocalRunTakesDatabaseURLFromDBConnect(t *testing.T) {
+	read := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(data)
+	}
+	skill := read(filepath.Join(sourceDir, "SKILL.md"))
+	reference := read(filepath.Join(sourceDir, "reference.md"))
+	examples := read(filepath.Join(sourceDir, "examples.md"))
+	platform := read(filepath.Join(sourceDir, "platform.md"))
+	rootSkill := read("../../../SKILL.md")
+	for _, want := range []struct{ file, doc, needle string }{
+		{"SKILL.md", skill, "set in the start command from `dibbla db connect <name> -q`"},
+		{"reference.md", reference, "| **Database from your machine** |"},
+		{"examples.md", examples, "-e DATABASE_URL_MY_APP_DB=\"$(dibbla db connect my_app_db -q)\""},
+		{"platform.md", platform, "from your own machine, connect with `dibbla db connect <name> -q`"},
+		{"root SKILL.md", rootSkill, "**Database from your machine:**"},
+	} {
+		if !strings.Contains(want.doc, want.needle) {
+			t.Errorf("%s no longer contains %q", want.file, want.needle)
+		}
+	}
+	for _, stale := range []struct{ file, doc, needle string }{
+		{"reference.md", reference, "reach the real database and buckets through the public proxy"},
+		{"examples.md", examples, "which `env pull` keeps on the next run"},
+		{"root SKILL.md", rootSkill, "are in the set and reach the real database and buckets"},
+	} {
+		if strings.Contains(stale.doc, stale.needle) {
+			t.Errorf("%s still says %q — a pulled DATABASE_URL_* can be cluster-internal", stale.file, stale.needle)
+		}
+	}
+}
