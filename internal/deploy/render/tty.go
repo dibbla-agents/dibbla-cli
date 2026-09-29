@@ -42,7 +42,7 @@ type ttyStep struct {
 	idx     int
 	step    string // short slug
 	name    string // raw vertex name
-	state   string // running|done|cached|fail|pending|log
+	state   string // running|done|cached|warn|fail|pending|log
 	cached  bool
 	elapsed int64
 	logTail string
@@ -130,6 +130,11 @@ func (t *TTY) handleBuild(ev DeployEvent) {
 		s.state = "cached"
 		s.cached = true
 		s.elapsed = ev.ElapsedMs
+	case "warn":
+		// A step that errored without failing the build — the build-cache
+		// import on an app's first build (DIB-1211).
+		s.state = "warn"
+		s.elapsed = ev.ElapsedMs
 	case "fail":
 		s.state = "fail"
 		s.elapsed = ev.ElapsedMs
@@ -206,6 +211,8 @@ func (t *TTY) frame() []string {
 			idxColor, nameColor, elapsedColor = colorMagenta, colorWhite, colorBrand
 		case "cached":
 			idxColor, nameColor, elapsedColor = colorMagenta, colorDim, colorDim
+		case "warn":
+			idxColor, nameColor, elapsedColor = colorMagenta, colorWarn, colorWarn
 		case "fail":
 			idxColor, nameColor, elapsedColor = colorRed, colorRed+colorBold, colorRed
 		default: // pending
@@ -234,7 +241,8 @@ func (t *TTY) progressBar() string {
 	}
 	done := 0
 	for _, s := range t.steps {
-		if s.state == "done" || s.state == "cached" {
+		// A warned step is finished: the build went on past it.
+		if s.state == "done" || s.state == "cached" || s.state == "warn" {
 			done++
 		}
 	}
@@ -528,6 +536,7 @@ const (
 	colorMagenta = "\033[38;2;178;141;216m" // #b28dd8 — build identity (rev, step indices)
 	colorCyan    = "\033[38;2;124;196;192m" // #7cc4c0 — sources, URLs, registries
 	colorRed     = "\033[38;2;212;84;74m"   // #d4544a — true brick red, no orange cast
+	colorWarn    = "\033[38;2;242;166;24m"  // #f2a618 — --warn (oklch 78% 0.16 75), errored but not failed
 	colorWhite   = "\033[38;2;245;250;247m" // #f5faf7
 	colorDim     = "\033[38;2;122;141;128m" // #7a8d80
 	colorFaint   = "\033[38;2;74;91;81m"    // #4a5b51
@@ -563,6 +572,11 @@ func stateSigil(state string, ansi bool) string {
 			return colorBright + "⠿" + colorReset
 		}
 		return "⠿"
+	case "warn":
+		if ansi {
+			return colorWarn + colorBold + "!" + colorReset
+		}
+		return "!"
 	case "fail":
 		if ansi {
 			return colorRed + colorBold + "✗" + colorReset

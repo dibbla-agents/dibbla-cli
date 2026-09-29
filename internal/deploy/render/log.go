@@ -83,6 +83,9 @@ func (l *Log) handleBuild(ev DeployEvent) {
 		state := ev.State
 		l.line("info", "build", fmt.Sprintf("step=%d/%d %s name=%s elapsed=%s",
 			ev.StepIndex, l.stepCount, state, ev.Step, formatElapsed(ev.ElapsedMs)))
+	case "warn":
+		l.line("warn", "build", fmt.Sprintf("step=%d/%d warn name=%s elapsed=%s",
+			ev.StepIndex, l.stepCount, ev.Step, formatElapsed(ev.ElapsedMs)))
 	case "fail":
 		l.line("error", "build", fmt.Sprintf("step=%d/%d fail name=%s elapsed=%s",
 			ev.StepIndex, l.stepCount, ev.Step, formatElapsed(ev.ElapsedMs)))
