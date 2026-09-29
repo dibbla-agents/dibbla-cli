@@ -82,3 +82,23 @@ func TestLog_Failure(t *testing.T) {
 		t.Errorf("expected one parsed error for router.go, got %+v", ev.Errors)
 	}
 }
+
+// TestLog_CacheMissIsAWarning: in CI output a warned step is a [warn] line,
+// not an [error] one, on a deploy that succeeded (DIB-1211).
+func TestLog_CacheMissIsAWarning(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	r := NewLog(&out, &errBuf)
+	scriptedCacheMiss(r)
+	if code := r.OnDone(); code != 0 {
+		t.Fatalf("OnDone = %d, want 0", code)
+	}
+	stdout := out.String()
+	for _, want := range []string{"[warn] build", "step=1/1 warn name=importing cache manifest from ", "deploy ok"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("expected stdout to contain %q\n--- stdout ---\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "[error]") {
+		t.Errorf("a cache miss must not log an error\n--- stdout ---\n%s", stdout)
+	}
+}
