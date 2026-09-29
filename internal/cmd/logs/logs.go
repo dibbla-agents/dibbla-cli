@@ -16,6 +16,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/applogs"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
+	"github.com/dibbla-agents/dibbla-cli/internal/rolerefusal"
 )
 
 var (
@@ -84,6 +85,10 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
+	// From here on an error is the API's answer, not a mistyped command:
+	// the flags' help under it would only push the answer off the screen.
+	cmd.SilenceUsage = true
+
 	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -104,6 +109,11 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		if errors.As(err, &httpErr) {
 			switch httpErr.Status {
 			case 401, 403:
+				// A viewer's token is a good token (DIB-1184): what is
+				// missing is the role, and checking the token finds nothing.
+				if msg, ok := rolerefusal.Explain([]byte(httpErr.Body)); ok {
+					return rolerefusal.Error(msg)
+				}
 				return fmt.Errorf("not authorized — check your API token (got %d)", httpErr.Status)
 			case 404:
 				return fmt.Errorf("app %q not found in your organization", alias)
@@ -165,6 +175,11 @@ func runPodStream(ctx context.Context, apiURL, apiToken, alias string) error {
 		if errors.As(err, &httpErr) {
 			switch httpErr.Status {
 			case 401, 403:
+				// A viewer's token is a good token (DIB-1184): what is
+				// missing is the role, and checking the token finds nothing.
+				if msg, ok := rolerefusal.Explain([]byte(httpErr.Body)); ok {
+					return rolerefusal.Error(msg)
+				}
 				return fmt.Errorf("not authorized — check your API token (got %d)", httpErr.Status)
 			case 404:
 				return fmt.Errorf("no pods for %q/%s — check `dibbla apps get %s`", alias, flagService, alias)

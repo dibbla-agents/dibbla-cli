@@ -21,6 +21,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/wf"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/orgctx"
+	"github.com/dibbla-agents/dibbla-cli/internal/rolerefusal"
 	"github.com/dibbla-agents/dibbla-cli/internal/update"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -113,6 +114,8 @@ func Execute() error {
 	// DIBBLA_ORG_ID in ./.env. Resolution inside the transport is lazy, so
 	// installing it here costs nothing for commands that never call the API.
 	orgctx.Install()
+	// The platform's role refusal, reworded once for every command (DIB-1184).
+	rolerefusal.Install()
 	ch := checkInBackground(Version)
 	err := rootCmd.Execute()
 	if ch != nil {

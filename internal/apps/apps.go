@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dibbla-agents/dibbla-cli/internal/rolerefusal"
 )
 
 // DeploymentsListResponse represents the API response for listing deployments.
@@ -279,6 +281,11 @@ func ListApps(apiURL, apiToken string) (*DeploymentsListResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err == nil {
+			if errResp.Error.Code == rolerefusal.Code {
+				// The message is the whole answer; the envelope after
+				// it would only repeat it as JSON.
+				return nil, rolerefusal.Error(errResp.Error.Message)
+			}
 			return nil, fmt.Errorf("API error (%s): %s - %s", errResp.Error.Code, errResp.Error.Message, string(body))
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
@@ -318,6 +325,11 @@ func DeleteApp(apiURL, apiToken, alias string) (*DeleteResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err == nil {
+			if errResp.Error.Code == rolerefusal.Code {
+				// The message is the whole answer; the envelope after
+				// it would only repeat it as JSON.
+				return nil, rolerefusal.Error(errResp.Error.Message)
+			}
 			return nil, fmt.Errorf("API error (%s): %s - %s", errResp.Error.Code, errResp.Error.Message, string(body))
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
