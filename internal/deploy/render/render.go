@@ -55,6 +55,14 @@ type DeployResult struct {
 	// failed version-control commit and the list of paths excluded from it.
 	VCSError    string   `json:"vcs_error,omitempty"`
 	VCSFiltered []string `json:"vcs_filtered,omitempty"`
+	// MCPPublished names the tool servers this deploy published as MCPs of
+	// their own (`mcp:` on a service, DIB-1222). Drawn with the command that
+	// connects a client, so the deploy output is where the address is found.
+	MCPPublished []string `json:"mcp_published,omitempty"`
+	// MCPNotice is set when an `mcp:` line could not be published: the name
+	// belongs to another app, or the workflow engine could not be reached.
+	// The app is live; like the other notices it is a caveat on a success.
+	MCPNotice string `json:"mcp_notice,omitempty"`
 	// TrialWarning is the last-week heads-up (DIB-1048): the org's trial
 	// ends within seven days. Drawn once, last, in a calm style — it is a
 	// reminder on a success, not a notice about this deploy.
@@ -221,12 +229,19 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 	}
 	add("support", r.SupportNotice)
 	add("checks", r.ChecksNotice)
+	add("mcp", r.MCPNotice)
 	add("vcs", r.VCSError)
 	if len(r.VCSFiltered) > 0 {
 		add("vcs", fmt.Sprintf("%d path(s) excluded from version control: %s",
 			len(r.VCSFiltered), strings.Join(r.VCSFiltered, ", ")))
 	}
 	return out
+}
+
+// mcpConnectCommand is what a person runs to connect a client to a published
+// tool server. Every renderer prints it next to the name.
+func mcpConnectCommand(server string) string {
+	return "dibbla mcp server " + server
 }
 
 // wrapWords breaks text into lines of at most width columns, on spaces.

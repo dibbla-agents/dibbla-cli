@@ -318,6 +318,9 @@ func (t *TTY) finalize() {
 	if t.result.VCSCommit != "" {
 		t.prop("revision", t.paint(t.result.VCSCommit, colorMagenta+colorBold))
 	}
+	for _, server := range t.result.MCPPublished {
+		t.prop("mcp", t.paint(server, colorBright+colorBold)+t.paint("  ·  connect: ", colorDim)+t.paint(mcpConnectCommand(server), colorBright))
+	}
 	t.printServicesTable()
 	if notices := t.result.Notices(); len(notices) > 0 {
 		fmt.Fprintln(t.w)

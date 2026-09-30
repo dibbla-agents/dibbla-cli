@@ -124,6 +124,19 @@ This command creates a new Go worker project from a template.
     5.  It creates the project structure.
 -   **Example:** `dibbla create go-worker my-awesome-worker`
 
+#### `create mcp`
+
+This command creates an MCP server project: a small Go tool server with one example function and a `dibbla.yaml` that publishes it as an MCP of its own.
+
+-   **Usage:** `dibbla create mcp [name] [--grpc-address host:port]`
+-   **Arguments:**
+    -   `name` (optional): The project directory, the app's alias and the last part of the MCP address. 3 to 64 characters: lowercase letters, digits and `-`, starting with a letter. Prompted for if not provided; nothing else is asked.
+-   **Flags:**
+    -   `--grpc-address`: Where the deployed server connects. Default `grpc.<domain>:443`, derived from the API URL the CLI is signed in to.
+-   **Workflow:** clones the template, writes the name into `dibbla.yaml` (`mcp: <name>` and `SERVER_NAME`), and prints the next steps. Needs git; Go is not needed to create or deploy.
+-   **Then:** `cd <name> && dibbla deploy` (the developer role is enough), and `dibbla mcp server <name>` for the client configuration. The project's README describes the flow and `auth.access_policy`.
+-   **Example:** `dibbla create mcp my-tools`
+
 ### `apps`
 
 The `apps` command manages deployed applications.

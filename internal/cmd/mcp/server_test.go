@@ -100,7 +100,11 @@ func TestServerArgs(t *testing.T) {
 func TestServerHelpSaysWhatItIsNot(t *testing.T) {
 	for _, want := range []string{
 		"never starts or runs a server",
-		"Only exposed functions appear",
+		"published   The app that runs the server publishes all of it",
+		"mcp: <name>",
+		"dibbla create mcp",
+		"auth.access_policy: invite_only",
+		"exposed     An org owner or admin exposes single functions",
 		"dibbla functions exposed",
 		"separate tools",
 		"CONNECT BEFORE YOU LOG IN",
@@ -113,7 +117,8 @@ func TestServerHelpSaysWhatItIsNot(t *testing.T) {
 		t.Errorf("usage line = %q", serverCmd.Use)
 	}
 	for _, want := range []string{
-		"server <name>  one tool server's exposed functions as separate tools",
+		"server <name>  one tool server's published or exposed functions as separate tools",
+		"dibbla create mcp",
 		"platform       all exposed functions through one tool",
 		"none of them runs a server",
 	} {
@@ -253,7 +258,7 @@ func TestServerConfigOutputs(t *testing.T) {
 			}
 			// Every form ends with the check, because "Connected" with 0
 			// tools is the one failure a client cannot show.
-			if strings.Count(out, "dibbla mcp server "+name+" --check") != 1 || !strings.Contains(out, "0 tools = wrong server name, or nothing exposed") {
+			if strings.Count(out, "dibbla mcp server "+name+" --check") != 1 || !strings.Contains(out, "0 tools = wrong server name, nothing published or exposed on it") || !strings.Contains(out, "access list does not include you") {
 				t.Errorf("client %q output must end with exactly one verify hint:\n%s", client, out)
 			}
 		}
@@ -427,7 +432,8 @@ func TestServerCheck(t *testing.T) {
 		storeGrant(t, ps, false)
 		var buf bytes.Buffer
 		err := runServerCheck(&buf, "nobody")
-		if err == nil || !strings.Contains(err.Error(), "offers no tools") || !strings.Contains(err.Error(), "dibbla functions exposed") {
+		if err == nil || !strings.Contains(err.Error(), "offers no tools") || !strings.Contains(err.Error(), "dibbla functions exposed") ||
+			!strings.Contains(err.Error(), "access list does not include you") || !strings.Contains(err.Error(), "`mcp:` line") {
 			t.Errorf("want the empty-server finding, got %v", err)
 		}
 	})

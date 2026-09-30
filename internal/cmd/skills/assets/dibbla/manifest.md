@@ -123,6 +123,7 @@ above remains for deep links.
 | `healthcheck` | object | no | no | platform default | Liveness/readiness/startup probes; see § 12 |
 | `domain` | string | no | no | `<alias>.dibbla.com` | Custom hostname for the public service; see § 14 |
 | `auth` | object | no | yes (per-field) | fall back to deploy flags | Per-service auth policy (`require_login`, `access_policy`, `google_scopes`); see § 13 |
+| `mcp` | string | no | no | — | Publishes the tool server this service runs as an MCP of its own; the value is the name the server registers under. See § 13.5 |
 
 Service names must match `^[a-z][a-z0-9-]{0,29}$`. Reserved names: `proxy`, `auth`, `system`, `dibbla`, `kube-*`. Service names appear in DNS, in env-var names (`DIBBLA_SVC_<NAME>_HOST` becomes upper-case-with-`_`), and in K8s object names — keep them short and DNS-safe.
 
@@ -753,6 +754,37 @@ auth:
 In dev, env-aware resolution yields `require_login=false` AND `access_policy=invite_only`. The master-gate rule clears the policy → service is open. In prod, `require_login=true` AND `access_policy=invite_only` → service is gated by `invite_only`. One manifest, two behaviors.
 
 **Validation.** Unknown `access_policy` values are rejected at parse time (`MANIFEST_INVALID`). Use `dibbla manifest validate` to catch typos in CI.
+
+---
+
+## 13.5. Publishing a tool server as an MCP (`mcp:`)
+
+A service that runs a Dibbla tool server (a Go worker built with `sdk-go`, see [sdk-go.md](sdk-go.md)) can publish it as an MCP of its own with one line:
+
+```yaml
+services:
+  mcp:
+    build: .
+    port: 8080
+    public: true
+    mcp: my-tools                      # https://mcp.dibbla.com/platform/servers/my-tools
+    auth:
+      require_login: true
+      access_policy: all_members       # or invite_only
+    environment:
+      SERVER_NAME: my-tools            # must be the same name as mcp:
+      GRPC_SERVER_ADDRESS: grpc.dibbla.com:443
+```
+
+`dibbla create mcp <name>` creates exactly this project, with an example function.
+
+- **The value is the tool server's name** — what the worker registers under (`SERVER_NAME` / `WithServerName`) — and it is the last part of the address. 1–64 characters of letters, digits, `.`, `_`, `-`; one service per name. Anything else is `MANIFEST_INVALID` at `services.<name>.mcp`.
+- **Who may deploy may publish.** No org admin exposes anything. The worker's credential in the pod is the app's workload identity, so no API token is set.
+- **Who gets the tools follows the app's access list.** `all_members`: every member of the app's organization. `invite_only`: the people under "Access & users" in the console, plus the org's owners and admins. A published server always requires a Dibbla login and an account in the organization; an app that is open without login does not make its MCP open. List changes apply to the next call, a policy change within 30 seconds.
+- **Every function of the server that can be a tool is one** (no agents, no `_`-prefixed internal functions). Published functions never appear in `platform_tools`.
+- **The deploy never fails over it.** The deploy output names what was published (`mcp · <name>`; `mcp_published` in `--json`). A name another app already owns is not published and the output says so (`mcp_notice`): rename the server and the line, deploy again.
+- **Unpublish** by removing the line and deploying; deleting the app also frees the name. A service behind an inactive profile publishes nothing.
+- Connect a client with `dibbla mcp server <name>`; on an installation where per-server addresses are switched off the address is a 404.
 
 ---
 
