@@ -456,7 +456,11 @@ func runHistory(stdout, stderr io.Writer, apiURL, token, app string, limit int, 
 		}
 		fmt.Fprintln(stdout, line)
 		if len(e.Deliveries) == 0 {
-			fmt.Fprintln(stdout, "    (no delivery you can see)")
+			if h.Scope == "organization" {
+				fmt.Fprintln(stdout, "    (reached nobody: no subscription matched)")
+			} else {
+				fmt.Fprintln(stdout, "    (not delivered to you)")
+			}
 		}
 		for _, d := range e.Deliveries {
 			l := fmt.Sprintf("    %s %s: %s", deliveryIcon(d.Status), destination(d.Channel, d.Target), d.Status)
