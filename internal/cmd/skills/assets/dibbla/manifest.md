@@ -776,13 +776,13 @@ services:
       GRPC_SERVER_ADDRESS: grpc.dibbla.com:443
 ```
 
-`dibbla create mcp <name>` creates exactly this project, with an example function.
+The worker itself is any `sdk-go` tool server — a `create go-worker` project, or the minimal one in [sdk-go.md](sdk-go.md): register functions under `SERVER_NAME`, start.
 
 - **The value is the tool server's name** — what the worker registers under (`SERVER_NAME` / `WithServerName`) — and it is the last part of the address. 1–64 characters of letters, digits, `.`, `_`, `-`; one service per name. Anything else is `MANIFEST_INVALID` at `services.<name>.mcp`.
 - **Who may deploy may publish.** No org admin exposes anything. The worker's credential in the pod is the app's workload identity, so no API token is set.
 - **Who gets the tools follows the app's access list.** `all_members`: every member of the app's organization. `invite_only`: the people under "Access & users" in the console, plus the org's owners and admins. A published server always requires a Dibbla login and an account in the organization; an app that is open without login does not make its MCP open. List changes apply to the next call, a policy change within 30 seconds.
 - **Every function of the server that can be a tool is one** (no agents, no `_`-prefixed internal functions). Published functions never appear in `platform_tools`.
-- **The deploy never fails over it.** The deploy output names what was published (`mcp · <name>`; `mcp_published` in `--json`). A name another app already owns is not published and the output says so (`mcp_notice`): rename the server and the line, deploy again.
+- **The deploy never fails over it, and never stays silent.** Every deploy with an `mcp:` line answers with exactly one of: what was published (`published as MCP: <name>`; `mcp_published` in `--json`), or why not and what to do (`mcp_notice`: a name another app owns → rename the server and the line; the installation has no workflow engine or per-server addresses are switched off → ask the operator; publishing failed → deploy again). A deploy that removed the line says the MCP was withdrawn.
 - **Unpublish** by removing the line and deploying; deleting the app also frees the name. A service behind an inactive profile publishes nothing.
 - Connect a client with `dibbla mcp server <name>`; on an installation where per-server addresses are switched off the address is a 404.
 

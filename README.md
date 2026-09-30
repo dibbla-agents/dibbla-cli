@@ -247,21 +247,14 @@ Or run without arguments for interactive mode:
 dibbla create go-worker
 ```
 
-### Create an MCP Server Project
+### Publish a tool server as an MCP
 
-```bash
-dibbla create mcp my-tools
-cd my-tools
-dibbla deploy
-dibbla mcp server my-tools
-```
-
-`create mcp` makes a small Go project with one example function and a
-`dibbla.yaml` that publishes it as an MCP of its own. After the deploy, the
-functions are MCP tools at `mcp.<domain>/platform/servers/my-tools` for the
-members of your organization, and `dibbla mcp server my-tools` prints the
-configuration for Claude Code, Cursor and the other clients. The project's
-README describes how `auth.access_policy` limits the MCP to named people.
+A Go worker deployed as an app becomes an MCP of its own with one line in its
+`dibbla.yaml` — `mcp: my-tools` on the service (see the skill's manifest
+reference, § 13.5). Every deploy with that line says whether it was published
+(`published as MCP: my-tools` / `mcp_published` in `--json`) or why not
+(`mcp_notice`), and `dibbla mcp server my-tools` prints the client
+configuration for `mcp.<domain>/platform/servers/my-tools`.
 
 ### Deploy an Application
 
