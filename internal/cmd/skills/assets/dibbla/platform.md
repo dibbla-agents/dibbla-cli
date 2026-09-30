@@ -645,8 +645,8 @@ mcp server <name>` connects one tool server's functions only, at
 off in their client — use it when they want just that server, modularly, and
 nothing else from the platform. Same OAuth grant, same login. A server is on
 its address either because the app that runs it publishes it (`mcp: <name>` in
-`dibbla.yaml`, see [manifest.md](manifest.md) § 13.5; `dibbla create mcp`
-scaffolds such a project) or because an org admin exposed single functions;
+`dibbla.yaml`, see [manifest.md](manifest.md) § 13.5) or because an org admin
+exposed single functions;
 find exposed names with `dibbla functions exposed`, and a published name in
 the app's manifest or its deploy output. Neither command runs a server: both only print
 client configuration. After connecting a client to a server address, run
@@ -732,7 +732,7 @@ something on the caller's own machine that no remote call can reach:
 | `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
 | `cli.clone` | `clone` | Writes a git working copy locally. Reading the same source remotely is `platform.files.get`. |
 | `cli.export` | `export` | Writes the whole app — source, database dumps, bucket objects, env files, compose sketch — to the caller's disk; with `--include-secrets`, secret values in plaintext after a terminal confirmation. The customer's data leaving the platform has no place in a model's context. |
-| `cli.scaffold` | `create go-worker`, `create mcp`, `template install`, `skills install` | Materialises files in a directory on the caller's machine. |
+| `cli.scaffold` | `create go-worker`, `template install`, `skills install` | Materialises files in a directory on the caller's machine. |
 | `cli.login`, `cli.context`, `cli.org.select` | `login`, `logout`, `context …`, `org use/clear` | The OS keyring, a TTY, and local config. Remotely, who you are and which org you act as are fixed by the grant — a model-controlled context or org switch is forbidden outright. |
 | `cli.update` | `update`, `uninstall` | Replaces a binary on the caller's machine. |
 | `cli.ai_gateway`, `cli.mcp_client_config` | `ai …`, `mcp …` | Answers about the calling machine's environment and its agent's config file. |

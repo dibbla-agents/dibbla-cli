@@ -63,6 +63,13 @@ type DeployResult struct {
 	// belongs to another app, or the workflow engine could not be reached.
 	// The app is live; like the other notices it is a caveat on a success.
 	MCPNotice string `json:"mcp_notice,omitempty"`
+	// MCPWithdrawn names the tool servers this deploy stopped publishing:
+	// their `mcp:` line left the manifest (DIB-1225).
+	MCPWithdrawn []string `json:"mcp_withdrawn,omitempty"`
+	// MCPAddresses maps a published server to its MCP address, filled in by
+	// the CLI from the installation it is signed in to; the server only
+	// sends names. Absent when the address cannot be derived.
+	MCPAddresses map[string]string `json:"-"`
 	// TrialWarning is the last-week heads-up (DIB-1048): the org's trial
 	// ends within seven days. Drawn once, last, in a calm style — it is a
 	// reminder on a success, not a notice about this deploy.
@@ -242,6 +249,22 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 // tool server. Every renderer prints it next to the name.
 func mcpConnectCommand(server string) string {
 	return "dibbla mcp server " + server
+}
+
+// mcpPublishedLine is the plain-text statement every renderer makes for a
+// published server: the name, its address when known, and how to connect.
+func (r *DeployResult) mcpPublishedLine(server string) string {
+	line := "published as MCP: " + server
+	if addr := r.MCPAddresses[server]; addr != "" {
+		line += "  ·  " + addr
+	}
+	return line + "  ·  connect: " + mcpConnectCommand(server)
+}
+
+// mcpWithdrawnLine is the statement for a server the deploy stopped
+// publishing.
+func mcpWithdrawnLine(server string) string {
+	return "withdrawn as MCP: " + server + " (its mcp: line left the manifest; the address no longer answers and the name is free)"
 }
 
 // wrapWords breaks text into lines of at most width columns, on spaces.

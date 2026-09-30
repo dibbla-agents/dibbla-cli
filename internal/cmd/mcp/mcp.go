@@ -51,8 +51,9 @@ Two ways to reach your organization's functions as tools:
   platform       all exposed functions through one tool (the official connector)
   server <name>  one tool server's published or exposed functions as separate tools
 
-A tool server of your own, published as an MCP by the app that runs it, starts
-with 'dibbla create mcp'.
+A tool server of your own becomes an MCP with one line in its app's
+dibbla.yaml ('mcp: <name>' on the service); every deploy says whether it was
+published and why not.
 
 Every mcp command prints configuration; none of them runs a server.`,
 }
@@ -97,6 +98,17 @@ func resolveMCPURL() resolveResult {
 		URL:    derived,
 		Source: fmt.Sprintf("derived from API URL %s (api. → mcp.)", apiURL),
 	}
+}
+
+// ServerAddress is the MCP address of one tool server on the installation
+// the CLI is signed in to (DIB-1225: the deploy output names it next to a
+// published server), or "" when the base URL cannot be resolved.
+func ServerAddress(server string) string {
+	base := resolveMCPURL().URL
+	if base == "" {
+		return ""
+	}
+	return base + "/platform/servers/" + server
 }
 
 // deriveFromAPIURL implements the api.X → mcp.X host-label rewrite, the same

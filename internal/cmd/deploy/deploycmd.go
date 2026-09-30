@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/mcp"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy/render"
@@ -205,6 +206,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Profiles:        deployProfiles,
 		NoPublic:        deployNoPublic,
 		SkipReview:      deploySkipReview,
+		MCPAddress:      mcp.ServerAddress,
 	}
 
 	os.Exit(runWithRenderer(opts, r))

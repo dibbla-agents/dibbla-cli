@@ -65,6 +65,9 @@ func (j *JSONRenderer) OnDone() int {
 		if j.result.MCPNotice != "" {
 			out["mcp_notice"] = j.result.MCPNotice
 		}
+		if len(j.result.MCPWithdrawn) > 0 {
+			out["mcp_withdrawn"] = j.result.MCPWithdrawn
+		}
 		if j.result.TrialWarning != nil {
 			out["trial_warning"] = j.result.TrialWarning
 		}

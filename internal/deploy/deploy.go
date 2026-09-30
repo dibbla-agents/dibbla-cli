@@ -22,6 +22,11 @@ import (
 type DeployResponse struct {
 	Status     string     `json:"status"`
 	Deployment Deployment `json:"deployment"`
+	// The MCP answer of a deploy (DIB-1225), on the legacy single-JSON path
+	// too, so it is never dropped between the server and the renderer.
+	MCPPublished []string `json:"mcp_published,omitempty"`
+	MCPNotice    string   `json:"mcp_notice,omitempty"`
+	MCPWithdrawn []string `json:"mcp_withdrawn,omitempty"`
 }
 
 // Deployment contains deployment details
@@ -137,6 +142,11 @@ type Options struct {
 	Profiles  []string
 	NoPublic  bool
 
+	// MCPAddress returns the MCP address of a published tool server on the
+	// installation the CLI is signed in to, or "" when it cannot be derived.
+	// Optional; the deploy output then names the server without its address.
+	MCPAddress func(server string) string
+
 	// SkipReview asks the server to bypass its pre-deploy review gate
 	// (REVIEW.md + handbook), the same gate the CLI checks locally before
 	// uploading. The server applies it to every deploy path (DIB-966), so
@@ -193,8 +203,14 @@ func Run(opts Options, r render.Renderer) (*DeployResponse, error) {
 	// Multi-service: detect dibbla.yaml/dibbla.yml at the project root and
 	// validate locally so common mistakes fail before the archive upload.
 	// The server is authoritative; this is a best-effort fast path.
-	if err := validateLocalManifest(absPath); err != nil {
+	localManifest, err := localManifest(absPath)
+	if err != nil {
 		return nil, err
+	}
+	// DIB-1225: what the manifest publishes, so the output can never stay
+	// silent about it, whatever the server answers.
+	complete := func(res *render.DeployResult) {
+		completeMCPAnswer(res, localManifest.MCPServers(), opts.MCPAddress)
 	}
 
 	// Validate the env-file + -e flags up front so a missing/malformed file
@@ -218,7 +234,7 @@ func Run(opts Options, r render.Renderer) (*DeployResponse, error) {
 		appName = opts.Alias
 	}
 
-	return upload(opts, archive, appName, r)
+	return upload(opts, archive, appName, r, complete)
 }
 
 // createArchive creates a tar.gz archive from the given directory.
@@ -546,7 +562,7 @@ func shouldExclude(relPath string, info os.FileInfo) bool {
 // upload sends the archive to the API. When r is non-nil it negotiates an
 // NDJSON streaming response by setting Accept: application/x-ndjson;
 // otherwise it reads the response as a single JSON object (legacy path).
-func upload(opts Options, archive []byte, appName string, r render.Renderer) (*DeployResponse, error) {
+func upload(opts Options, archive []byte, appName string, r render.Renderer, complete func(*render.DeployResult)) (*DeployResponse, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -641,7 +657,7 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 	defer resp.Body.Close()
 
 	if r != nil && strings.Contains(resp.Header.Get("Content-Type"), "application/x-ndjson") {
-		return readStream(resp.Body, r)
+		return readStream(resp.Body, r, complete)
 	}
 
 	// Legacy single-JSON path. Used when r == nil (old callers), when the
@@ -662,18 +678,20 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 		if r != nil {
 			// Synthesize a result event so the renderer can show the
 			// success summary even on the legacy code path.
-			r.OnEvent(render.DeployEvent{
-				Type: "result",
-				Result: &render.DeployResult{
-					Status: deployResp.Status,
-					Deployment: render.ResultDeployment{
-						ID:     deployResp.Deployment.ID,
-						Alias:  deployResp.Deployment.Alias,
-						URL:    deployResp.Deployment.URL,
-						Status: deployResp.Deployment.Status,
-					},
+			res := &render.DeployResult{
+				Status: deployResp.Status,
+				Deployment: render.ResultDeployment{
+					ID:     deployResp.Deployment.ID,
+					Alias:  deployResp.Deployment.Alias,
+					URL:    deployResp.Deployment.URL,
+					Status: deployResp.Deployment.Status,
 				},
-			})
+				MCPPublished: deployResp.MCPPublished,
+				MCPNotice:    deployResp.MCPNotice,
+				MCPWithdrawn: deployResp.MCPWithdrawn,
+			}
+			complete(res)
+			r.OnEvent(render.DeployEvent{Type: "result", Result: res})
 		}
 		return &deployResp, nil
 	}
@@ -718,7 +736,7 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer) (*D
 // readStream consumes the NDJSON deploy event stream, calls r.OnEvent for
 // each event, and returns the final result/error. Long log lines (full
 // stacktraces) require a buffer larger than bufio's default 64KiB.
-func readStream(body io.Reader, r render.Renderer) (*DeployResponse, error) {
+func readStream(body io.Reader, r render.Renderer, complete func(*render.DeployResult)) (*DeployResponse, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
@@ -738,6 +756,9 @@ func readStream(body io.Reader, r render.Renderer) (*DeployResponse, error) {
 			// synthetic warning event and continue.
 			r.OnEvent(render.DeployEvent{Type: "build", State: "log", Log: "warning: malformed event line: " + err.Error()})
 			continue
+		}
+		if ev.Type == "result" && ev.Result != nil && complete != nil {
+			complete(ev.Result)
 		}
 		r.OnEvent(ev)
 		if ev.Type == "result" {

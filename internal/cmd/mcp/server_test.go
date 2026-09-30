@@ -102,7 +102,7 @@ func TestServerHelpSaysWhatItIsNot(t *testing.T) {
 		"never starts or runs a server",
 		"published   The app that runs the server publishes all of it",
 		"mcp: <name>",
-		"dibbla create mcp",
+		"every deploy says whether",
 		"auth.access_policy: invite_only",
 		"exposed     An org owner or admin exposes single functions",
 		"dibbla functions exposed",
@@ -118,7 +118,7 @@ func TestServerHelpSaysWhatItIsNot(t *testing.T) {
 	}
 	for _, want := range []string{
 		"server <name>  one tool server's published or exposed functions as separate tools",
-		"dibbla create mcp",
+		"'mcp: <name>' on the service",
 		"platform       all exposed functions through one tool",
 		"none of them runs a server",
 	} {

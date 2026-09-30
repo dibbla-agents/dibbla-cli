@@ -67,8 +67,8 @@ A server's functions get onto its address in one of two ways:
 
   published   The app that runs the server publishes all of it with one line
               in dibbla.yaml ('mcp: <name>' on the service). A developer who
-              may deploy the app can do this; 'dibbla create mcp' makes such a
-              project. The tools go to the people the app's access list
+              may deploy the app can do this, and every deploy says whether
+              it was published. The tools go to the people the app's access list
               admits: every member of the organization, or, with
               auth.access_policy: invite_only, the people added under
               "Access & users" in the console and the organization's owners

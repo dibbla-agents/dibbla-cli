@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -89,6 +90,29 @@ type Service struct {
 	ExposeTo    []string `yaml:"expose_to,omitempty"`
 	Stateful    *bool    `yaml:"stateful,omitempty"`
 	Routes      []Route  `yaml:"routes,omitempty"`
+	// MCP is the tool server name this service publishes as an MCP of its
+	// own (DIB-1222). The server validates it; the CLI reads it so the
+	// deploy output can never stay silent about it (DIB-1225).
+	MCP string `yaml:"mcp,omitempty"`
+}
+
+// MCPServers returns the tool server names the manifest publishes as MCPs
+// (`mcp:` on a service), sorted and without duplicates.
+func (m *Manifest) MCPServers() []string {
+	if m == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, svc := range m.Services {
+		if svc == nil || svc.MCP == "" || seen[svc.MCP] {
+			continue
+		}
+		seen[svc.MCP] = true
+		names = append(names, svc.MCP)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Volume is a per-service persistent volume entry.
