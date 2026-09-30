@@ -131,8 +131,12 @@ connected — so a nightly batch alerts even if nobody opened the notification
 settings. With no channel connected anywhere, nothing is seeded and the
 default is still available the day one is connected. A subscription the user
 disables or deletes stays gone; it is never re-created. To route it
-explicitly: **Organization settings → Integrations**, event type
-`pipeline.run.*` (the box is free text — type the pattern exactly).
+explicitly, an owner or admin runs
+`dibbla notifications add 'pipeline.run.*' --org-wide --target ops@example.com`
+(or `--channel slack` for the organization's connected Slack), then
+`dibbla notifications test <id>` to see it arrive. The event type comes from
+the catalog (`dibbla notifications events`); it is not free text. The console's
+**Organization settings → Integrations** does the same.
 
 When a user asks for "a nightly job that alerts if it breaks", this is the
 whole answer: a job in a worker, a pipeline with a cron and `Skip`, and the

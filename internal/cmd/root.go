@@ -12,6 +12,7 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/logs"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/manifestcmd"
 	mcpcmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/mcp"
+	notifycmd "github.com/dibbla-agents/dibbla-cli/internal/cmd/notifycmd"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/preview"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/run"
 	"github.com/dibbla-agents/dibbla-cli/internal/cmd/skills"
@@ -98,6 +99,7 @@ func init() {
 	admincmd.Register(rootCmd)
 	aigateway.Register(rootCmd)
 	mcpcmd.Register(rootCmd)
+	notifycmd.Register(rootCmd)
 }
 
 // Execute runs the root command.
