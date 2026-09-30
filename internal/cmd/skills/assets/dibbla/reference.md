@@ -1028,7 +1028,60 @@ fail with `DOMAINS_NOT_CONFIGURED` (503) — the feature is off, not a CLI bug.
 
 ---
 
-## logs
+## notifications
+
+Where Dibbla's alerts go — failing checks, maintenance findings and
+proposals, new security findings, failed deploys, pipelines that stopped — and
+whether they arrived. Owners and admins get the organization's app alerts by
+email without setting anything up; these commands show and change that.
+Aliases: `notification`, `notify`.
+
+```bash
+dibbla notifications list [--app <alias>] [--json]
+dibbla notifications events [--json]
+dibbla notifications add <event-type> --app <alias> [--severity info|attention|critical] [--channel email|slack] [--digest immediate|hourly|daily] [--test] [--json]
+dibbla notifications add <event-type> --org-wide [--app <alias>] [--channel email|slack|teams|discourse|webhook] [--target <email>] [--severity …] [--test]
+dibbla notifications test <id> [--json]
+dibbla notifications remove <id> [--yes]
+dibbla notifications history [--app <alias>] [--limit 1-100] [--json]
+```
+
+- **`list`** — the subscriptions that reach you (*Yours*: personal rows,
+  including the owner/admin default on `application.*`) and, for owners and
+  admins, *The organization's*. `--app` keeps the rows for that app and the
+  rows for every app. Each row shows an 8-character id, the event type with its
+  label, the app (or *every app*), the severity floor and the destination.
+- **`events`** — the catalog: every event type and family you can subscribe
+  to, with its default severity. `add` refuses anything else.
+- **`add`** — personal by default: needs `--app` (an app you build, maintain
+  or administer), goes to your own email address, or with `--channel slack`
+  to your linked Slack account; no `--target`. `--org-wide` (owners and
+  admins) adds the organization's subscription: `--app` optional (omit for
+  every app), `--target` required for email, other channels use the
+  organization's connected integration. Pipeline and trial events are not about
+  one app, so they are `--org-wide` only. Adding an existing subscription again
+  updates its severity and digest (and re-enables an unsubscribed one).
+  `--test` sends a test straight after.
+- **`--severity`** — the lowest severity delivered: `info` < `attention`
+  (default) < `critical`. `info` includes maintenance runs that found nothing.
+- **`test`** — sends one real notification through the subscription now,
+  whatever its digest or severity, and prints the channel's answer: `sent`, or
+  `failed`/`dropped` with the reason. Exit 1 when not delivered. At most a few
+  tests per person per ten minutes (429, exit 1).
+- **`remove`** — your own subscription, or (owners and admins) one of the
+  organization's. Another member's personal subscription is theirs. Removing
+  the owner/admin default is final; it is not re-created.
+- **`history`** — recent events, newest first, each with its deliveries
+  (`sent`, `pending`, `failed`, `dropped` + reason). Owners and admins see the
+  whole organization; others see what was delivered to them, or with `--app`
+  that app's events and their own deliveries.
+- **ids** — every command that takes an id accepts the 8 characters `list`
+  prints, or the full id.
+
+Exit codes: 0 ok, 1 not delivered / other, 3 not allowed (e.g. `--org-wide`
+as a developer), 4 no such app or subscription, 5 invalid request (unknown
+event type, missing `--app`, bad severity).
+
 
 Print runtime logs for a deployed app, sourced from the platform's Loki backend. By default returns the last 15 minutes and exits. **This is the primary way to debug a deployed app without redeploying** — when a deploy succeeds but the app 500s, errors out, or behaves unexpectedly, run `dibbla logs <app>` first rather than adding `console.log` and redeploying.
 

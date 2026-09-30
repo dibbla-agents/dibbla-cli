@@ -1186,6 +1186,68 @@
       ]
     },
     {
+      "id": "platform.notifications.list",
+      "title": "Read where an application's alerts go, and what happened to them",
+      "state": "remote-read",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps",
+      "note": "DIB-1102, on notify-service's /api/me/subscriptions surface. `dibbla notifications list|events|history` is platform_apps with view=notifications: the notification subscriptions that reach the caller (personal) and, for owners and admins, the organization's; the recent events with each delivery's status (sent, pending, failed or dropped, and why in a sentence); and the catalog's event types, which are what a subscription may name. Alias is optional here and only here: an organization's alerts are not all about one app (pipelines, the trial). Where an app's alerts go is a property of the app, decided by the people who build it, so - as with custom domains (DIB-843) - it is a view of the apps read tool; the surface grew by zero tools. A member who is not an owner or admin sees their own deliveries only.",
+      "cli_commands": [
+        "notifications list",
+        "notifications events",
+        "notifications history"
+      ]
+    },
+    {
+      "id": "platform.notifications.add",
+      "title": "Subscribe to an application's alerts",
+      "state": "remote-write",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "DIB-1102, on notify-service's /api/me/subscriptions surface. `dibbla notifications add` is the notification field of platform_app_config_update with action=add. The event type must be in the catalog - a concrete type or a group's family pattern - never free text. A personal subscription is bound to one app the caller builds (can-view, re-checked at every delivery) and goes to the caller's own address or linked Slack account, never to a typed target; an organization subscription is for owners and admins, may cover every app, and names its target. min_severity is the lowest severity delivered (default attention). Adding what already exists answers with the row updated, so a setup script can be rerun.",
+      "cli_commands": [
+        "notifications add"
+      ]
+    },
+    {
+      "id": "platform.notifications.remove",
+      "title": "Remove a notification subscription",
+      "state": "remote-write",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "DIB-1102, on notify-service's /api/me/subscriptions surface. `dibbla notifications remove` is action=remove: the caller's own row, or for an owner or admin one of the organization's. Another member's personal row is not found, whoever asks. Not destructive in the contract's sense - adding it again restores it - so it is a write under the app write scope. A removed owner/admin default (DIB-1100) stays removed.",
+      "cli_commands": [
+        "notifications remove"
+      ]
+    },
+    {
+      "id": "platform.notifications.test",
+      "title": "Send a test notification and see whether it arrived",
+      "state": "remote-write",
+      "scopes": [
+        "platform:apps:write"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_app_config_update",
+      "note": "DIB-1102, on notify-service's /api/me/subscriptions surface. `dibbla notifications test` is action=test: one real notification through one subscription - same adapter, rendering and ledger - sent now regardless of digest or severity floor, answered with the delivery's status and, when it did not arrive, why. Bounded per person; the idempotency key makes a retried call answer with the first send instead of sending again.",
+      "cli_commands": [
+        "notifications test"
+      ]
+    },
+    {
       "id": "platform.apps.maintenance.run",
       "title": "Start one maintenance run",
       "state": "remote-async",

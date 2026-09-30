@@ -491,6 +491,19 @@ Fetches the hostname's live status from the edge and explains it.
 -   **Usage:** `dibbla domains remove <alias> <hostname> [--yes | -y]`
 -   **Behaviour:** Disconnects the hostname from the app; the user's DNS record is untouched. The hostname is **parked**, not deleted: while the CNAME still points at the platform, visitors see Dibbla's "This site isn't connected" page instead of an edge error, and the hostname stays reserved for the organization. `dibbla domains add` of the same hostname (this or another of the organization's apps) connects it again at once, without a new certificate. The platform releases a parked hostname when the CNAME no longer points at it, or 30 days after disconnecting, whichever comes first — tell the user to remove the CNAME at the registrar when they are done with the domain. Pass `--yes` when running as an agent.
 
+### `notifications`
+
+The `notifications` command shows, sets up and tests where Dibbla's alerts go (failing checks, maintenance findings and proposals, security findings, failed deploys, pipelines that stopped) and whether they arrived. Owners and admins already get the organization's app alerts by email. Aliases: `notification`, `notify`.
+
+-   **`list [--app <alias>] [--json]`** — your subscriptions and, for owners and admins, the organization's, each with an 8-character id.
+-   **`events [--json]`** — the catalog of event types and families (`application.check.failed`, `application.maintenance.*`, `pipeline.run.*` …). Only these are accepted.
+-   **`add <event-type> --app <alias> [--severity info|attention|critical] [--channel email|slack] [--test]`** — a personal subscription for one app you build, to your own email or linked Slack. **`--org-wide [--app <alias>] [--target <email>] [--channel email|slack|teams|discourse|webhook]`** adds the organization's (owners and admins). Re-adding updates.
+-   **`test <id> [--json]`** — sends a real notification now and prints whether it was delivered; exit 1 when not.
+-   **`remove <id> [--yes]`** — yours, or (owners and admins) the organization's.
+-   **`history [--app <alias>] [--limit N] [--json]`** — recent events with each delivery's status and reason.
+-   **Exit codes:** 3 not allowed, 4 no such app/subscription, 5 invalid request.
+-   **Example:** `dibbla notifications add application.check.failed --app myapp --test`
+
 ### `deploy`
 
 The `deploy` command deploys a project to the Dibbla platform. **Detection is by file:** if `dibbla.yaml` (or `dibbla.yml`) is present at the deploy root, the multi-service path runs (manifest parse + resolve + parallel build + atomic apply with rollback). Otherwise the legacy single-`Dockerfile` path runs unchanged.
