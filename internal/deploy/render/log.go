@@ -43,7 +43,10 @@ func (l *Log) OnEvent(ev DeployEvent) {
 			l.line("info", "deploy", fmt.Sprintf("status=ok url=%s alias=%s elapsed=%s",
 				l.result.Deployment.URL, l.result.Deployment.Alias, l.elapsed()))
 			for _, server := range l.result.MCPPublished {
-				l.line("info", "mcp", fmt.Sprintf("published=%s connect=%q", server, mcpConnectCommand(server)))
+				l.line("info", "mcp", fmt.Sprintf("published=%s address=%s connect=%q", server, l.result.MCPAddresses[server], mcpConnectCommand(server)))
+			}
+			for _, server := range l.result.MCPWithdrawn {
+				l.line("info", "mcp", "withdrawn="+server)
 			}
 			for _, n := range l.result.Notices() {
 				l.line("warn", n.Label, n.Text)

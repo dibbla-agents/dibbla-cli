@@ -72,6 +72,35 @@ services:
 	}
 }
 
+func TestParseMCPLine(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dibbla.yaml", `
+version: 1
+services:
+  tools:
+    build: .
+    port: 8080
+    public: true
+    mcp: my-tools
+  other:
+    image: redis:7
+    mcp: my-tools
+  plain:
+    image: nginx:1.27
+`)
+	m, err := ParseAndValidate(p)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if got := m.MCPServers(); len(got) != 1 || got[0] != "my-tools" {
+		t.Errorf("MCPServers() = %v", got)
+	}
+	var none *Manifest
+	if none.MCPServers() != nil {
+		t.Error("nil manifest publishes something")
+	}
+}
+
 func TestParseValidMultiService(t *testing.T) {
 	dir := t.TempDir()
 	p := writeFile(t, dir, "dibbla.yaml", `

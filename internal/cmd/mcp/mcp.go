@@ -100,6 +100,17 @@ func resolveMCPURL() resolveResult {
 	}
 }
 
+// ServerAddress is the MCP address of one tool server on the installation
+// the CLI is signed in to (DIB-1225: the deploy output names it next to a
+// published server), or "" when the base URL cannot be resolved.
+func ServerAddress(server string) string {
+	base := resolveMCPURL().URL
+	if base == "" {
+		return ""
+	}
+	return base + "/platform/servers/" + server
+}
+
 // deriveFromAPIURL implements the api.X → mcp.X host-label rewrite, the same
 // convention `dibbla ai` uses for the AI gateway: hosted MCP lives next to
 // the API on the same parent domain. Anything that doesn't match is rejected

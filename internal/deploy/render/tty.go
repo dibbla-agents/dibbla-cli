@@ -319,7 +319,15 @@ func (t *TTY) finalize() {
 		t.prop("revision", t.paint(t.result.VCSCommit, colorMagenta+colorBold))
 	}
 	for _, server := range t.result.MCPPublished {
-		t.prop("mcp", t.paint(server, colorBright+colorBold)+t.paint("  ·  connect: ", colorDim)+t.paint(mcpConnectCommand(server), colorBright))
+		line := t.paint("published as MCP: ", colorDim) + t.paint(server, colorBright+colorBold)
+		if addr := t.result.MCPAddresses[server]; addr != "" {
+			line += t.paint("  ·  ", colorDim) + t.paint(addr, colorCyan)
+		}
+		line += t.paint("  ·  connect: ", colorDim) + t.paint(mcpConnectCommand(server), colorBright)
+		t.prop("mcp", line)
+	}
+	for _, server := range t.result.MCPWithdrawn {
+		t.prop("mcp", t.paint("withdrawn as MCP: ", colorDim)+t.paint(server, colorBright+colorBold)+t.paint("  ·  its mcp: line left the manifest; the address no longer answers and the name is free", colorDim))
 	}
 	t.printServicesTable()
 	if notices := t.result.Notices(); len(notices) > 0 {
