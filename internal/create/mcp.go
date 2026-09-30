@@ -14,19 +14,21 @@ import (
 
 // The MCP server template (DIB-1225): a Go tool server whose dibbla.yaml
 // publishes it as an MCP of its own, so `dibbla deploy` in the created
-// project is the whole way to /platform/servers/<name>.
+// project is the whole way to /platform/servers/<name>. It is a module of its
+// own inside the Go worker starter template, in a directory the worker's
+// build ignores and `create go-worker` removes.
 //
-// The three placeholders below are the template's own values. They are part
-// of its contract with this command: the template's CI keeps them in place.
+// The placeholders below are the template's own values. They are part of its
+// contract with this command: the template's CI keeps them in place.
 const (
-	mcpTemplateRepo    = "https://github.com/dibbla-agents/mcp-server-starter-template.git"
-	mcpTemplateModule  = "github.com/dibbla-agents/mcp-server-starter-template"
+	mcpTemplateDir     = "_optional/mcp"
+	mcpTemplateModule  = templateModule + "/" + mcpTemplateDir
 	mcpTemplateName    = "my-mcp"
 	mcpTemplateAddress = "grpc.dibbla.com:443"
 )
 
-// MCPTemplateRepoEnv points the command at another copy of the template: a
-// fork, a branch checkout on disk, or a staging repository.
+// MCPTemplateRepoEnv points the command at another copy of the starter
+// template: a fork, a branch checkout on disk, or a staging repository.
 const MCPTemplateRepoEnv = "DIBBLA_MCP_TEMPLATE_REPO"
 
 // mcpNameRe is narrower than what an MCP address allows (letters, digits,
@@ -92,17 +94,25 @@ func MCP(cfg MCPConfig) error {
 		return err
 	}
 
-	repo := mcpTemplateRepo
+	repo := templateRepo
 	if v := strings.TrimSpace(os.Getenv(MCPTemplateRepoEnv)); v != "" {
 		repo = v
 	}
-	clone := exec.Command("git", "clone", "--quiet", "--depth", "1", repo, cfg.Name)
+	// The whole starter is cloned next to the destination and only the MCP
+	// directory is kept. The caller checked that cfg.Name did not exist, so
+	// both directories are ours to remove on any failure.
+	checkout := cfg.Name + ".template"
+	if _, err := os.Stat(checkout); err == nil {
+		return fmt.Errorf("%q is in the way; move it aside or create the project elsewhere", checkout)
+	}
+	defer os.RemoveAll(checkout)
+	clone := exec.Command("git", "clone", "--quiet", "--depth", "1", repo, checkout)
 	clone.Stderr = os.Stderr
 	if err := clone.Run(); err != nil {
-		// git may have left a partial directory behind; the caller checked
-		// that it did not exist before, so it is ours to remove.
-		_ = os.RemoveAll(cfg.Name)
 		return fmt.Errorf("could not fetch the template from %s: %w", repo, err)
+	}
+	if err := os.Rename(filepath.Join(checkout, filepath.FromSlash(mcpTemplateDir)), cfg.Name); err != nil {
+		return fmt.Errorf("the template has no %s directory; this CLI and the template are out of step — update the CLI (`dibbla update`): %w", mcpTemplateDir, err)
 	}
 	if err := personalizeMCP(cfg); err != nil {
 		_ = os.RemoveAll(cfg.Name)
@@ -111,16 +121,10 @@ func MCP(cfg MCPConfig) error {
 	return nil
 }
 
-// personalizeMCP turns a checkout of the template into the user's project:
-// no template history or CI, the user's name where the template has its
-// placeholder, and the gRPC address of the user's installation.
+// personalizeMCP turns the template directory into the user's project: the
+// user's name where the template has its placeholder, and the gRPC address
+// of the user's installation.
 func personalizeMCP(cfg MCPConfig) error {
-	for _, p := range []string{".git", ".github"} {
-		if err := os.RemoveAll(filepath.Join(cfg.Name, p)); err != nil {
-			return fmt.Errorf("removing %s: %w", p, err)
-		}
-	}
-
 	manifest := filepath.Join(cfg.Name, "dibbla.yaml")
 	before, err := os.ReadFile(manifest)
 	if err != nil {

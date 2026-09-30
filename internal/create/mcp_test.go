@@ -11,11 +11,11 @@ import (
 )
 
 // templateFixture is the part of the MCP template this command depends on:
-// the placeholders it replaces and the files it removes. The template's own
-// repository owns the real content.
+// the placeholders it replaces. The template's own repository owns the real
+// content; there it sits under _optional/mcp in the Go worker starter.
 var templateFixture = map[string]string{
-	"go.mod":  "module github.com/dibbla-agents/mcp-server-starter-template\n\ngo 1.23.1\n",
-	"main.go": "package main\n\nimport \"github.com/dibbla-agents/mcp-server-starter-template/tools\"\n\nfunc main() { tools.Register() }\n",
+	"go.mod":  "module " + mcpTemplateModule + "\n\ngo 1.23.1\n",
+	"main.go": "package main\n\nimport \"" + mcpTemplateModule + "/tools\"\n\nfunc main() { tools.Register() }\n",
 	"dibbla.yaml": `version: 1
 
 services:
@@ -32,10 +32,22 @@ services:
       GRPC_SERVER_ADDRESS: grpc.dibbla.com:443
       GRPC_USE_TLS: "true"
 `,
-	"env.example":              "SERVER_NAME=my-mcp-local\nGRPC_SERVER_ADDRESS=grpc.dibbla.com:443\n",
-	"README.md":                "dibbla mcp server my-mcp\n",
-	"Dockerfile":               "FROM scratch\n",
-	".github/workflows/ci.yml": "name: CI\n",
+	"env.example": "SERVER_NAME=my-mcp-local\nGRPC_SERVER_ADDRESS=grpc.dibbla.com:443\n",
+	"README.md":   "dibbla mcp server my-mcp\n",
+	"Dockerfile":  "FROM scratch\n",
+}
+
+// starterFixture is the repository `create mcp` clones: the Go worker
+// starter, with the MCP template in its own directory.
+func starterFixture() map[string]string {
+	files := map[string]string{
+		"go.mod":             "module " + templateModule + "\n\ngo 1.23.1\n",
+		"cmd/worker/main.go": "package main\n\nfunc main() {}\n",
+	}
+	for name, content := range templateFixture {
+		files[mcpTemplateDir+"/"+name] = content
+	}
+	return files
 }
 
 func writeFixture(t *testing.T, dir string, files map[string]string) {
@@ -97,18 +109,9 @@ func TestGrpcAddressFromAPIURL(t *testing.T) {
 func TestPersonalizeMCP(t *testing.T) {
 	t.Chdir(t.TempDir())
 	writeFixture(t, "acme-tools", templateFixture)
-	if err := os.MkdirAll(filepath.Join("acme-tools", ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := personalizeMCP(MCPConfig{Name: "acme-tools", GrpcAddress: "grpc.example.org:443"}); err != nil {
 		t.Fatalf("personalizeMCP: %v", err)
-	}
-
-	for _, gone := range []string{".git", ".github"} {
-		if _, err := os.Stat(filepath.Join("acme-tools", gone)); !os.IsNotExist(err) {
-			t.Errorf("%s is still in the project", gone)
-		}
 	}
 
 	yaml := read(t, "acme-tools/dibbla.yaml")
@@ -161,7 +164,7 @@ func TestMCPClonesTheTemplate(t *testing.T) {
 		t.Skip("git is not installed")
 	}
 	repo := t.TempDir()
-	writeFixture(t, repo, templateFixture)
+	writeFixture(t, repo, starterFixture())
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main"},
 		{"add", "-A"},
@@ -182,8 +185,10 @@ func TestMCPClonesTheTemplate(t *testing.T) {
 	if got := read(t, "acme-tools/dibbla.yaml"); !strings.Contains(got, "mcp: acme-tools") {
 		t.Errorf("dibbla.yaml = %q", got)
 	}
-	if _, err := os.Stat("acme-tools/.git"); !os.IsNotExist(err) {
-		t.Error("the project carries the template's git history")
+	for _, stray := range []string{"acme-tools/.git", "acme-tools/cmd", "acme-tools.template"} {
+		if _, err := os.Stat(stray); !os.IsNotExist(err) {
+			t.Errorf("%s is left behind", stray)
+		}
 	}
 
 	// A template that cannot be fetched leaves nothing behind.
