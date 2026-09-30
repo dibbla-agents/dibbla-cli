@@ -997,6 +997,7 @@
       "source": "dibbla-cli/internal/cmd/create.go:38, internal/cmd/template/register.go, internal/cmd/skills/register.go, internal/cmd/initcmd/register.go",
       "cli_commands": [
         "create go-worker",
+        "create mcp",
         "template install",
         "skills install",
         "skills list",

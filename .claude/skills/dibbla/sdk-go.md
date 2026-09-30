@@ -12,6 +12,7 @@ This doc covers building workers. For the workflow side (calling registered func
 | Run a long-running background job that reports progress to the dashboard | **SDK** — `jobs.JobHandler` + `server.RegisterJob` |
 | Run that job every night, and be told when it breaks or stops running | **SDK** for the job + a **pipeline** for the schedule and the alerts — see [pipelines.md](pipelines.md) |
 | Call third-party APIs using a workflow user's OAuth tokens (Google/Microsoft/GitHub) | **SDK** — advanced `Function[In, Out]` with `gs.OAuth` (in-repo workers only — see §5.2) |
+| Offer your functions as MCP tools at an address of their own, to the people an app's access list admits | **SDK** worker deployed as an app with `mcp: <name>` in `dibbla.yaml` — `dibbla create mcp <name>` scaffolds it; see [manifest.md](manifest.md) § 13.5 |
 | Deploy a regular HTTP app (web server, frontend, REST API) | `dibbla deploy` with a `Dockerfile`, **no SDK needed** |
 | Build / iterate / call a workflow without writing Go | `dibbla wf` commands — see [workflows.md](workflows.md) |
 

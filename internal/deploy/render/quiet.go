@@ -52,6 +52,9 @@ func (q *Quiet) OnDone() int {
 		}
 		fmt.Fprintf(q.out, "✓ %s  ·  %s  ·  %s%s\n",
 			q.result.Deployment.Alias, q.result.Deployment.URL, elapsed, suffix)
+		for _, server := range q.result.MCPPublished {
+			fmt.Fprintf(q.out, "· mcp: %s published  ·  %s\n", server, mcpConnectCommand(server))
+		}
 		for _, n := range q.result.Notices() {
 			fmt.Fprintf(q.out, "! %s: %s\n", n.Label, n.Text)
 		}

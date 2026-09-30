@@ -20,8 +20,12 @@ import (
 
 // `dibbla mcp server <tool-server-name>` (DIB-1069, part of DIB-1064).
 //
-// One tool server's exposed functions as separate MCP tools, at
-// mcp.<domain>/platform/servers/<name>. The address lives on the same OAuth
+// One tool server's functions as separate MCP tools, at
+// mcp.<domain>/platform/servers/<name>. Two policies put a function there
+// (DIB-1219): the app that runs the server publishes all of it with `mcp:` in
+// its manifest, governed by the app's access list, or an org admin exposes
+// single functions. The address does not tell the two apart, and neither does
+// this command. The address lives on the same OAuth
 // resource as /platform, so discovery, the grant and the login are the
 // platform ones; only the endpoint, the client forms and the check differ.
 //
@@ -45,18 +49,38 @@ var serverNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 const serverNameRule = "letters, digits, '.', '_' and '-', at most 64 characters"
 
 // findNamesHint is how a person finds a tool server's name: the MCP address
-// itself never reveals which servers exist (unknown, disconnected and
-// nothing-exposed all look the same), so the CLI is where names come from.
-const findNamesHint = "Find tool server names with `dibbla functions exposed` (the SERVER column)."
+// itself never reveals which servers exist (unknown, disconnected, nothing
+// published or exposed, and not-on-the-access-list all look the same), so the
+// names come from where they were given.
+const findNamesHint = "Find the name: a published server's is the `mcp:` line in its app's dibbla.yaml (`dibbla deploy` prints it); servers with functions exposed by an admin are listed by `dibbla functions exposed` (the SERVER column)."
 
 var serverCmd = &cobra.Command{
 	Use:   "server <tool-server-name>",
-	Short: "Print MCP client config for one tool server's exposed functions, as separate tools",
+	Short: "Print MCP client config for one tool server (published by its app, or with exposed functions), as separate tools",
 	Long: `Prints ready-to-paste configuration connecting an MCP client to ONE of your
 organization's tool servers, at mcp.<domain>/platform/servers/<name>. Each of
-that server's exposed functions appears as its own MCP tool, so the client can
-switch them on and off one by one. Only exposed functions appear ('dibbla fn
-expose'); the rest of the platform is not on this address.
+that server's functions that you may use appears as its own MCP tool, so the
+client can switch them on and off one by one. The rest of the platform is not
+on this address.
+
+A server's functions get onto its address in one of two ways:
+
+  published   The app that runs the server publishes all of it with one line
+              in dibbla.yaml ('mcp: <name>' on the service). A developer who
+              may deploy the app can do this; 'dibbla create mcp' makes such a
+              project. The tools go to the people the app's access list
+              admits: every member of the organization, or, with
+              auth.access_policy: invite_only, the people added under
+              "Access & users" in the console and the organization's owners
+              and admins. A published server always requires a Dibbla login,
+              and its functions are not behind platform_tools.
+  exposed     An org owner or admin exposes single functions with a minimum
+              role ('dibbla fn expose'). Those are also behind platform_tools
+              on /platform.
+
+The address answers the same, connected with no tools, for a name that does
+not exist, a server with nothing published or exposed, and a published server
+whose app does not admit you. Run --check to see what you get.
 
 This command only prints client configuration (and, with --login or --check,
 logs in or verifies the connection). It never starts or runs a server: the
@@ -64,8 +88,8 @@ server is your worker, already registered with the platform.
 
   dibbla mcp platform            all exposed functions through one tool
                                  (platform_tools, the official connector)
-  dibbla mcp server <name>       one tool server's exposed functions as
-                                 separate tools
+  dibbla mcp server <name>       one tool server's published or exposed
+                                 functions as separate tools
 
 The address is protected by the same OAuth resource as /platform, so it
 shares its login and its stored grant: a machine authorized with
@@ -225,7 +249,7 @@ func printServerConfig(w io.Writer, ts toolset, client, endpoint string, source 
 		printServerOpencode(w, ts, endpoint)
 	case "":
 		fmt.Fprintf(w, "# MCP endpoint: %s (%s)\n", endpoint, source.Source)
-		fmt.Fprintf(w, "# One tool per exposed function of the tool server %q. No token in any form:\n", strings.TrimPrefix(ts.ServerName, "dibbla-"))
+		fmt.Fprintf(w, "# One tool per function of the tool server %q that you may use. No token in any form:\n", strings.TrimPrefix(ts.ServerName, "dibbla-"))
 		fmt.Fprintf(w, "# the client runs the OAuth flow itself, on the same grant as /platform.\n")
 		fmt.Fprintf(w, "# Connect first, log in second (see `dibbla mcp server --help`).\n\n")
 		fmt.Fprintf(w, "## Claude Code\n\n")
@@ -247,13 +271,15 @@ func printServerConfig(w io.Writer, ts toolset, client, endpoint string, source 
 
 // printServerVerifyHint closes every config form with the one check that
 // catches the silent failure: the address answers 200 with an empty tool list
-// for an unknown name and for a server with nothing exposed alike, so a
-// client shows "Connected" either way. An agent that pastes the config and
+// for an unknown name, for a server with nothing published or exposed, and
+// for a published server whose app does not admit the caller, so a client
+// shows "Connected" every time. An agent that pastes the config and
 // sees no tools must not conclude the platform has none.
 func printServerVerifyHint(w io.Writer, ts toolset) {
 	name := strings.TrimPrefix(ts.ServerName, "dibbla-")
 	fmt.Fprintf(w, "\n# Next: run `dibbla mcp server %s --check`.\n", name)
-	fmt.Fprintf(w, "# Connected but 0 tools = wrong server name, or nothing exposed on it. Not \"the platform has no tools\".\n")
+	fmt.Fprintf(w, "# Connected but 0 tools = wrong server name, nothing published or exposed on it, or its app's\n")
+	fmt.Fprintf(w, "# access list does not include you. Not \"the platform has no tools\".\n")
 }
 
 // printServerClaude prints the Claude Code form in connect-before-login order.
@@ -412,7 +438,7 @@ func runServerCheck(w io.Writer, name string) error {
 	fmt.Fprintf(w, "Server:    %s %s %s\n", platform.Icon("✅", "[OK]"), probe.ServerName, probe.ServerVersion)
 	if len(probe.Tools) == 0 {
 		fmt.Fprintf(w, "Tools:     %s 0\n", platform.Icon("⚠️", "[!]"))
-		return fmt.Errorf("the address answers but offers no tools: no tool server named %q is registered right now, or none of its functions is exposed (the address cannot tell the two apart). %s", name, findNamesHint)
+		return fmt.Errorf("the address answers but offers no tools: no tool server named %q is registered right now, it is neither published by its app nor has exposed functions, or it is published and the app's access list does not include you (the address cannot tell these apart; the app's owner manages the list under \"Access & users\" in the console). %s", name, findNamesHint)
 	}
 	fmt.Fprintf(w, "Tools:     %s %d\n", platform.Icon("✅", "[OK]"), len(probe.Tools))
 	for _, t := range probe.Tools {

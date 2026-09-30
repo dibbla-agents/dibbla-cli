@@ -42,6 +42,9 @@ func (l *Log) OnEvent(ev DeployEvent) {
 		if l.result != nil {
 			l.line("info", "deploy", fmt.Sprintf("status=ok url=%s alias=%s elapsed=%s",
 				l.result.Deployment.URL, l.result.Deployment.Alias, l.elapsed()))
+			for _, server := range l.result.MCPPublished {
+				l.line("info", "mcp", fmt.Sprintf("published=%s connect=%q", server, mcpConnectCommand(server)))
+			}
 			for _, n := range l.result.Notices() {
 				l.line("warn", n.Label, n.Text)
 			}

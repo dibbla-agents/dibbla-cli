@@ -13,7 +13,8 @@
 //
 // `dibbla mcp server <name>` (DIB-1069) prints config for one tool server's
 // address, /platform/servers/<name>, on the same OAuth resource: that server's
-// exposed functions as separate tools instead of the one platform_tools tool.
+// published or exposed functions as separate tools instead of the one
+// platform_tools tool.
 package mcp
 
 import (
@@ -46,9 +47,12 @@ Subcommands:
   dibbla mcp server NAME  print client config for one tool server's address
                           (/platform/servers/NAME), --login, --check
 
-Two ways to reach your organization's exposed functions:
+Two ways to reach your organization's functions as tools:
   platform       all exposed functions through one tool (the official connector)
-  server <name>  one tool server's exposed functions as separate tools
+  server <name>  one tool server's published or exposed functions as separate tools
+
+A tool server of your own, published as an MCP by the app that runs it, starts
+with 'dibbla create mcp'.
 
 Every mcp command prints configuration; none of them runs a server.`,
 }

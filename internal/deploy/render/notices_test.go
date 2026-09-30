@@ -126,7 +126,7 @@ func TestRenderersOmitAbsentNotices(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"checks_notice", "vcs_error", "vcs_filtered"} {
+	for _, k := range []string{"checks_notice", "vcs_error", "vcs_filtered", "mcp_published", "mcp_notice"} {
 		if _, present := got[k]; present {
 			t.Errorf("%q present on a clean deploy: %v", k, got)
 		}
