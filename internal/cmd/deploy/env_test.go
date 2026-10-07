@@ -285,7 +285,7 @@ func TestEnvPullNamesVariablesThatLookLikeSecrets(t *testing.T) {
 	if code != 0 {
 		t.Fatal(stderr)
 	}
-	if !strings.Contains(stdout, "STRIPE_SECRET_KEY look like secrets") || strings.Contains(stdout, "PORT look") || !strings.Contains(stdout, "dibbla secrets set NAME -d shop") {
+	if !strings.Contains(stdout, "STRIPE_SECRET_KEY look like secrets") || strings.Contains(stdout, "PORT look") || !strings.Contains(stdout, "dibbla env promote NAME -d shop") {
 		t.Errorf("stdout:\n%s", stdout)
 	}
 	if strings.Contains(stdout+stderr, "sk_live_SYNTHETIC") {

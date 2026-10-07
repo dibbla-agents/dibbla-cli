@@ -38,7 +38,9 @@ injected into the app when it runs; .env.example in the repository lists the
 names the app needs. 'dibbla env pull' fetches the variables' values and the
 secrets' names to a local .env.local so the app can run here. A secret's value
 never leaves Dibbla: you set your own development value for each. The file
-never goes back: .gitignore, the VCS filter and the push hook all refuse it.`,
+never goes back: .gitignore, the VCS filter and the push hook all refuse it.
+'dibbla env promote' turns a plain variable that should have been a secret
+into one.`,
 }
 
 var envPullCmd = &cobra.Command{
@@ -55,6 +57,10 @@ command, not to an API, not to an AI assistant — so a secret arrives in
 test key, a local database). A secret line that already has a value is yours
 and is never overwritten, not even by --replace. For the app's database,
 'dibbla db connect <name>' gives you a connection of your own.
+
+A plain variable whose name or value looks like a secret is named as such:
+it is readable by anyone who can read the app's configuration. 'dibbla env
+promote NAME' turns it into a secret, with a new value entered in the browser.
 
 Values live in Dibbla, names live in the code: keep the names in .env.example
 (committed), set a new value with 'dibbla secrets set', and run this again.
@@ -200,7 +206,7 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 		}
 	}
 	if len(suspects) > 0 {
-		fmt.Fprintf(stdout, "   %s look like secrets but are plain env vars, readable by anyone who can read the app's configuration. Make them secrets: 'dibbla secrets set NAME -d %s', then drop them from -e / dibbla.yaml.\n", strings.Join(suspects, ", "), alias)
+		fmt.Fprintf(stdout, "   %s look like secrets but are plain env vars, readable by anyone who can read the app's configuration. Promote each to a secret with a new value: 'dibbla env promote NAME -d %s'.\n", strings.Join(suspects, ", "), alias)
 	}
 	if len(filled) > 0 {
 		fmt.Fprintf(stdout, "   kept your local values for %s. If they came from a pull before secrets were write-only, they are the app's real secrets: replace them with development values.\n", strings.Join(filled, ", "))
