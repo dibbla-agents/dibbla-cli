@@ -2,7 +2,10 @@ package deploy
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
@@ -18,7 +21,9 @@ var storageCmd = &cobra.Command{
 	Long: `Provides commands to list, create, delete, rotate and inspect managed
 S3-compatible storage buckets. Creating a bucket provisions credentials scoped
 to exactly that bucket and injects them automatically as secrets
-(STORAGE_<NAME>_ENDPOINT/BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY).`,
+(STORAGE_<NAME>_ENDPOINT/BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY). Those are the
+app's and are write-only; 'storage credentials' gives you a one-hour key of
+your own for one bucket instead.`,
 }
 
 var storageListCmd = &cobra.Command{
@@ -69,16 +74,30 @@ var storageInfoCmd = &cobra.Command{
 	Run:   runStorageInfo,
 }
 
-// storageCredentialsCmd used to print the app's bucket keys, read from its
-// STORAGE_<NAME>_* secrets. Those are secrets, and a secret's value cannot be
-// read back (DIB-1337), so it now says so instead of "unknown command".
+// storageCredentialsCmd prints a key of the person's own for one bucket
+// (DIB-1344). It used to print the app's keys, read from its STORAGE_<NAME>_*
+// secrets; those are write-only since DIB-1337 and stay unread. The key is
+// minted for whoever runs the command, works on that bucket's objects only and
+// expires in an hour — the bucket counterpart of `dibbla db connect`.
 var storageCredentialsCmd = &cobra.Command{
 	Use:   "credentials <name>",
-	Short: "Removed: a bucket's keys are secrets and cannot be read back",
-	Long: `A bucket's keys are injected into the app as STORAGE_<NAME>_* secrets, and a
-secret is write-only: Dibbla never hands out its value. The app gets the keys in
-its environment when it runs.`,
-	Args: cobra.MaximumNArgs(1),
+	Short: "Print a one-hour key of your own for one bucket, as export lines",
+	Long: `Prints shell export lines for using a bucket from your own tools (aws CLI,
+mc, rclone, SDKs). The key is yours: Dibbla mints it for you when you run the
+command, it reads and writes this one bucket's objects and nothing else, and it
+expires by itself after an hour. Run the command again for a new one.
+
+It is not the app's key. The app's STORAGE_<NAME>_* secrets are write-only and
+are neither read nor changed; your key expiring never affects the app.
+
+The output carries a secret key. Keep it in your shell, not in a file or a chat:
+an AI agent uses this command only inside eval, as below, and never prints it.
+
+Examples:
+  eval "$(dibbla storage credentials mybucket -q)"
+  aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls "s3://$DIBBLA_BUCKET"
+  rclone ls ":s3:$DIBBLA_BUCKET" --s3-env-auth --s3-no-check-bucket --s3-endpoint "$AWS_ENDPOINT_URL"`,
+	Args: cobra.ExactArgs(1),
 	Run:  runStorageCredentials,
 }
 
@@ -114,7 +133,11 @@ func init() {
 	storageDeleteCmd.Flags().BoolVarP(&storageDeleteQuiet, "quiet", "q", false, "Suppress progress and success output (errors only)")
 	storageRotateCmd.Flags().BoolVar(&storageRotateNoRestart, "no-restart", false, "Skip restarting the bound deployment's services (pods keep the old, invalid key until restarted)")
 	storageCredentialsCmd.Flags().BoolVarP(&storageCredsQuiet, "quiet", "q", false, "Only print the export lines (for eval)")
-	storageCredentialsCmd.Flags().StringVar(&storageCredsDeployment, "deployment", "", "Deployment the bucket's secrets are scoped to (default: org-global)")
+	// --deployment named the scope of the app's secrets the old command read.
+	// A person's key is per bucket, so it means nothing now; it is accepted so
+	// scripts that pass it keep working.
+	storageCredentialsCmd.Flags().StringVar(&storageCredsDeployment, "deployment", "", "Ignored: a bucket key is per bucket")
+	_ = storageCredentialsCmd.Flags().MarkDeprecated("deployment", "a bucket key is per bucket and per person now; the flag is ignored")
 }
 
 func runStorageList(cmd *cobra.Command, args []string) {
@@ -294,5 +317,80 @@ func runStorageInfo(cmd *cobra.Command, args []string) {
 }
 
 func runStorageCredentials(cmd *cobra.Command, args []string) {
-	os.Exit(refuseSecretValueRead(os.Stderr, "storage credentials"))
+	cfg := config.Load()
+	if !cfg.HasToken() {
+		// Not requireToken: that writes to stdout, and stdout is what
+		// `eval "$(…)"` runs.
+		fmt.Fprintf(os.Stderr, "%s Error: API token is required — run 'dibbla login' or set DIBBLA_API_TOKEN\n", platform.Icon("❌", "[X]"))
+		os.Exit(1)
+	}
+	os.Exit(storageCredentials(os.Stdout, os.Stderr, args[0], storageCredsQuiet, time.Now(),
+		func(name string) (*storage.BucketCredentials, error) {
+			return storage.IssueBucketCredentials(cfg.APIURL, cfg.APIToken, name)
+		}))
+}
+
+// storageCredentials asks for the person's key and prints it. stdout carries
+// the export lines and nothing else that a shell would run; every error goes
+// to stderr, because under `eval "$(…)"` stdout is executed.
+func storageCredentials(stdout, stderr io.Writer, name string, quiet bool, now time.Time, issue func(string) (*storage.BucketCredentials, error)) int {
+	creds, err := issue(name)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s Could not get a key for bucket '%s': %v\n", platform.Icon("❌", "[X]"), name, err)
+		return 1
+	}
+	exports := bucketKeyExports(creds)
+
+	if quiet {
+		fmt.Fprintln(stdout, strings.Join(exports, "\n"))
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "%s Your own key for bucket '%s' — this bucket only, %s:\n", platform.Icon("🔑", "[>]"), creds.Bucket, expiryPhrase(creds.ExpiresAt, now))
+	fmt.Fprintln(stdout)
+	for _, l := range exports {
+		fmt.Fprintf(stdout, "  %s\n", l)
+	}
+	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "It is not the app's key: the app's STORAGE_%s_* secrets are untouched.\n", storage.EnvName(creds.Bucket))
+	fmt.Fprintln(stdout, "Load it into your shell, and ask again when it expires:")
+	fmt.Fprintf(stdout, "  eval \"$(dibbla storage credentials %s -q)\"\n", name)
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "Then e.g.:")
+	fmt.Fprintln(stdout, `  aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls "s3://$DIBBLA_BUCKET"`)
+	fmt.Fprintln(stdout, `  rclone ls ":s3:$DIBBLA_BUCKET" --s3-env-auth --s3-no-check-bucket --s3-endpoint "$AWS_ENDPOINT_URL"`)
+	fmt.Fprintln(stdout, "  (rclone needs --s3-no-check-bucket: the key may use the bucket, not create one)")
+	return 0
+}
+
+// bucketKeyExports is the key as POSIX shell export lines, in the order the
+// old command printed them, with the session token an STS key carries.
+func bucketKeyExports(c *storage.BucketCredentials) []string {
+	exports := []string{
+		"export AWS_ENDPOINT_URL=" + shellQuote(c.Endpoint),
+		"export AWS_ACCESS_KEY_ID=" + shellQuote(c.AccessKeyID),
+		"export AWS_SECRET_ACCESS_KEY=" + shellQuote(c.SecretAccessKey),
+	}
+	if c.SessionToken != "" {
+		exports = append(exports, "export AWS_SESSION_TOKEN="+shellQuote(c.SessionToken))
+	}
+	return append(exports, "export DIBBLA_BUCKET="+shellQuote(c.Bucket))
+}
+
+// expiryPhrase says when the key stops working, in the person's local time.
+func expiryPhrase(expiresAt, now time.Time) string {
+	if expiresAt.IsZero() {
+		return "valid for about an hour"
+	}
+	left := expiresAt.Sub(now).Round(time.Minute)
+	if left <= 0 {
+		return "already expired at " + expiresAt.Local().Format("2006-01-02 15:04 MST")
+	}
+	return fmt.Sprintf("valid until %s (in %d min)", expiresAt.Local().Format("2006-01-02 15:04 MST"), int(left.Minutes()))
+}
+
+// shellQuote wraps a value in single quotes for a POSIX shell, escaping any
+// single quote inside it.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
