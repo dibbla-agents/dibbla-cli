@@ -314,6 +314,15 @@
       "granted_by_first_public_toolset": true,
       "consent_default": false,
       "static_token_eligible": false
+    },
+    {
+      "name": "platform:servers:use",
+      "class": "narrow-write",
+      "summary": "Use one tool server's tools through its own MCP address, /platform/servers/<name> (DIB-1242). The only scope a per-server resource grants: the token's audience is the address, so it lists and calls the functions of that one server — the ones the address's policy opens to the caller — and nothing else on the platform. Calling a function is an action the organization records, which is why it is narrow-write and never a consent default.",
+      "granted_by_first_public_toolset": false,
+      "consent_default": false,
+      "static_token_eligible": false,
+      "reserved_reason": "DIB-1242: granted only for a per-server resource, never by /platform. /platform's resource metadata, scope list, WWW-Authenticate challenge and consent page never name it; auth-service grants it only when the RFC 8707 resource is a server's address, and a token holding it verifies on that address alone."
     }
   ]
 }

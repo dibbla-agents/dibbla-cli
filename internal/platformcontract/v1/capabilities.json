@@ -538,7 +538,7 @@
       "scopes": [],
       "auth": "none",
       "reason": "Takes the value as an argument or from stdin on the caller’s machine. Since DIB-928 the connector has no input path for a secret value at all: platform_secret_write action=set is gone from the schema, and a call that still carries a value or action=set is refused server-side with UNSUPPORTED before the arguments are decoded — nothing stored, echoed or logged — with the request flow named in the answer. A value in a tool argument has been read by the model and kept by the client before it reaches Dibbla, which is what OpenAI’s directory guidelines forbid and what platform.secrets.request exists to avoid. The remote counterpart of this row is therefore platform.secrets.request (the person enters the value on a signed-in Dibbla page) followed by platform.secrets.request_status; a rotation is the same request on an existing name. Until DIB-928 this row was remote-write via action=set (DIB-538, DIB-704).",
-      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:186; app-hosting-service/mcp-server/platform_secrets.go (secretWriteGate); app-hosting-service/deploy-api/internal/handler/secrets/create.go (delegated_agent refused)",
+      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:201; app-hosting-service/mcp-server/platform_secrets.go (secretWriteGate); app-hosting-service/deploy-api/internal/handler/secrets/create.go (delegated_agent refused)",
       "cli_commands": [
         "secrets set"
       ]
@@ -551,7 +551,7 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion. DIB-704 merged setting and deleting a secret into platform_secret_write; action=delete is this row. Since DIB-928 the tool’s actions are request, status and delete.",
+      "note": "Shipped by DIB-538 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset. Routine write with an idempotency key under the same write scope P-0035 assigns to set/rotate/delete; not remote-destructive, because there is no secrets destructive scope and the proposal's plan/confirm flow is for app, database and storage deletion. DIB-704 merged setting and deleting a secret into platform_secret_write; action=delete is this row. Since DIB-928 the tool’s actions are request, status and delete; DIB-1340 added promote.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_secret_write",
       "production": "live",
@@ -567,9 +567,12 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-927 as platform_secret_write action=request(name, title, explanation, alias, service, idempotency_key), and since DIB-928 THE way a secret value reaches the platform from a connector: the value never passes through the conversation because no tool takes one (platform.secrets.set is local-only). title and explanation (DIB-928, required, 80 and 600 bytes, plain text) are the agent’s words for the person — what the secret is, why the app needs it and where to find it — shown as the page’s heading and paragraph so a non-technical person understands what they are asked for; the technical name is shown beneath them. It answers a time-limited https link on the console (/connector/secrets/<request_id>, 15 minutes) and a request_id, and never a value; the tool refuses a value argument on this action. The link is not a bearer capability: deploy-api answers the page only to a signed-in console session of the user this grant acts for, in this organization, holding a role that may write secrets at that moment, and it stores the value only while THIS grant is still live (auth-service's grant validation, live, fail-closed). Another user, another organization or a stranger with the link sees an absence. The page shows the fixed target — organization, application, service, secret name, whether an existing value is replaced — plus the title and explanation as text (never markup), and nothing on it can retarget the write; the value travels once, browser to deploy-api, into the same secrets store the console and the CLI write to, and is not logged, echoed or kept anywhere else. Saving is single-use: pending → saving → completed is atomic, a second save is refused without a rotation, and a store failure returns the request to pending rather than reporting it done. No service is restarted by the save. Routine write under the idempotency ledger. There is no CLI command: a person with a shell sets the value with secrets set directly (platform.secrets.set, local-only), which is the local half this row replaces for an agent.",
+      "note": "Shipped by DIB-927 as platform_secret_write action=request(name, title, explanation, alias, service, idempotency_key), and since DIB-928 THE way a secret value reaches the platform from a connector: the value never passes through the conversation because no tool takes one (platform.secrets.set is local-only). title and explanation (DIB-928, required, 80 and 600 bytes, plain text) are the agent’s words for the person — what the secret is, why the app needs it and where to find it — shown as the page’s heading and paragraph so a non-technical person understands what they are asked for; the technical name is shown beneath them. It answers a time-limited https link on the console (/connector/secrets/<request_id>, 15 minutes) and a request_id, and never a value; the tool refuses a value argument on this action. The link is not a bearer capability: deploy-api answers the page only to a signed-in console session of the user this grant acts for, in this organization, holding a role that may write secrets at that moment, and it stores the value only while THIS grant is still live (auth-service's grant validation, live, fail-closed). Another user, another organization or a stranger with the link sees an absence. The page shows the fixed target — organization, application, service, secret name, whether an existing value is replaced — plus the title and explanation as text (never markup), and nothing on it can retarget the write; the value travels once, browser to deploy-api, into the same secrets store the console and the CLI write to, and is not logged, echoed or kept anywhere else. Saving is single-use: pending → saving → completed is atomic, a second save is refused without a rotation, and a store failure returns the request to pending rather than reporting it done. No service is restarted by the save. Routine write under the idempotency ledger. Since DIB-1343 a person makes the same request with their own token: dibbla secrets request (POST /secret-entry-requests, bound to the person, client dibbla-cli, no grant — so there is no grant whose revocation could stop the save). The page, its sign-in and role checks and the single-use save are the ones described above. It is what an agent with a shell runs instead of secrets set, which would put the value in its transcript.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_write"
+      "mcp_tool": "platform_secret_write",
+      "cli_commands": [
+        "secrets request"
+      ]
     },
     {
       "id": "platform.secrets.request_status",
@@ -579,9 +582,27 @@
         "platform:secrets:write"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-927 as platform_secret_write action=status(request_id). Answers pending, completed, expired or cancelled with the target's metadata and timestamps, and nothing about the value; a pending answer repeats the link, a finished one does not. The request is answered only to the identical delegated binding that created it — organization, user, client and grant — so another grant's status read is an absence. A completed answer means the value is stored under the requested name and scope and the agent continues as if it had set it. A pre-existing secret of the same name never makes a pending, expired or cancelled request read as completed; an expired one is replaced through a new action=request. Classified remote-write rather than remote-read because it sits under the write scope on the write tool: the request it reads about is the write's own receipt, and a read-only grant is meant to see neither.",
+      "note": "Shipped by DIB-927 as platform_secret_write action=status(request_id). Answers pending, completed, expired or cancelled with the target's metadata and timestamps, and nothing about the value; a pending answer repeats the link, a finished one does not. The request is answered only to the identical delegated binding that created it — organization, user, client and grant — so another grant's status read is an absence. A completed answer means the value is stored under the requested name and scope and the agent continues as if it had set it. A pre-existing secret of the same name never makes a pending, expired or cancelled request read as completed; an expired one is replaced through a new action=request. Classified remote-write rather than remote-read because it sits under the write scope on the write tool: the request it reads about is the write's own receipt, and a read-only grant is meant to see neither. dibbla secrets request --status <id> is the same read for a request a person made with their own token (GET /secret-entry-requests/{id}/status, DIB-1343): it is answered to that person only, and anyone else’s request is an absence.",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_secret_write"
+      "mcp_tool": "platform_secret_write",
+      "cli_commands": [
+        "secrets request"
+      ]
+    },
+    {
+      "id": "platform.secrets.promote",
+      "title": "Promote a plain env var to a secret, with a new value entered on a secure Dibbla page",
+      "state": "remote-write",
+      "scopes": [
+        "platform:secrets:write"
+      ],
+      "auth": "oauth",
+      "note": "Shipped by DIB-1340 (epic DIB-1336) as platform_secret_write action=promote(name, title, explanation, alias, service, idempotency_key) under the same write scope as action=request — a parameter on a tool that is already listed, because the tool budget admits no new one. It creates a promotion request: the entry request of platform.secrets.request applied to a plain env var of one application (alias is required) that should have been a secret. It answers the same time-limited link and request_id, never a value, and takes none; action=status (platform.secrets.request_status) reads it like any other request. The page, its sign-in, role and live-grant checks and the single-use save are the ones described under platform.secrets.request. The value the person enters there is a NEW one: the variable’s current value has been readable — logs, backups, release records, the history of dibbla.yaml, the conversation — and counts as exposed, so it must be rotated where it was issued, and the save refuses the unchanged value and leaves the request pending. The comparison is against a per-request salted digest recorded when the request is created and against the variable’s value at save time; the old value itself is never kept or answered. When a new value is saved the secret is created, the env var is removed from its source and from the app’s release history, and the app is restarted onto the secret. If removing the variable fails after the secret is stored, the request still completes and says so (env_var_remains, with advice); the new secret is never rolled back. A name that is not an env var of the app is NOT_FOUND; a variable that comes from dibbla.yaml is CONFLICT and cannot be promoted, because the next deploy would put it back — the answer says to remove the line, deploy, and then use action=request. dibbla env promote makes the same request with the person’s own token. It is a row of its own rather than a parameter of platform.secrets.request because its effect is not the request’s: it removes a variable and restarts the app. Until the action shipped this row was not-yet-available (eventual_state remote-write, owner P-0035 Part F, tracked_by DIB-1340), so the contract never promised an action tools/list could not deliver.",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_secret_write",
+      "cli_commands": [
+        "env promote"
+      ]
     },
     {
       "id": "platform.databases.list",
@@ -1033,17 +1054,39 @@
     },
     {
       "id": "cli.credentials.reveal",
-      "title": "Print a credential in plaintext to the terminal",
+      "title": "Print a credential of the caller’s own in plaintext to the terminal",
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Returns credential material to be pasted into the caller’s shell or written to a file on the caller’s disk — a secret value, the app’s whole resolved environment as a local .env.local (env pull, DIB-919), a bucket access key, or a database connection string carrying the caller’s API token as its password. Keeping credential material out of a model’s context window is an invariant of P-0035, not a precaution, so this half of each family cannot have a remote form even though listing and setting can.",
-      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:234, internal/cmd/deploy/env.go, internal/cmd/deploy/storage.go:298, internal/cmd/deploy/db.go:291",
+      "reason": "Returns credential material of the caller’s own, to be pasted into the caller’s shell or tools: db connect prints a connection string carrying the caller’s own API token as its password, and storage credentials mints a short-lived (1 h) access key of the caller’s own for one bucket (DIB-1344) — never the application’s STORAGE_* keys, which are secrets. No command reveals an application secret’s value any more: a secret is write-only on every surface (DIB-1337), so secrets get only says so (cli.secrets.get), env pull writes secrets by name only (cli.env.pull) and an export cannot include a value (cli.export). Keeping credential material out of a model’s context window is an invariant of P-0035, not a precaution, so this half of each family cannot have a remote form even though listing and setting can.",
+      "source": "dibbla-cli/internal/cmd/deploy/db.go:297 (runDbConnect; the API token is the password at :304), internal/cmd/deploy/storage.go:75 (storageCredentialsCmd; DIB-1344 replaces its refusal with the per-person key); app-hosting-service/deploy-api/internal/handler/secrets/get.go (GET /secrets/{name} is 410 SECRET_VALUE_NOT_READABLE for every caller)",
       "cli_commands": [
-        "secrets get",
-        "env pull",
-        "storage credentials",
-        "db connect"
+        "db connect",
+        "storage credentials"
+      ]
+    },
+    {
+      "id": "cli.env.pull",
+      "title": "Write the app’s environment to a local .env.local",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Writes .env.local in the caller’s working directory and a .env.local line into the caller’s .gitignore, merging into a file that may already be there: lines Dibbla does not know are kept, and a secret line the developer filled in is never overwritten. The app is read from the folder’s link (dibbla clone / dibbla link). The file, its merge and the .gitignore are on the calling machine. It reveals no secret value: variables arrive with their values, secrets by name only as empty NAME= lines (DIB-1337, DIB-1338), so it is not a credential reveal. Reading the same environment remotely is not a /platform capability: platform_apps keeps environment values out of every tool result.",
+      "source": "dibbla-cli/internal/cmd/deploy/env.go:44 (envPullCmd), :130 (runEnvPullCore), :275 (writeEnvLocal); app-hosting-service/deploy-api/internal/handler/deployments/env.go:60 (HandleEnv: secrets as names, never in variables)",
+      "cli_commands": [
+        "env pull"
+      ]
+    },
+    {
+      "id": "cli.secrets.get",
+      "title": "Explain that a secret’s value cannot be read back",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "Reads nothing and calls nothing. A secret is write-only (DIB-1337): deploy-api answers GET /secrets/{name} with 410 SECRET_VALUE_NOT_READABLE to every caller, before any lookup. secrets get stays registered only so that a person who types it is told why, and pointed at secrets list and secrets set, instead of hearing “unknown command”; it prints that text from the binary on the caller’s machine and exits 1. There is no capability behind it to make remote, on any surface: no /platform tool takes or returns a secret value.",
+      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:56 (secretsGetCmd), :249 (runSecretsGet), :255 (refuseSecretValueRead); app-hosting-service/deploy-api/internal/handler/secrets/get.go",
+      "cli_commands": [
+        "secrets get"
       ]
     },
     {
@@ -1053,7 +1096,7 @@
       "scopes": [],
       "auth": "none",
       "reason": "Reads a .env-style file from the caller’s filesystem. Since DIB-928 there is no remote path for the values either: each secret goes in through platform.secrets.request, one page per secret, entered by the person. The file walk and the values both stay local.",
-      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:288",
+      "source": "dibbla-cli/internal/cmd/deploy/secrets.go:295",
       "cli_commands": [
         "secrets import"
       ]
@@ -1065,7 +1108,7 @@
       "scopes": [],
       "auth": "none",
       "reason": "Streams the dump through the caller’s pg_dump binary into a file on the caller’s disk. Both ends — the external binary and the destination — are on the calling machine.",
-      "source": "dibbla-cli/internal/cmd/deploy/db.go:256",
+      "source": "dibbla-cli/internal/cmd/deploy/db.go:262",
       "cli_commands": [
         "db dump"
       ]
@@ -1088,8 +1131,8 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Writes an export directory on the caller’s filesystem — a git working copy made with the caller’s git binary, pg_dump archives, one file per bucket object, dotenv files and a docker compose sketch — and, with --include-secrets, secret values in plaintext after a confirmation on the caller’s terminal. The bytes it moves are the customer’s data leaving the platform (EU Data Act ch. VI, DIB-979), which has no place in a model’s context window. Each piece read remotely is its own row: platform.files.get for the source, platform.databases.rows.query for data, platform.storage.list for buckets.",
-      "source": "dibbla-cli/internal/cmd/deploy/export.go, dibbla-cli/internal/export/export.go",
+      "reason": "Writes an export directory on the caller’s filesystem — a git working copy made with the caller’s git binary, pg_dump archives, one file per bucket object, env files with every variable’s value and every secret by name only, and a docker compose sketch. No secret value is part of an export: a secret is write-only (DIB-1337), and --include-secrets no longer exists as a capability — the flag is kept, hidden, only so a script that still passes it is told why it is refused (DIB-1338). The bytes it moves are the customer’s data leaving the platform (EU Data Act ch. VI, DIB-979), which has no place in a model’s context window. Each piece read remotely is its own row: platform.files.get for the source, platform.databases.rows.query for data, platform.storage.list for buckets.",
+      "source": "dibbla-cli/internal/cmd/deploy/export.go:19 (exportCmd), :93 (--include-secrets refused); dibbla-cli/internal/export/export.go:422 (exportEnv: variables with values, secrets by name only)",
       "cli_commands": [
         "export"
       ]
@@ -1488,10 +1531,10 @@
       "title": "Call one tool server's exposed functions as that server's own MCP tools",
       "state": "remote-write",
       "scopes": [
-        "platform:workflows:read"
+        "platform:servers:use"
       ],
       "auth": "oauth",
-      "note": "DIB-1064 Phase 1, ADR 0012 amendment of 2026-09-23. A per-server MCP address, /platform/servers/<name>, serves ONE tool server's exposed functions as native tools, one tool per function, so a person adds only the servers they want to their client instead of reaching every exposed function through platform_tools. It is a second mount on the /platform OAuth resource, not a resource of its own: the same access token, the same actor exchange and the same resource-metadata document (the DIB-764 /platform/tools precedent), so auth-service, the scope registry and consent are unchanged. The tool list is per-organization DATA, which is why mcp_tool is the wildcard: exposure is the authorization (DIB-827), workflow-server re-checks registered AND exposed AND role >= min_role on every invoke, listing and calling follow the one read scope, and platform:tools:execute stays reserved. Every tool is annotated destructiveHint and openWorldHint true (DIB-935), because what a customer's function does is not this contract's to promise. A call keeps the platform_tools invoke bounds and error mapping (64 KiB inputs, 16 KiB result cut, narrow-write quota, X-Dibbla-Source: mcp, the 400/502 mapping), through its own copy of the invoke so platform_tools is untouched, with a test pinning the two mappings equal; a field violation names the argument itself, not inputs.<field>, because a native tool's arguments are the inputs. It is recorded with surface=per_server (DIB-1067); platform_tools sends no surface, so its rows read NULL. An unknown, disconnected or nothing-exposed server answers the same empty list, so server names are not enumerable. The mount is outside parity.max_tools_full_write, which counts /platform only, and outside the directory listing: these addresses are custom connectors a person adds by hand. Shipped by DIB-1068: mcp-server serves it only behind SERVERS_MCP_ENABLED (default off; helm mcp-server.platform.servers.enabled), so it is opt-in per installation, and /platform's tools/list, scopes and metadata are byte-identical with it on. A client should connect before it logs in: Claude Code's mcp login run first skips the 401 hint and looks for path-suffixed metadata that is not served (DIB-1069).",
+      "note": "DIB-1064 Phase 1, ADR 0012 amendment of 2026-09-23; own OAuth resource per server since DIB-1242 (2026-09-30). A per-server MCP address, /platform/servers/<name>, serves ONE tool server's functions as native tools, one tool per function, so a person adds only the servers they want to their client instead of reaching every exposed function through platform_tools. Each address is an OAuth protected resource of its own: its RFC 9728 document is /.well-known/oauth-protected-resource/platform/servers/<name>, it names the address as the resource and exactly one scope, platform:servers:use, and the WWW-Authenticate challenge on the address points there and nowhere else. auth-service accepts the address as the RFC 8707 resource, grants exactly that scope for it, shows a consent page that names only that server (and the app that publishes it), and binds the token's audience to the address; mcp-server verifies the audience against the path, so the token is refused on /platform and on every other server's address, a /platform token is refused on the address, and a static API token has no path onto it. The actor exchange is shared with /platform, with the assertion naming the server's resource as its issuer and auth-service holding it to the grant's resource. The grant profile policy that admits a person to /platform is not applied to a per-server resource: who may use the address is the app's access list (DIB-1222/DIB-1241), re-checked by workflow-server on every list and every invoke, and for a server no app has published the function exposures (registered AND exposed AND role >= min_role). Every tool is annotated destructiveHint and openWorldHint true (DIB-935), because what a customer's function does is not this contract's to promise. A call keeps the platform_tools invoke bounds and error mapping (64 KiB inputs, 16 KiB result cut, narrow-write quota, X-Dibbla-Source: mcp, the 400/502 mapping), through its own copy of the invoke so platform_tools is untouched, with a test pinning the two mappings equal; a field violation names the argument itself, not inputs.<field>, because a native tool's arguments are the inputs. It is recorded with surface=per_server (DIB-1067); platform_tools sends no surface, so its rows read NULL. An unknown, disconnected or nothing-exposed server answers the same empty list, so server names are not enumerable. The mount is outside parity.max_tools_full_write, which counts /platform only, and outside the directory listing: these addresses are custom connectors a person adds by hand. Shipped by DIB-1068: mcp-server serves it only behind SERVERS_MCP_ENABLED (default off; helm global.platformConnector.servers.enabled sets it and auth-service's PLATFORM_SERVERS_MCP_ENABLED from one value), so it is opt-in per installation, and /platform's tools/list, scopes, resource metadata, challenge and consent page are byte-identical with it on. A client should connect before it logs in: Claude Code's mcp login run first skips the 401 hint and looks for path-suffixed metadata that is not served (DIB-1069).",
       "mcp_toolset": "/platform/servers/*",
       "mcp_tool": "*"
     }
