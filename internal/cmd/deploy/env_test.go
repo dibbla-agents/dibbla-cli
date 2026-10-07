@@ -34,7 +34,7 @@ const envDoc = `{"deployment_alias":"shop","variables":[
 // file names neither.
 const envSecretsBlock = "\n" + secretsBlockHeader + "\n" +
 	"API_KEY=\n" +
-	"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+	"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 	"DATABASE_URL_SHOP=\n"
 
 func newEnvServer(t *testing.T, status int, body string) (*httptest.Server, *recordedRequest) {
@@ -128,7 +128,7 @@ func TestEnvPullUpdatesInPlaceAndKeepsLocalLines(t *testing.T) {
 		"DIBBLA_ALIAS=shop\n" +
 		"MOTD='costs $5 today'\n" +
 		"\n" + secretsBlockHeader + "\n" +
-		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 		"DATABASE_URL_SHOP=\n"
 	if got != want {
 		t.Errorf(".env.local:\n%s\nwant:\n%s", got, want)
@@ -170,7 +170,7 @@ func TestEnvPullReplaceRewritesTheWholeFileButKeepsFilledSecrets(t *testing.T) {
 		"MOTD='costs $5 today'\n" +
 		"\n" + secretsBlockHeader + "\n" +
 		"API_KEY=sk-test-mine\n" +
-		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 		"DATABASE_URL_SHOP=\n"
 	if got != want {
 		t.Errorf("--replace:\n%s\nwant:\n%s", got, want)

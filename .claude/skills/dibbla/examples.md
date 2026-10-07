@@ -457,8 +457,13 @@ services:
       prod: 5
     environment:
       default: { LOG_LEVEL: info }
-      prod:    { LOG_LEVEL: warn, SENTRY_DSN: ${SENTRY_DSN} }
+      prod:    { LOG_LEVEL: warn, API_BASE_URL: "https://api.example.com" }
 ```
+
+A secret never goes in `environment:` — not literally, not through `${VAR}`.
+It is set by the person (`dibbla secrets set SENTRY_DSN -d myapp`) and reaches
+every service without a line here; an `environment:` entry of the same name is
+refused (`ENV_SHADOWS_SECRET`).
 
 ```bash
 dibbla deploy --alias myapp --target-env staging -m "deploy: staging"
@@ -518,12 +523,12 @@ jobs:
       # jobs: get ONLY the literal environment values rendered here. ${VAR} is
       # resolved from your DEPLOY SHELL at deploy time (not from a Dibbla secret)
       # and baked into the manifest literally — that is the only way to get
-      # config into a jobs: container.
-      SLACK_WEBHOOK: ${SLACK_WEBHOOK}
+      # config into a jobs: container, and why it carries no secrets.
+      REPORT_TZ: ${REPORT_TZ:-Europe/Stockholm}
 ```
 
 ```bash
-export SLACK_WEBHOOK=https://hooks.slack.com/...   # read by ${SLACK_WEBHOOK} at deploy time
+export REPORT_TZ=Europe/Stockholm   # read by ${REPORT_TZ} at deploy time
 dibbla deploy --alias daily --no-public -m "feat: daily report job"
 ```
 
@@ -532,9 +537,11 @@ dibbla deploy --alias daily --no-public -m "feat: daily report job"
 > entry with **literal `environment:` values and no `envFrom`**, so a cron cannot
 > read any managed secret — including a managed-DB `DATABASE_URL_<NAME>` secret.
 > `${...}` values are interpolated from your deploy shell, not from
-> `dibbla secrets`. This is why the tutorial's stage 5 runs its scheduled work as
-> an **sdk-go worker** (which connects to the runtime and can use OAuth/RPC), not
-> as a `jobs:` cron.
+> `dibbla secrets`, and written into the manifest as plain text — so never a
+> secret (a webhook URL, an API key, a database URL). A scheduled job that needs
+> one runs as a **pipeline** on an **sdk-go worker** (which connects to the
+> runtime and can use OAuth/RPC) — which is why the tutorial's stage 5 does —
+> not as a `jobs:` cron.
 
 ### Inspect per-service status
 
@@ -634,16 +641,19 @@ When Loki isn't configured (or you specifically want the K8s-direct stream), `--
 ### Scope a secret to one service
 
 ```bash
+# The person runs each `set` and pastes the value on stdin (then Ctrl-D) —
+# an agent names the secret, never the value.
+
 # Per-service secret: only the web container sees this
-dibbla secrets set NPM_TOKEN xxx -d myapp --service web
+dibbla secrets set NPM_TOKEN -d myapp --service web
 
 # Deployment-wide: every service sees this
-dibbla secrets set DATABASE_URL postgres://... -d myapp
+dibbla secrets set DATABASE_URL -d myapp
 
 # Org-global: every deployment sees this
-dibbla secrets set SHARED_API_KEY abc
+dibbla secrets set SHARED_API_KEY
 
-# List by scope
+# List by scope — names only, never values
 dibbla secrets list -d myapp                  # deployment-wide entries (service_name='')
 dibbla secrets list -d myapp --service web    # per-web entries only
 dibbla secrets list                           # global only
@@ -651,7 +661,7 @@ dibbla secrets list                           # global only
 
 Precedence inside the web container at runtime: per-web (`NPM_TOKEN`) > deployment-wide (`DATABASE_URL`) > global (`SHARED_API_KEY`).
 
-### Init container for migrations
+### Init container
 
 ```yaml
 services:
@@ -660,19 +670,29 @@ services:
     port: 8080
     public: true
     init:
-      - name: migrate
-        image: registry.example.com/migrate:v1
-        command: [migrate, up]
+      - name: wait-for-redis
+        image: busybox:1.36
+        command: [sh, -c, "until nc -z $REDIS_HOST 6379; do sleep 1; done"]
         environment:
-          DATABASE_URL: ${DATABASE_URL}       # from a deployment-wide secret
+          REDIS_HOST: ${DIBBLA_SVC_REDIS_HOST}   # service discovery, filled in server-side
+  redis:
+    image: redis:7
+    port: 6379
+    expose_to: [api]
 ```
 
 ```bash
-dibbla secrets set DATABASE_URL postgres://... -d api
-dibbla deploy --alias api -m "feat: add migrate-on-deploy"
+dibbla deploy --alias api -m "feat: wait for redis before starting"
 ```
 
-The `migrate` init runs to completion before the main `api` container starts on every pod.
+The init runs to completion before the main `api` container starts on every pod.
+
+**An init container gets no Dibbla secrets** — only the literal `environment:`
+written under it, and a `${VAR}` there is filled in from the deploy shell, so a
+secret would be written into the manifest as plain text. A migration that needs
+the database URL therefore runs at the start of the service's own container
+(`CMD ["sh", "-c", "migrate up && exec node server.js"]`), where the
+`DATABASE_URL_<NAME>` secret is injected.
 
 ### Healthchecks (liveness / readiness / startup)
 
@@ -819,7 +839,7 @@ RUN --mount=type=secret,id=npm_token \
 ```
 
 ```bash
-dibbla secrets set NPM_TOKEN_SECRET <token> -d myapp
+dibbla secrets set NPM_TOKEN_SECRET -d myapp   # the person runs this and pastes the token on stdin
 dibbla deploy --alias myapp -m "feat: private dep added"
 ```
 
@@ -838,13 +858,13 @@ services:
     public: true
     environment:
       APP_VERSION: ${BUILD_VERSION:-dev}
-      SENTRY_DSN:  ${SENTRY_DSN:-}
+      RELEASE_CHANNEL: ${RELEASE_CHANNEL:-stable}
       USER_HOME:   ${HOME}
       REDIS_URL:   ${DIBBLA_SVC_REDIS_URL}
 ```
 
 ```bash
-BUILD_VERSION=v1.2.3 SENTRY_DSN=https://x@sentry.io/123 dibbla deploy . --alias myapp -m "release v1.2.3"
+BUILD_VERSION=v1.2.3 RELEASE_CHANNEL=beta dibbla deploy . --alias myapp -m "release v1.2.3"
 ```
 
 Rules:
@@ -854,6 +874,7 @@ Rules:
 - `${VAR}` with no shell value AND no default — the CLI errors before upload, naming the variable. Catches typos like `${DAATBASE_URL}`.
 - Variables starting with `DIBBLA_` are **reserved** — they pass through to the server unchanged, regardless of your shell. Lets `${DIBBLA_SVC_REDIS_URL}` and friends work as documented (server fills them in at render time).
 - Use `$$` to escape — `$${LITERAL}` ships as the literal text `${LITERAL}` in the YAML the server sees.
+- **Never a secret.** The substituted value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d myapp` and reaches the container without a line in `environment:`.
 
 CI integration with GitHub Actions:
 
@@ -861,13 +882,11 @@ CI integration with GitHub Actions:
 # .github/workflows/deploy.yml
 env:
   BUILD_VERSION: ${{ github.sha }}
-  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+  RELEASE_CHANNEL: ${{ vars.RELEASE_CHANNEL }}
 steps:
   - uses: actions/checkout@v4
   - run: dibbla deploy . --alias myapp --target-env prod -m "deploy ${{ github.sha }}"
 ```
-
-The secret value is mounted into the BuildKit Solve via the named id and never lands in the image layer.
 
 ### Re-running a failed deploy
 
@@ -929,11 +948,15 @@ dibbla db dump my-production-db
 dibbla db dump my-production-db -o backup.dump
 dibbla db restore my-staging-db --file backup.dump
 dibbla db restore my-staging-db -f /tmp/backup.dump
-dibbla db connect myapp                    # Print connection string with tips
-dibbla db connect myapp -q                 # Connection string only (scripting)
-psql $(dibbla db connect myapp -q)         # Quick connect
-export DATABASE_URL=$(dibbla db connect myapp -q)  # Export as env var
+psql "$(dibbla db connect myapp -q)"                 # connect; the URL never reaches the screen
+export DATABASE_URL="$(dibbla db connect myapp -q)"  # into this shell's environment, for a local run
+dibbla db connect myapp   # a person at a terminal only: prints the URL with tips
 ```
+
+The password in that URL is the person's own Dibbla API token — an
+account-wide credential, not a database password. An AI agent uses
+`db connect` only inside `$(...)`, as in the first two lines, and never prints
+its output, echoes it or writes it to a file.
 
 ---
 
@@ -943,8 +966,7 @@ export DATABASE_URL=$(dibbla db connect myapp -q)  # Export as env var
 
 ```bash
 dibbla secrets list
-dibbla secrets set API_KEY "my-secret-value"
-echo "my-secret-value" | dibbla secrets set API_KEY
+dibbla secrets set API_KEY            # reads the value from stdin: paste it, then Ctrl-D
 dibbla secrets delete API_KEY --yes
 ```
 
@@ -952,11 +974,18 @@ dibbla secrets delete API_KEY --yes
 
 ```bash
 dibbla secrets list -d myapp
-dibbla secrets set API_KEY "x" -d myapp
-dibbla secrets set DATABASE_URL "postgres://..." --deployment myapp
-cat private.key | dibbla secrets set SSL_KEY -d myapp
+dibbla secrets set API_KEY -d myapp                  # works before the app's first deploy too
+dibbla secrets set DATABASE_URL --deployment myapp   # an external database; `db create` makes its own
+dibbla secrets set TLS_KEY -d myapp < tls.key        # a multi-line value, from a file the person keeps
 dibbla secrets delete API_KEY -d myapp -y
 ```
+
+**These `set` commands are the person's.** They run them in their own terminal
+(or use the console's Secrets page) and the value goes from their clipboard or
+file straight to Dibbla. An agent never supplies the value — not as the
+argument (`dibbla secrets set API_KEY "…"`), not through `echo "…" |`; either
+puts the secret into the agent's transcript and the shell history. The agent's
+part is to name the secret, give the command, and wait.
 
 A secret is write-only: there is no command that prints its value.
 `dibbla secrets get` was removed — it explains that and exits 1 — and
@@ -968,12 +997,10 @@ secret request page); never have a secret value pasted through an AI assistant.
 **Bulk import from a `.env` file (no redeploy):**
 
 ```bash
-# Keep the .env OUTSIDE the deploy dir — a .env in the deploy root is a
-# guardrail blocker and is stripped from VCS. Reference it by path:
+# A file the person wrote. Keep it OUTSIDE the deploy dir — a .env in the
+# deploy root is a guardrail blocker and is stripped from VCS. Reference it by
+# path; an agent may run the import but never opens the file:
 dibbla secrets import ../secrets/.env.prod -d myapp
-
-# Override one key on top of the file (file is the base, -e wins):
-dibbla secrets import ../secrets/.env.prod -d myapp -e API_KEY=rotated-value
 
 # Preview the keys that would be set (no values, no network):
 dibbla secrets import ../secrets/.env.prod -d myapp --dry-run
@@ -1000,7 +1027,7 @@ dibbla env pull                  # 2. variables → .env.local (0600), secrets a
 #       2 secret(s) by name only — Dibbla never hands out a secret's value; fill in development values (0 already set here)
 #       added .env.local to .gitignore so git never sees it
 #       This file lives only on this machine.
-$EDITOR .env.local               # 3. a development value on each empty secret line (a test key, a sandbox account)
+#                                # 3. the person puts a development value on each empty secret line (a test key, a sandbox account) — you do not open the file
 git status --short               # 4. no .env.local here — ever
 docker build -t my-app . && docker run --rm -p 3000:3000 --env-file .env.local \
   -e DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)" my-app
@@ -1011,7 +1038,7 @@ The secret lines sit under one comment, with a hint above each database URL:
 
 ```bash
 # Secrets: Dibbla never hands out a secret's value. Set a development value for each one here.
-# DATABASE_URL_MY_APP_DB: for a connection of your own, run 'dibbla db connect my_app_db'
+# DATABASE_URL_MY_APP_DB: for a connection of your own, use "$(dibbla db connect my_app_db -q)" in the start command — it carries your API token, so not in this file
 DATABASE_URL_MY_APP_DB=
 STRIPE_API_KEY=
 ```
@@ -1024,7 +1051,9 @@ secrets — replace them with development values.
 **The database URL comes from `db connect`, or from a local Postgres.**
 `DATABASE_URL_*` is a secret, so the pull leaves it empty.
 `dibbla db connect <name> -q` returns the app's database through the public
-proxy, signed in with your own Dibbla login, so it works everywhere. Set it in
+proxy, signed in with your own Dibbla login, so it works everywhere — and since
+the URL's password is that login's API token, it goes into `$(...)` and nowhere
+else (not into `.env.local`, not onto the screen). Set it in
 the start command as above (`-e` wins over `--env-file`), or run
 `export DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)"` before
 `npm run dev` / `go run .` — dotenv loaders do not override a variable that is
@@ -1035,7 +1064,7 @@ bucket.
 Then tell the person, in one sentence and their own language: *the app's
 settings were fetched from Dibbla and live only on this computer; the secrets
 need development values of their own* — and, for the database, offer a local
-Postgres (`docker run -e POSTGRES_PASSWORD=… postgres`, its URL on the
+Postgres (the `postgres` image in Docker, its URL on the
 `DATABASE_URL_*` line) or `db connect` if they want the real data, in which
 case say that the app then runs against the same database as the real app. Do
 not ask them to understand git, secrets or environment variables; they said
@@ -1071,10 +1100,14 @@ A viewer (read role) is refused.
 **Bulk seed env vars at deploy / update time (`--env-file`):**
 
 ```bash
-# File is the base layer; -e overrides individual keys (file < -e):
-dibbla deploy . --env-file ../secrets/.env.prod -m "feat: initial deploy"
-dibbla apps update myapp --env-file ../secrets/.env.prod -e LOG_LEVEL=debug
+# Settings that are not secret. File is the base layer; -e overrides individual keys (file < -e):
+dibbla deploy . --env-file ../config/app.env -m "feat: initial deploy"
+dibbla apps update myapp --env-file ../config/app.env -e LOG_LEVEL=debug
 ```
+
+Every key in the file is checked like `-e`: a name that is one of the app's
+secrets, or a name or value that looks like a secret, is refused. A file of
+keys and passwords is `dibbla secrets import <file> -d <alias>`, not `--env-file`.
 
 ---
 
@@ -1210,7 +1243,7 @@ dibbla functions get my-server web_search -o json
 ## Scripting tips
 
 - Use `-y` / `--yes` to skip confirmations: `apps delete`, `db delete`, `secrets delete`, `workflows delete`, `nodes remove`.
-- Use `-q` / `--quiet` on `db list`, `db delete`, `db connect`, and workflow commands for minimal output.
+- Use `-q` / `--quiet` on `db list`, `db delete`, `db connect`, and workflow commands for minimal output. `db connect -q` prints the person's API token inside the URL, so it only ever runs inside `$(...)`.
 - Use `-o json` on workflow commands for machine-readable output.
 - Use `db list -q` for name-only loops. There is no command that prints a secret's value: `secrets get` was removed, because secrets are write-only.
 - `revisions create -q` prints only the revision ID for scripting.
@@ -1275,14 +1308,19 @@ dibbla deploy . --alias my-app --update
 # 1. Check if the app already exists
 dibbla apps list
 
-# 2. If NOT listed, deploy with all required env vars in one command
-dibbla deploy . --alias my-app \
-  -e DATABASE_URL="postgres://user:pass@host:5432/db" \
-  -e API_KEY="sk-xxx" \
+# 2. If NOT listed, secrets first. The person sets each one the app reads —
+#    a secret can be set for an alias that has not been deployed yet. They run
+#    this in their own terminal and paste the value on stdin (then Ctrl-D):
+dibbla secrets set API_KEY -d my-app
+#    A managed database brings its own DATABASE_URL_<NAME> secret:
+dibbla db create my_app_db --deployment my-app
+
+# 3. Deploy, with -e only for values that are not secret
+dibbla deploy . --alias my-app -m "feat: initial deploy" \
   -e NODE_ENV=production \
   -e PORT=3000
 
-# 3. Verify it's running
+# 4. Verify it's running
 dibbla apps list
 ```
 
@@ -1292,7 +1330,8 @@ dibbla apps list
 # Rolling update — re-deploys the code, keeps existing env vars
 dibbla deploy . --alias my-app --update
 
-# To change env vars without redeploying code
+# To change env vars without redeploying code (values that are not secret;
+# a secret is changed by the person: dibbla secrets set NAME -d my-app)
 dibbla apps update my-app -e LOG_LEVEL=debug -e NEW_VAR=value
 ```
 
@@ -1358,8 +1397,8 @@ Things that trip agents up here:
 if dibbla apps list 2>/dev/null | grep -q "my-app"; then
   dibbla deploy . --alias my-app --update
 else
+  # first deploy: the person has already set the app's secrets (dibbla secrets set NAME -d my-app)
   dibbla deploy . --alias my-app \
-    -e DATABASE_URL="postgres://..." \
     -e NODE_ENV=production
 fi
 ```
@@ -1374,20 +1413,20 @@ fi
 #    never the secret name (it is never a bare DATABASE_URL).
 dibbla db create my_app_db --deployment my-app
 
-# 2. Set additional secrets
-dibbla secrets set API_KEY "sk-xxx"
+# 2. Additional secrets: the person runs this and pastes the key on stdin
+#    (works before the app's first deploy)
+dibbla secrets set API_KEY -d my-app
 
-# 3. Deploy with env vars
+# 3. Deploy, with -e only for values that are not secret
 dibbla deploy . --alias my-app \
-  -e API_KEY="sk-xxx" \
   -e NODE_ENV=production
 
-# 4. Verify
+# 4. Verify — names only, never values
 dibbla apps list
 dibbla secrets list -d my-app
 
-# Alternative: get the connection string directly
-export DATABASE_URL=$(dibbla db connect my-app-db -q)
+# For a local run against the same database (the URL carries your API token — never print it)
+export DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)"
 ```
 
 ### Tear down an app
@@ -1395,8 +1434,8 @@ export DATABASE_URL=$(dibbla db connect my-app-db -q)
 ```bash
 # Always use --yes to avoid interactive prompt
 dibbla apps delete my-app --yes
-dibbla db delete my-app-db --yes
-dibbla secrets delete API_KEY --yes
+dibbla db delete my_app_db --yes
+dibbla secrets delete API_KEY -d my-app --yes
 ```
 
 ### Install a template and start iterating

@@ -251,7 +251,9 @@ const secretsBlockHeader = "# Secrets: Dibbla never hands out a secret's value. 
 // something more specific to say than the block header.
 func secretHint(name string) string {
 	if db, ok := strings.CutPrefix(name, "DATABASE_URL_"); ok && db != "" {
-		return fmt.Sprintf("# %s: for a connection of your own, run 'dibbla db connect %s'", name, strings.ToLower(db))
+		// The hint never suggests printing the URL: it carries the person's
+		// own API token, so it belongs in a start command, not in this file.
+		return fmt.Sprintf("# %s: for a connection of your own, use \"$(dibbla db connect %s -q)\" in the start command — it carries your API token, so not in this file", name, strings.ToLower(db))
 	}
 	return ""
 }

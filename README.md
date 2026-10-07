@@ -345,7 +345,7 @@ dibbla preview --profile mailcatcher --json     # raw PreviewResponse for jq
 dibbla apps restart myapp --service worker     # rolling restart of one service
 dibbla logs myapp --service web -f              # filter Loki to one service
 dibbla logs myapp --service web --pod-stream -f # K8s-direct stream when Loki isn't set up
-dibbla secrets set NPM_TOKEN xxx -d myapp -s web  # per-service secret (only web sees it)
+dibbla secrets set NPM_TOKEN -d myapp -s web      # per-service secret (only web sees it); paste the value, then Ctrl-D
 dibbla secrets list -d myapp                     # deployment-wide entries (service_name='')
 ```
 
@@ -479,9 +479,8 @@ Secrets can be global or scoped to a deployment. Omit `--deployment` for global 
 ```bash
 dibbla secrets list
 dibbla secrets list --deployment myapp
-dibbla secrets set API_KEY "my-secret-value"
-echo "secret" | dibbla secrets set API_KEY
-dibbla secrets set API_KEY "value" --deployment myapp
+dibbla secrets set API_KEY                      # paste the value, then Ctrl-D — never as an argument
+dibbla secrets set API_KEY --deployment myapp < key.txt
 dibbla secrets import ../secrets/.env.prod --deployment myapp   # bulk-load a .env file (no redeploy)
 dibbla secrets import .env --dry-run                            # preview keys, no values, no network
 dibbla secrets delete API_KEY
