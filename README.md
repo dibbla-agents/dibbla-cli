@@ -484,11 +484,13 @@ echo "secret" | dibbla secrets set API_KEY
 dibbla secrets set API_KEY "value" --deployment myapp
 dibbla secrets import ../secrets/.env.prod --deployment myapp   # bulk-load a .env file (no redeploy)
 dibbla secrets import .env --dry-run                            # preview keys, no values, no network
-dibbla secrets get API_KEY
-dibbla secrets get API_KEY --deployment myapp
 dibbla secrets delete API_KEY
 dibbla secrets delete API_KEY --deployment myapp --yes
 ```
+
+A secret is write-only: Dibbla never hands out its value — not to the CLI, not
+to an API, not to an AI assistant. The running app gets it in its environment;
+to change one, set a new value.
 
 Bulk loading: `secrets import` reads a `.env`-style file (the base layer) and
 repeatable `-e KEY=value` flags override individual keys. Every key is validated
@@ -503,28 +505,30 @@ seed env vars at deploy/update time.
 | `secrets list [-d deployment]` | List secrets (global or for one deployment) |
 | `secrets set <name> [value] [-d deployment]` | Create or update a secret (value from arg or stdin) |
 | `secrets import <file> [-e KEY=value] [-d deployment] [--dry-run]` | Bulk-load a `.env` file into secrets (no redeploy) |
-| `secrets get <name> [-d deployment]` | Print a secret's value (deploy roles only; a viewer lists, never reads) |
+| `secrets get <name>` | Removed: a secret is write-only, its value cannot be read back (exits 1) |
 | `secrets delete <name> [-d deployment]` | Delete a secret (`-y` to skip confirmation) |
 
 ### Local environment (`env pull`)
 
 Values live in Dibbla, names live in the code. `.env.example` in the repo lists
 the variables the app needs (the one `.env*` file the platform keeps);
-`dibbla env pull` writes their values — secrets resolved as the running app
-gets them, plus `DATABASE_URL_*`, `STORAGE_*` and `DIBBLA_*` — to a local
-`.env.local`, and adds that file to `.gitignore` so it never goes back.
+`dibbla env pull` writes the variables with their values and the secrets by
+name only — including the platform's `DATABASE_URL_*` and `STORAGE_*` — to a
+local `.env.local`, and adds that file to `.gitignore` so it never goes back.
+Each secret arrives as an empty `NAME=` line for a development value of your
+own; a secret line you filled in is never overwritten, not even by `--replace`.
 
 ```bash
 dibbla env pull                          # in a folder from dibbla clone / dibbla link
 dibbla env pull -d myapp --service worker
 dibbla env pull --replace                # rewrite .env.local instead of updating it in place
 eval "$(dibbla env pull --stdout)"       # into the current shell
-dibbla env pull --json                   # names, values and which layer each came from
+dibbla env pull --json                   # variables with values, secrets by name, and their layers
 ```
 
-A local run with that file talks to the app's real database and buckets. A new
-secret goes in with `dibbla secrets set` first, then its name into
-`.env.example`, then `dibbla env pull` again.
+For the app's database from your machine, `dibbla db connect <name>` gives a
+connection of your own. A new secret goes in with `dibbla secrets set` first,
+then its name into `.env.example`, then `dibbla env pull` again.
 
 ### Export an App (leave Dibbla with everything)
 
@@ -538,12 +542,12 @@ buckets). Read-only — the app keeps running.
 ```bash
 dibbla export myapp                       # → ./myapp-export/
 dibbla export myapp --out /tmp/myapp      # elsewhere (must be empty or absent)
-dibbla export myapp --include-secrets     # with secret values, after confirming (-y for scripts)
 cd myapp-export && docker compose up --build
 ```
 
-Secret values are blanked unless you pass `--include-secrets`, and
-`dibbla-export.json` is a machine-readable inventory of what was exported.
+Secret values are not part of an export — a secret is write-only on Dibbla — so
+the env files list every name with a blank to fill in. `dibbla-export.json` is a
+machine-readable inventory of what was exported.
 
 ### Prompts
 

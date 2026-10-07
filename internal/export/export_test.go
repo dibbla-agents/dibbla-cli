@@ -41,10 +41,10 @@ func fakeAPI(t *testing.T, vcsEnabled bool) *httptest.Server {
 	}))
 	mux.HandleFunc("GET /api/deploy/deployments/shop/env", auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("service") == "worker" {
-			fmt.Fprint(w, `{"deployment_alias":"shop","service":"worker","variables":[{"name":"API_KEY","value":"s3cret","source":"deployment"},{"name":"WORKER_TOKEN","value":"wt","source":"service"}]}`)
+			fmt.Fprint(w, `{"deployment_alias":"shop","service":"worker","variables":[],"secrets":[{"name":"API_KEY","source":"deployment"},{"name":"WORKER_TOKEN","source":"service"}]}`)
 			return
 		}
-		fmt.Fprint(w, `{"deployment_alias":"shop","variables":[{"name":"API_KEY","value":"s3cret","source":"deployment"},{"name":"LOG_LEVEL","value":"debug","source":"inline"},{"name":"DATABASE_URL_SHOPDB","value":"postgres://x@db.dibbla/shopdb","source":"platform"},{"name":"STORAGE_UPLOADS_BUCKET","value":"uploads","source":"platform"},{"name":"GLOBAL_KEY","value":"g","source":"global"}]}`)
+		fmt.Fprint(w, `{"deployment_alias":"shop","variables":[{"name":"LOG_LEVEL","value":"debug","source":"inline"},{"name":"DIBBLA_ALIAS","value":"shop","source":"platform"}],"secrets":[{"name":"API_KEY","source":"deployment"},{"name":"DATABASE_URL_SHOPDB","source":"deployment"},{"name":"STORAGE_UPLOADS_BUCKET","source":"deployment"},{"name":"GLOBAL_KEY","source":"global"}]}`)
 	}))
 	mux.HandleFunc("GET /api/deploy/secrets", auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("service") == "worker" {
@@ -185,17 +185,20 @@ func TestRun_FullExport(t *testing.T) {
 		t.Errorf("skipped = %v", m.Buckets[0].Skipped)
 	}
 
-	// Env: secrets blanked, inline kept, platform values commented out.
+	// Env: secrets by name only (DIB-1337), variables with their values,
+	// platform names commented out.
 	env := read(t, filepath.Join(out, "env", "app.env"))
-	for _, want := range []string{"\nAPI_KEY=\n", "\nGLOBAL_KEY=\n", "\nLOG_LEVEL=debug\n", "# DATABASE_URL_SHOPDB=  (platform-generated", "# STORAGE_UPLOADS_BUCKET=  (platform-generated"} {
+	for _, want := range []string{
+		"# deployment secret; value not exported\nAPI_KEY=\n",
+		"# global secret; value not exported\nGLOBAL_KEY=\n",
+		"\nLOG_LEVEL=debug\n",
+		"# DATABASE_URL_SHOPDB=  (platform-generated",
+		"# STORAGE_UPLOADS_BUCKET=  (platform-generated",
+		"# DIBBLA_ALIAS=  (platform-generated",
+		"Secret values are not part of an export",
+	} {
 		if !strings.Contains(env, want) {
 			t.Errorf("env/app.env lacks %q:\n%s", want, env)
-		}
-	}
-	// A DATABASE_URL_* carries the role's password: it is a secret too.
-	for _, leak := range []string{"s3cret", "postgres://x@db.dibbla/shopdb"} {
-		if strings.Contains(env, leak) {
-			t.Errorf("value %q exported without --include-secrets:\n%s", leak, env)
 		}
 	}
 	worker := read(t, filepath.Join(out, "env", "worker.env"))
@@ -232,7 +235,7 @@ func TestRun_FullExport(t *testing.T) {
 
 	// README and the JSON inventory.
 	readme := read(t, filepath.Join(out, "README.md"))
-	if !strings.Contains(readme, "docker compose up --build") || !strings.Contains(readme, "not** included") {
+	if !strings.Contains(readme, "docker compose up --build") || !strings.Contains(readme, "**not** part of an export") || strings.Contains(readme, "--include-secrets") {
 		t.Errorf("README:\n%s", readme)
 	}
 	var inv Manifest
@@ -244,29 +247,6 @@ func TestRun_FullExport(t *testing.T) {
 	}
 	for _, v := range inv.Env.Variables {
 		_ = v // names and sources only — the struct has no value field
-	}
-}
-
-func TestRun_IncludeSecretsWritesValues(t *testing.T) {
-	srv := fakeAPI(t, true)
-	git, _ := fakeGit(t, shopManifest)
-	out := filepath.Join(t.TempDir(), "x")
-	m, err := Run(Options{APIURL: srv.URL, APIToken: "tok", Alias: "shop", OutDir: out, IncludeSecrets: true, Git: git})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !m.Env.SecretsIncluded {
-		t.Error("SecretsIncluded should be true")
-	}
-	env := read(t, filepath.Join(out, "env", "app.env"))
-	if !strings.Contains(env, "\nAPI_KEY=s3cret\n") {
-		t.Errorf("value missing:\n%s", env)
-	}
-	if !strings.Contains(env, "# DATABASE_URL_SHOPDB=postgres://x@db.dibbla/shopdb\n") {
-		t.Errorf("platform value should be exported, commented out:\n%s", env)
-	}
-	if !strings.Contains(read(t, filepath.Join(out, "README.md")), "**are included**") {
-		t.Error("README should warn that secrets are included")
 	}
 }
 

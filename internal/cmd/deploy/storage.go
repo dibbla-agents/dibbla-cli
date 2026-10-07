@@ -3,11 +3,9 @@ package deploy
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/secrets"
 	"github.com/dibbla-agents/dibbla-cli/internal/spinner"
 	"github.com/dibbla-agents/dibbla-cli/internal/storage"
 	"github.com/spf13/cobra"
@@ -71,16 +69,16 @@ var storageInfoCmd = &cobra.Command{
 	Run:   runStorageInfo,
 }
 
+// storageCredentialsCmd used to print the app's bucket keys, read from its
+// STORAGE_<NAME>_* secrets. Those are secrets, and a secret's value cannot be
+// read back (DIB-1337), so it now says so instead of "unknown command".
 var storageCredentialsCmd = &cobra.Command{
 	Use:   "credentials <name>",
-	Short: "Print export lines for a bucket's credentials",
-	Long: `Prints shell export lines for using a bucket from your own tools
-(aws CLI, mc, rclone, SDKs). The values come from the injected secrets.
-
-Examples:
-  eval "$(dibbla storage credentials mybucket -q)"
-  aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls s3://mybucket`,
-	Args: cobra.ExactArgs(1),
+	Short: "Removed: a bucket's keys are secrets and cannot be read back",
+	Long: `A bucket's keys are injected into the app as STORAGE_<NAME>_* secrets, and a
+secret is write-only: Dibbla never hands out its value. The app gets the keys in
+its environment when it runs.`,
+	Args: cobra.MaximumNArgs(1),
 	Run:  runStorageCredentials,
 }
 
@@ -296,50 +294,5 @@ func runStorageInfo(cmd *cobra.Command, args []string) {
 }
 
 func runStorageCredentials(cmd *cobra.Command, args []string) {
-	name := args[0]
-
-	cfg := config.Load()
-	requireToken(cfg)
-
-	prefix := "STORAGE_" + storage.EnvName(name) + "_"
-	values := map[string]string{}
-	for _, suffix := range []string{"ENDPOINT", "BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY"} {
-		sec, err := secrets.GetSecret(cfg.APIURL, cfg.APIToken, prefix+suffix, storageCredsDeployment, "")
-		if err != nil {
-			fmt.Printf("%s Failed to read secret %s: %v\n", platform.Icon("❌", "[X]"), prefix+suffix, err)
-			if storageCredsDeployment == "" {
-				fmt.Println("\nIf the bucket is scoped to a deployment, pass --deployment <alias>.")
-			}
-			os.Exit(1)
-		}
-		values[suffix] = sec.Value
-	}
-
-	exports := []string{
-		"export AWS_ENDPOINT_URL=" + shellQuote(values["ENDPOINT"]),
-		"export AWS_ACCESS_KEY_ID=" + shellQuote(values["ACCESS_KEY_ID"]),
-		"export AWS_SECRET_ACCESS_KEY=" + shellQuote(values["SECRET_ACCESS_KEY"]),
-		"export DIBBLA_BUCKET=" + shellQuote(values["BUCKET"]),
-	}
-
-	if storageCredsQuiet {
-		fmt.Println(strings.Join(exports, "\n"))
-		return
-	}
-
-	fmt.Printf("%s Credentials for bucket '%s':\n", platform.Icon("🔗", "[>]"), name)
-	fmt.Println()
-	for _, l := range exports {
-		fmt.Printf("  %s\n", l)
-	}
-	fmt.Println()
-	fmt.Println("Load them into your shell:")
-	fmt.Printf("  eval \"$(dibbla storage credentials %s -q)\"\n", name)
-	fmt.Println()
-	fmt.Println("Then e.g.:")
-	fmt.Printf("  aws --endpoint-url \"$AWS_ENDPOINT_URL\" s3 ls \"s3://$DIBBLA_BUCKET\"\n")
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	os.Exit(refuseSecretValueRead(os.Stderr, "storage credentials"))
 }

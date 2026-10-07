@@ -38,9 +38,6 @@ type Options struct {
 	Alias    string
 	// OutDir receives the export. It must not exist or must be empty.
 	OutDir string
-	// IncludeSecrets writes secret values into the env files. The caller
-	// owns the confirmation; the package only does what it is told.
-	IncludeSecrets bool
 	// CLIVersion is recorded in the manifest.
 	CLIVersion string
 	// Logf receives progress lines. Nil means silent.
@@ -110,7 +107,10 @@ type Bucket struct {
 }
 
 type Env struct {
-	Files           []string      `json:"files"`
+	Files []string `json:"files"`
+	// SecretsIncluded is always false since DIB-1337: a secret is write-only
+	// on Dibbla and no export carries its value. Kept so dibbla-export/v1
+	// keeps its shape.
 	SecretsIncluded bool          `json:"secrets_included"`
 	Variables       []EnvVariable `json:"variables"`
 }
@@ -191,7 +191,7 @@ func Run(opts Options) (*Manifest, error) {
 			return m, err
 		}
 	}
-	if err := writeFile(filepath.Join(opts.OutDir, "README.md"), []byte(readme(m, opts.IncludeSecrets))); err != nil {
+	if err := writeFile(filepath.Join(opts.OutDir, "README.md"), []byte(readme(m))); err != nil {
 		return m, err
 	}
 
@@ -413,45 +413,45 @@ type envFileSet struct {
 }
 
 // exportEnv writes env/app.env with the deployment's resolved environment and
-// env/<service>.env for each service that has entries of its own. Secret
-// values are blanked unless IncludeSecrets; platform-generated values
-// (DATABASE_URL_*, STORAGE_*_*, DIBBLA_*) are kept as comments because they
-// point at Dibbla and are re-pointed by the compose file.
+// env/<service>.env for each service that has secrets of its own. Variables
+// are written with their values, secrets by name only: a secret is
+// write-only on Dibbla (DIB-1337) and no export carries its value.
+// Platform-generated names (DATABASE_URL_*, STORAGE_*_*, DIBBLA_*) are
+// commented out because they point at Dibbla and are re-pointed by the
+// compose file.
 func exportEnv(opts Options, app *apps.Deployment, m *Manifest, logf func(string, ...any)) (envFileSet, error) {
 	files := envFileSet{Services: map[string]string{}}
-	m.Env.SecretsIncluded = opts.IncludeSecrets
 
-	write := func(rel, service string, vars []apps.EnvVariable) error {
-		sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
+	write := func(rel, service string, vars []apps.EnvVariable, secs []apps.EnvSecret) error {
+		type entry struct {
+			name, source, value string
+			secret              bool
+		}
+		entries := make([]entry, 0, len(vars)+len(secs))
+		for _, v := range vars {
+			entries = append(entries, entry{name: v.Name, source: v.Source, value: v.Value})
+		}
+		for _, sec := range secs {
+			entries = append(entries, entry{name: sec.Name, source: sec.Source, secret: true})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 		var b strings.Builder
 		b.WriteString("# Exported from Dibbla — app " + app.Alias)
 		if service != "" {
 			b.WriteString(", service " + service)
 		}
 		b.WriteString("\n")
-		if !opts.IncludeSecrets {
-			b.WriteString("# Secret values were not exported (run with --include-secrets to get them). Fill in the blanks.\n")
-		}
+		b.WriteString("# Secret values are not part of an export: Dibbla never hands out a secret's value. Fill in the blanks.\n")
 		b.WriteString("# Platform-generated values (DATABASE_URL_*, STORAGE_*, DIBBLA_*) point at Dibbla and are\n# commented out; docker-compose.yml sets local replacements.\n\n")
-		for _, v := range vars {
-			m.Env.Variables = append(m.Env.Variables, EnvVariable{Name: v.Name, Source: v.Source, Service: service, File: rel})
+		for _, e := range entries {
+			m.Env.Variables = append(m.Env.Variables, EnvVariable{Name: e.name, Source: e.source, Service: service, File: rel})
 			switch {
-			case isPlatformVar(v.Name) || v.Source == "platform":
-				// Platform values carry credentials (a DATABASE_URL_* has the
-				// role's password, STORAGE_*_SECRET_ACCESS_KEY is a key), so
-				// they follow the secrets rule — and stay commented out even
-				// when exported, because they point at Dibbla.
-				if opts.IncludeSecrets {
-					b.WriteString("# " + envfile.FormatLine(v.Name, v.Value) + "\n")
-				} else {
-					b.WriteString("# " + v.Name + "=  (platform-generated; value not exported)\n")
-				}
-			case v.Source == "inline":
-				b.WriteString(envfile.FormatLine(v.Name, v.Value) + "\n")
-			case opts.IncludeSecrets:
-				b.WriteString(envfile.FormatLine(v.Name, v.Value) + "\n")
+			case isPlatformVar(e.name) || e.source == "platform":
+				b.WriteString("# " + e.name + "=  (platform-generated; value not exported)\n")
+			case e.secret:
+				b.WriteString("# " + e.source + " secret; value not exported\n" + e.name + "=\n")
 			default:
-				b.WriteString("# " + v.Source + " secret; value not exported\n" + v.Name + "=\n")
+				b.WriteString(envfile.FormatLine(e.name, e.value) + "\n")
 			}
 		}
 		return writeFile(filepath.Join(opts.OutDir, filepath.FromSlash(rel)), []byte(b.String()))
@@ -462,11 +462,11 @@ func exportEnv(opts Options, app *apps.Deployment, m *Manifest, logf func(string
 		return files, fmt.Errorf("environment: %w", err)
 	}
 	files.App = "env/app.env"
-	if err := write(files.App, "", doc.Variables); err != nil {
+	if err := write(files.App, "", doc.Variables, doc.Secrets); err != nil {
 		return files, err
 	}
 	m.Env.Files = append(m.Env.Files, files.App)
-	logf("  %s: %d variable(s)", files.App, len(doc.Variables))
+	logf("  %s: %d variable(s), %d secret name(s)", files.App, len(doc.Variables), len(doc.Secrets))
 
 	for _, svc := range app.Services {
 		// Only services with entries of their own get a file — the
@@ -482,19 +482,19 @@ func exportEnv(opts Options, app *apps.Deployment, m *Manifest, logf func(string
 		if err != nil {
 			return files, fmt.Errorf("service %s environment: %w", svc.Name, err)
 		}
-		var own []apps.EnvVariable
-		for _, v := range sdoc.Variables {
-			if v.Source == "service" {
-				own = append(own, v)
+		var own []apps.EnvSecret
+		for _, sec := range sdoc.Secrets {
+			if sec.Source == "service" {
+				own = append(own, sec)
 			}
 		}
 		rel := "env/" + svc.Name + ".env"
-		if err := write(rel, svc.Name, own); err != nil {
+		if err := write(rel, svc.Name, nil, own); err != nil {
 			return files, err
 		}
 		files.Services[svc.Name] = rel
 		m.Env.Files = append(m.Env.Files, rel)
-		logf("  %s: %d service variable(s)", rel, len(own))
+		logf("  %s: %d service secret name(s)", rel, len(own))
 	}
 	return files, nil
 }

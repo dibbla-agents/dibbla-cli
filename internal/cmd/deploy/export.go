@@ -1,19 +1,15 @@
 package deploy
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/export"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
-	"github.com/dibbla-agents/dibbla-cli/internal/prompt"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -30,20 +26,20 @@ tools read, so it can be run or hosted somewhere else:
   dibbla.yaml             the app's manifest (from the source, or generated from the deploy)
   databases/<name>.dump   pg_dump custom archives, one per managed database
   buckets/<name>/         every object of each managed bucket, one file per key
-  env/app.env             the environment the app reads (secret values blanked)
+  env/app.env             the environment the app reads (secrets by name only)
   docker-compose.yml      a sketch that runs it all locally: Postgres restored from
                           the dumps, MinIO seeded from the buckets
   README.md               what is here and how to start it
   dibbla-export.json      machine-readable inventory
 
-Secret values are not exported unless you pass --include-secrets, which asks
-for confirmation (--yes answers it for scripts). The export is read-only: the
-app keeps running on Dibbla exactly as before.
+Secret values are not part of an export: a secret is write-only on Dibbla and
+nothing hands out its value. The env files list every name the app reads, with
+a blank where a secret is. The export is read-only: the app keeps running on
+Dibbla exactly as before.
 
 Examples:
   dibbla export shop                       # → ./shop-export/
-  dibbla export shop --out /tmp/shop       # elsewhere (must be empty or absent)
-  dibbla export shop --include-secrets     # with secret values, after confirming`,
+  dibbla export shop --out /tmp/shop       # elsewhere (must be empty or absent)`,
 	Args: cobra.ExactArgs(1),
 	Run:  runExport,
 }
@@ -56,8 +52,12 @@ var (
 
 func init() {
 	exportCmd.Flags().StringVarP(&exportOut, "out", "o", "", "Output directory (default: ./<alias>-export)")
-	exportCmd.Flags().BoolVar(&exportIncludeSecrets, "include-secrets", false, "Write secret values into the env files (asks for confirmation)")
-	exportCmd.Flags().BoolVarP(&exportYes, "yes", "y", false, "Confirm --include-secrets without asking")
+	// --include-secrets and --yes are kept, hidden, so a script that still
+	// passes them hears why instead of "unknown flag" (DIB-1338).
+	exportCmd.Flags().BoolVar(&exportIncludeSecrets, "include-secrets", false, "Refused: secret values cannot be exported")
+	exportCmd.Flags().BoolVarP(&exportYes, "yes", "y", false, "No effect (it confirmed --include-secrets)")
+	_ = exportCmd.Flags().MarkHidden("include-secrets")
+	_ = exportCmd.Flags().MarkHidden("yes")
 }
 
 func runExport(cmd *cobra.Command, args []string) {
@@ -67,34 +67,17 @@ func runExport(cmd *cobra.Command, args []string) {
 		Alias:          args[0],
 		Out:            exportOut,
 		IncludeSecrets: exportIncludeSecrets,
-		Yes:            exportYes,
 		APIURL:         cfg.APIURL,
 		APIToken:       cfg.APIToken,
-		Interactive:    isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()),
-		Confirm:        confirmIncludeSecrets,
 	}))
 }
 
 type exportInput struct {
 	Alias, Out       string
 	IncludeSecrets   bool
-	Yes              bool
 	APIURL, APIToken string
-	Interactive      bool
-	// Confirm asks the include-secrets question; default-no, unlike the
-	// generic confirm, because the safe answer is the one nobody typed.
-	Confirm func() (bool, error)
 	// Git overrides the git invocation (tests).
 	Git func(args ...string) error
-}
-
-func confirmIncludeSecrets() (bool, error) {
-	var ok bool
-	err := survey.AskOne(&survey.Confirm{
-		Message: "Write secret values in plain text into the export?",
-		Default: false,
-	}, &ok)
-	return ok, err
 }
 
 // runExportCore is the testable inner implementation. Returns the exit code.
@@ -107,33 +90,20 @@ func runExportCore(stdout, stderr io.Writer, in exportInput) int {
 	if out == "" {
 		out = in.Alias + "-export"
 	}
-	if in.IncludeSecrets && !in.Yes {
-		if !in.Interactive {
-			return refuseUnconfirmable(stderr, "Exporting secret values")
-		}
-		ok, err := in.Confirm()
-		if err != nil {
-			if errors.Is(err, prompt.ErrNotInteractive) {
-				return refuseUnconfirmable(stderr, "Exporting secret values")
-			}
-			fmt.Fprintf(stderr, "%s %v\n", bad, err)
-			return 1
-		}
-		if !ok {
-			fmt.Fprintln(stdout, "Cancelled: nothing exported. Run without --include-secrets to export with blanked secrets.")
-			return 5
-		}
+	if in.IncludeSecrets {
+		fmt.Fprintf(stderr, "%s secret values cannot be exported: a secret is write-only on Dibbla and nothing hands out its value.\n", bad)
+		fmt.Fprintln(stderr, "  Run without --include-secrets; the env files list every name, with a blank to fill in.")
+		return 5
 	}
 
 	fmt.Fprintf(stdout, "%s Exporting %s → %s\n", platform.Icon("📦", "[>]"), in.Alias, out)
 	m, err := export.Run(export.Options{
-		APIURL:         in.APIURL,
-		APIToken:       in.APIToken,
-		Alias:          in.Alias,
-		OutDir:         out,
-		IncludeSecrets: in.IncludeSecrets,
-		CLIVersion:     exportVersion,
-		Git:            in.Git,
+		APIURL:     in.APIURL,
+		APIToken:   in.APIToken,
+		Alias:      in.Alias,
+		OutDir:     out,
+		CLIVersion: exportVersion,
+		Git:        in.Git,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(stdout, "   "+format+"\n", args...)
 		},
@@ -155,11 +125,7 @@ func runExportCore(stdout, stderr io.Writer, in exportInput) int {
 	}
 	fmt.Fprintf(stdout, "   databases: %d, buckets: %d, env files: %d, manifest: %s (%s)\n",
 		len(m.Databases), len(m.Buckets), len(m.Env.Files), m.ManifestFile, m.ManifestOrigin)
-	if m.Env.SecretsIncluded {
-		fmt.Fprintf(stdout, "   %s secret values are in %s — treat the directory as a password file\n", platform.Icon("⚠️", "[!]"), "env/")
-	} else {
-		fmt.Fprintln(stdout, "   secret values were not exported; env/ lists the names (--include-secrets to export them)")
-	}
+	fmt.Fprintln(stdout, "   secret values are not part of an export (write-only on Dibbla); env/ lists the names")
 	for _, w := range m.Warnings {
 		fmt.Fprintf(stdout, "   %s %s\n", platform.Icon("⚠️", "[!]"), w)
 	}

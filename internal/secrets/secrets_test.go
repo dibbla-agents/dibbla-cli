@@ -109,22 +109,6 @@ func TestCreateSecret_OmitsServiceWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestGetSecret_ForwardsServiceParam(t *testing.T) {
-	rs := newRecorder(t, http.StatusOK, SecretResponse{
-		Name: "TOKEN", Value: "xxx", DeploymentAlias: "myapp", ServiceName: "web",
-	})
-	out, err := GetSecret(rs.srv.URL, "tok", "TOKEN", "myapp", "web")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if !strings.Contains(rs.query, "service=web") {
-		t.Errorf("query: %q", rs.query)
-	}
-	if out.ServiceName != "web" {
-		t.Errorf("service: %q", out.ServiceName)
-	}
-}
-
 func TestDeleteSecret_ForwardsServiceParam(t *testing.T) {
 	rs := newRecorder(t, http.StatusOK, DeleteResponse{Status: "success", Message: "ok"})
 	if _, err := DeleteSecret(rs.srv.URL, "tok", "TOKEN", "myapp", "web"); err != nil {

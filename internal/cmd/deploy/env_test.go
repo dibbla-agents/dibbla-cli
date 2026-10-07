@@ -17,15 +17,25 @@ import (
 // the file it writes must never travel back. These tests pin the file
 // contract (header, merge-in-place, --replace), the .gitignore line, the two
 // output modes, the linked-folder default and the viewer refusal — and that
-// no value ever reaches stdout/stderr outside --stdout/--json.
+// no value ever reaches stdout/stderr outside --stdout/--json. Since DIB-1337
+// secrets arrive by name only, and a secret line the developer filled in is
+// theirs: never overwritten, not even by --replace.
 
 const envDoc = `{"deployment_alias":"shop","variables":[
-  {"name":"API_KEY","value":"sk-live-hunter2","source":"deployment"},
-  {"name":"DATABASE_URL_SHOP","value":"postgresql://shop:p%40ss@db.example:30432/shop?sslmode=require","source":"deployment"},
   {"name":"DIBBLA_ALIAS","value":"shop","source":"platform"},
-  {"name":"LOG_LEVEL","value":"info","source":"global"},
-  {"name":"MOTD","value":"costs $5 today","source":"global"}
+  {"name":"LOG_LEVEL","value":"info","source":"inline"},
+  {"name":"MOTD","value":"costs $5 today","source":"inline"}
+],"secrets":[
+  {"name":"API_KEY","source":"deployment"},
+  {"name":"DATABASE_URL_SHOP","source":"deployment"}
 ]}`
+
+// envSecretsBlock is what a pull appends for envDoc's two secrets when the
+// file names neither.
+const envSecretsBlock = "\n" + secretsBlockHeader + "\n" +
+	"API_KEY=\n" +
+	"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+	"DATABASE_URL_SHOP=\n"
 
 func newEnvServer(t *testing.T, status int, body string) (*httptest.Server, *recordedRequest) {
 	t.Helper()
@@ -70,11 +80,10 @@ func TestEnvPullWritesEnvLocalWithHeaderAndGitignoreLine(t *testing.T) {
 
 	got := readFile(t, filepath.Join(dir, ".env.local"))
 	want := envHeader + "\n" +
-		"API_KEY=sk-live-hunter2\n" +
-		"DATABASE_URL_SHOP=postgresql://shop:p%40ss@db.example:30432/shop?sslmode=require\n" +
 		"DIBBLA_ALIAS=shop\n" +
 		"LOG_LEVEL=info\n" +
-		"MOTD='costs $5 today'\n"
+		"MOTD='costs $5 today'\n" +
+		envSecretsBlock
 	if got != want {
 		t.Errorf(".env.local:\n%s\nwant:\n%s", got, want)
 	}
@@ -84,22 +93,24 @@ func TestEnvPullWritesEnvLocalWithHeaderAndGitignoreLine(t *testing.T) {
 	if gi := readFile(t, filepath.Join(dir, ".gitignore")); gi != ".env.local\n" {
 		t.Errorf(".gitignore = %q", gi)
 	}
-	for _, want := range []string{"5 variable(s)", "app shop", "2 global, 2 app, 1 platform", "added .env.local to .gitignore", "real database"} {
+	for _, want := range []string{"3 variable(s)", "app shop", "2 inline, 1 platform", "2 secret(s) by name only", "0 already set", "added .env.local to .gitignore"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}
 	}
-	for _, leak := range []string{"hunter2", "p%40ss", "$5"} {
-		if strings.Contains(stdout+stderr, leak) {
-			t.Errorf("a value leaked into the terminal: %q", leak)
-		}
+	if strings.Contains(stdout, "kept your local values") {
+		t.Errorf("no secret had a local value, but stdout says one was kept:\n%s", stdout)
+	}
+	if strings.Contains(stdout+stderr, "$5") {
+		t.Errorf("a value leaked into the terminal")
 	}
 }
 
 func TestEnvPullUpdatesInPlaceAndKeepsLocalLines(t *testing.T) {
 	srv, _ := newEnvServer(t, 200, envDoc)
 	dir := t.TempDir()
-	existing := "# my notes\nLOG_LEVEL=debug\nPORT=3001\n\nAPI_KEY=old\n"
+	// API_KEY has a value from a pull before DIB-1337: the app's real secret.
+	existing := "# my notes\nLOG_LEVEL=debug\nPORT=3001\n\nAPI_KEY=sk-live-old-pulled\n"
 	os.WriteFile(filepath.Join(dir, ".env.local"), []byte(existing), 0o600)
 	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules\n.env.local\n"), 0o644)
 
@@ -113,15 +124,22 @@ func TestEnvPullUpdatesInPlaceAndKeepsLocalLines(t *testing.T) {
 		"LOG_LEVEL=info\n" + // refreshed where it stood
 		"PORT=3001\n" + // a local extra, kept
 		"\n" +
-		"API_KEY=sk-live-hunter2\n" +
-		"DATABASE_URL_SHOP=postgresql://shop:p%40ss@db.example:30432/shop?sslmode=require\n" +
+		"API_KEY=sk-live-old-pulled\n" + // a secret's local line: never touched
 		"DIBBLA_ALIAS=shop\n" +
-		"MOTD='costs $5 today'\n"
+		"MOTD='costs $5 today'\n" +
+		"\n" + secretsBlockHeader + "\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"DATABASE_URL_SHOP=\n"
 	if got != want {
 		t.Errorf(".env.local:\n%s\nwant:\n%s", got, want)
 	}
-	if !strings.Contains(stdout, "kept 2 local line(s)") {
-		t.Errorf("stdout should count the comment and PORT as kept:\n%s", stdout)
+	for _, want := range []string{"kept 2 local line(s)", "1 already set", "kept your local values for API_KEY", "real secrets"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout+stderr, "sk-live-old-pulled") {
+		t.Errorf("a local secret value reached the terminal")
 	}
 	if strings.Contains(stdout, "added .env.local") {
 		t.Errorf(".gitignore already had the line; stdout says it was added:\n%s", stdout)
@@ -130,24 +148,48 @@ func TestEnvPullUpdatesInPlaceAndKeepsLocalLines(t *testing.T) {
 		t.Errorf(".gitignore changed: %q", gi)
 	}
 
-	// A second pull is a no-op on the file: one header, same lines.
+	// A second pull is a no-op on the file: one header, one secrets block.
 	pull(t, srv, envPullInput{Dir: dir, Deployment: "shop"})
 	if again := readFile(t, filepath.Join(dir, ".env.local")); again != want {
 		t.Errorf("second pull changed the file:\n%s", again)
 	}
 }
 
-func TestEnvPullReplaceRewritesTheWholeFile(t *testing.T) {
+func TestEnvPullReplaceRewritesTheWholeFileButKeepsFilledSecrets(t *testing.T) {
 	srv, _ := newEnvServer(t, 200, envDoc)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("PORT=3001\nAPI_KEY=old\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("PORT=3001\nAPI_KEY=sk-test-mine\nLOG_LEVEL=debug\n"), 0o600)
 	code, _, stderr := pull(t, srv, envPullInput{Dir: dir, Deployment: "shop", Replace: true})
 	if code != 0 {
 		t.Fatal(stderr)
 	}
 	got := readFile(t, filepath.Join(dir, ".env.local"))
-	if strings.Contains(got, "PORT=") || !strings.HasPrefix(got, envHeader+"\n") || !strings.Contains(got, "API_KEY=sk-live-hunter2\n") {
-		t.Errorf("--replace did not rewrite the file:\n%s", got)
+	want := envHeader + "\n" +
+		"DIBBLA_ALIAS=shop\n" +
+		"LOG_LEVEL=info\n" +
+		"MOTD='costs $5 today'\n" +
+		"\n" + secretsBlockHeader + "\n" +
+		"API_KEY=sk-test-mine\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"DATABASE_URL_SHOP=\n"
+	if got != want {
+		t.Errorf("--replace:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestEnvPullNeverWritesAValueUnderASecretsName: if a server ever sends a
+// name both as a variable and as a secret, the secret wins and no value is
+// written for it.
+func TestEnvPullNeverWritesAValueUnderASecretsName(t *testing.T) {
+	srv, _ := newEnvServer(t, 200, `{"deployment_alias":"shop",
+	  "variables":[{"name":"API_KEY","value":"sk-live-leaked","source":"inline"}],
+	  "secrets":[{"name":"API_KEY","source":"deployment"}]}`)
+	dir := t.TempDir()
+	if code, _, stderr := pull(t, srv, envPullInput{Dir: dir, Deployment: "shop"}); code != 0 {
+		t.Fatal(stderr)
+	}
+	if got := readFile(t, filepath.Join(dir, ".env.local")); strings.Contains(got, "sk-live-leaked") || !strings.Contains(got, "\nAPI_KEY=\n") {
+		t.Errorf(".env.local:\n%s", got)
 	}
 }
 
@@ -162,13 +204,15 @@ func TestEnvPullStdoutAndJSONWriteNoFile(t *testing.T) {
 	if last.Path != "/api/deploy/deployments/shop/env?service=worker" {
 		t.Errorf("--service not sent: %s", last.Path)
 	}
-	if stdout != "API_KEY=sk-live-hunter2\nDATABASE_URL_SHOP=postgresql://shop:p%40ss@db.example:30432/shop?sslmode=require\nDIBBLA_ALIAS=shop\nLOG_LEVEL=info\nMOTD='costs $5 today'\n" {
+	if stdout != "DIBBLA_ALIAS=shop\nLOG_LEVEL=info\nMOTD='costs $5 today'\n"+
+		"# API_KEY is a secret: Dibbla never hands out its value\n"+
+		"# DATABASE_URL_SHOP is a secret: Dibbla never hands out its value\n" {
 		t.Errorf("--stdout:\n%s", stdout)
 	}
 
 	code, stdout, _ = pull(t, srv, envPullInput{Dir: dir, Deployment: "shop", JSON: true})
 	var doc apps.EnvResponse
-	if code != 0 || json.Unmarshal([]byte(stdout), &doc) != nil || len(doc.Variables) != 5 || doc.Variables[2].Source != "platform" {
+	if code != 0 || json.Unmarshal([]byte(stdout), &doc) != nil || len(doc.Variables) != 3 || doc.Variables[0].Source != "platform" || len(doc.Secrets) != 2 {
 		t.Errorf("--json: exit %d, %s", code, stdout)
 	}
 
@@ -207,14 +251,14 @@ func TestEnvPullDefaultsToTheLinkedApp(t *testing.T) {
 	}
 }
 
-func TestEnvPullViewerIsRefusedLikeSecretsGet(t *testing.T) {
+func TestEnvPullViewerIsRefused(t *testing.T) {
 	srv, _ := newEnvServer(t, 403, `{"status":"error","error":{"code":"ROLE_FORBIDDEN","message":"role viewer may not deploy; owner, admin or developer can"}}`)
 	dir := t.TempDir()
 	code, _, stderr := pull(t, srv, envPullInput{Dir: dir, Deployment: "shop"})
 	if code == 0 {
 		t.Fatal("viewer was served")
 	}
-	if !strings.Contains(stderr, "refused") || !strings.Contains(stderr, "secrets get") {
+	if !strings.Contains(stderr, "refused") || !strings.Contains(stderr, "deploy roles") {
 		t.Errorf("stderr: %s", stderr)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".env.local")); err == nil {
@@ -223,7 +267,7 @@ func TestEnvPullViewerIsRefusedLikeSecretsGet(t *testing.T) {
 }
 
 func TestEnvPullHelpStatesTheModel(t *testing.T) {
-	for _, want := range []string{"Values live in Dibbla, names live in the code", ".env.example", "real database", "secrets get"} {
+	for _, want := range []string{"Values live in Dibbla, names live in the code", ".env.example", "write-only", "never overwritten", "dibbla db connect"} {
 		if !strings.Contains(envPullCmd.Long, want) {
 			t.Errorf("--help lacks %q", want)
 		}

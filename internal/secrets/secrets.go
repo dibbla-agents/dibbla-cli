@@ -28,10 +28,10 @@ type SecretListItem struct {
 	UpdatedAt       string `json:"updated_at"`
 }
 
-// SecretResponse is a full secret (includes value when getting one).
+// SecretResponse is a secret as the server describes it: name, scope and
+// times. A secret is write-only (DIB-1337), so there is no value to hold.
 type SecretResponse struct {
 	Name            string `json:"name"`
-	Value           string `json:"value,omitempty"`
 	DeploymentAlias string `json:"deployment_alias"`
 	ServiceName     string `json:"service_name,omitempty"`
 	CreatedAt       string `json:"created_at"`
@@ -183,46 +183,6 @@ func CreateSecret(apiURL, apiToken, name, value, deploymentAlias, serviceName st
 	}
 
 	var out SecretCreateResponse
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	return &out, nil
-}
-
-// GetSecret returns a secret by name. deployment can be empty for a global
-// secret. service scopes to a per-service entry within the deployment.
-func GetSecret(apiURL, apiToken, name, deployment, service string) (*SecretResponse, error) {
-	query := url.Values{}
-	if deployment != "" {
-		query.Set("deployment", deployment)
-	}
-	if service != "" {
-		query.Set("service", service)
-	}
-	client := &http.Client{Timeout: requestTimeout}
-	req, err := http.NewRequest("GET", makeAPIURL(apiURL, "/api/deploy/secrets/"+url.PathEscape(name), query), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+apiToken)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make API request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, parseError(body, resp.StatusCode)
-	}
-
-	var out SecretResponse
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
