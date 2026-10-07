@@ -988,9 +988,10 @@ puts the secret into the agent's transcript and the shell history. The agent's
 part is to name the secret, give the command, and wait.
 
 A secret is write-only: there is no command that prints its value.
-`dibbla secrets get` was removed — it explains that and exits 1 — and
-`dibbla storage credentials` likewise. The running app gets its secrets in its
-environment. When a task needs a secret's value, ask the person to set it
+`dibbla secrets get` was removed — it explains that and exits 1. The running
+app gets its secrets in its environment. (`dibbla storage credentials` prints
+no secret either: it mints a one-hour key of the person's own for one bucket,
+and the app's `STORAGE_*` secrets stay unread.) When a task needs a secret's value, ask the person to set it
 themselves (`dibbla secrets set`, the console, or the /platform connector's
 secret request page); never have a secret value pasted through an AI assistant.
 
@@ -1057,9 +1058,10 @@ else (not into `.env.local`, not onto the screen). Set it in
 the start command as above (`-e` wins over `--env-file`), or run
 `export DATABASE_URL_MY_APP_DB="$(dibbla db connect my_app_db -q)"` before
 `npm run dev` / `go run .` — dotenv loaders do not override a variable that is
-already set. A bucket's `STORAGE_<NAME>_*` keys cannot be fetched with the CLI
-at all; point those lines at a local S3-compatible store, or run without the
-bucket.
+already set. A bucket's `STORAGE_<NAME>_*` keys are the app's and cannot be
+fetched; point those lines at a local S3-compatible store, or run without the
+bucket. To look into the real bucket with your own tools, see "Use a bucket
+from your machine" below.
 
 Then tell the person, in one sentence and their own language: *the app's
 settings were fetched from Dibbla and live only on this computer; the secrets
@@ -1091,6 +1093,20 @@ dibbla env pull --json | jq '(.variables[], .secrets[]) | {name, source}'   # wh
 ```
 
 A viewer (read role) is refused.
+
+**Use a bucket from your machine** (`storage credentials`). The key is the
+person's own — minted when the command runs, that one bucket's objects only,
+valid for an hour — never the app's. Its output is a secret key, so it goes
+straight into `eval`, in the same command as the tool that uses it:
+
+```bash
+eval "$(dibbla storage credentials my-uploads -q)" && aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls "s3://$DIBBLA_BUCKET"
+eval "$(dibbla storage credentials my-uploads -q)" && rclone copy ./seed ":s3:$DIBBLA_BUCKET/seed" --s3-env-auth --s3-no-check-bucket --s3-endpoint "$AWS_ENDPOINT_URL"
+```
+
+rclone needs `--s3-no-check-bucket`: the key may use the bucket, not create
+one. When it expires, run the command again. A person at a terminal may run it
+without `-q` to see the lines and the expiry; an agent never does.
 
 > **Quote values containing `$` with single quotes.** The `.env` parser expands
 > `${VAR}` inside double quotes, so `PASSWORD="p$assw0rd"` silently imports as

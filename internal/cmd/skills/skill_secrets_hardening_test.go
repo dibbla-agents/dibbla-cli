@@ -27,6 +27,10 @@ import (
 //   - rule "db-connect-printed": `dibbla db connect <name>` run bare in a shell
 //     example — its output carries the person's API token, so an agent runs it
 //     only inside `$(...)`.
+//   - rule "storage-credentials-printed": `dibbla storage credentials <name>`
+//     anywhere but `eval "$(dibbla storage credentials <name> -q)"` in a shell
+//     example — its output is a bucket key of the person's own (DIB-1344), so
+//     an agent loads it into the shell and never onto the screen.
 //
 // Only code is checked: fenced blocks and inline code spans, the text an agent
 // copies. A line may name a bad form to say it is wrong; that is allowed when
@@ -72,6 +76,9 @@ var (
 	secretNameTok  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*|<[^<>]+>|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)$`)
 	envFlagRe      = regexp.MustCompile(`(?:^|\s)(?:-e|--env)(?:\s+|=)["']?([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|\S*)`)
 	dbConnectRe    = regexp.MustCompile(`dibbla\s+db\s+connect\b`)
+	storageCredsRe = regexp.MustCompile(`dibbla\s+(?:storage|buckets)\s+credentials\b`)
+	quietFlagRe    = regexp.MustCompile(`(?:^|\s)(?:-q|--quiet)(?:\s|$)`)
+	evalOpenRe     = regexp.MustCompile(`\beval\s+"?\$\($`)
 	negationRe     = regexp.MustCompile(`(?i)\b(never|not)\b`)
 	personRe       = regexp.MustCompile(`(?i)\bperson\b`)
 	shellFenceLang = map[string]bool{"bash": true, "sh": true, "shell": true, "zsh": true, "console": true}
@@ -138,6 +145,26 @@ func matchBareDBConnect(code string) (string, bool) {
 	return "", false
 }
 
+// matchPrintedStorageCredentials reports a `dibbla storage credentials` that is
+// not `eval "$(… -q)"`: anywhere else its output — a bucket key — lands on the
+// screen, in a variable an agent may echo, or (without -q) is the decorated
+// text rather than export lines.
+func matchPrintedStorageCredentials(code string) (string, bool) {
+	for _, loc := range storageCredsRe.FindAllStringIndex(code, -1) {
+		if !evalOpenRe.MatchString(strings.TrimRight(code[:loc[0]], " \t")) {
+			return code[loc[0]:loc[1]], true
+		}
+		rest := code[loc[1]:]
+		if i := strings.Index(rest, ")"); i >= 0 {
+			rest = rest[:i]
+		}
+		if !quietFlagRe.MatchString(rest) {
+			return code[loc[0]:loc[1]], true
+		}
+	}
+	return "", false
+}
+
 type secretViolation struct {
 	file string
 	line int
@@ -163,7 +190,7 @@ func shellComment(line string) string {
 	return ""
 }
 
-// scanSkillDoc applies the three rules to one markdown document.
+// scanSkillDoc applies the four rules to one markdown document.
 func scanSkillDoc(name, content string) []secretViolation {
 	var out []secretViolation
 	lines := strings.Split(content, "\n")
@@ -208,12 +235,20 @@ func scanSkillDoc(name, content string) []secretViolation {
 				if m, ok := matchBareDBConnect(line); ok {
 					out = append(out, secretViolation{name, i + 1, "db-connect-printed", m})
 				}
+				if m, ok := matchPrintedStorageCredentials(line); ok {
+					out = append(out, secretViolation{name, i + 1, "storage-credentials-printed", m})
+				}
 			}
 			continue
 		}
 		// Prose. A line that is itself a command gets the db-connect rule too.
 		if strings.HasPrefix(trimmed, "dibbla db connect") && !personRe.MatchString(shellComment(line)) {
 			out = append(out, secretViolation{name, i + 1, "db-connect-printed", strings.TrimSpace(line)})
+		}
+		if strings.HasPrefix(trimmed, "dibbla ") && storageCredsRe.MatchString(trimmed) && !personRe.MatchString(shellComment(line)) {
+			if m, ok := matchPrintedStorageCredentials(trimmed); ok {
+				out = append(out, secretViolation{name, i + 1, "storage-credentials-printed", m})
+			}
 		}
 		if strings.TrimSpace(line) == "" {
 			flushProse()
@@ -425,6 +460,20 @@ func TestSecretScan_Rules(t *testing.T) {
 		{"comment line (CLI output)", fence("bash", `# DATABASE_URL_X: for a connection of your own, use "$(dibbla db connect x -q)" in the start command — it carries your API token, so not in this file`), ""},
 		{"usage in prose", "**Usage:** `dibbla db connect <name> [-q]`\n", ""},
 		{"yaml fence is not a shell", fence("yaml", `cmd: dibbla db connect myapp`), ""},
+
+		// storage-credentials-printed (DIB-1344)
+		{"storage key bare", fence("bash", `dibbla storage credentials my-uploads`), "storage-credentials-printed"},
+		{"storage key bare -q", fence("bash", `dibbla storage credentials my-uploads -q`), "storage-credentials-printed"},
+		{"buckets alias bare", fence("sh", `dibbla buckets credentials my-uploads -q`), "storage-credentials-printed"},
+		{"substituted but echoed", fence("bash", `echo "$(dibbla storage credentials my-uploads -q)"`), "storage-credentials-printed"},
+		{"into a variable", fence("bash", `KEYS=$(dibbla storage credentials my-uploads -q)`), "storage-credentials-printed"},
+		{"eval without -q", fence("bash", `eval "$(dibbla storage credentials my-uploads)"`), "storage-credentials-printed"},
+		{"bare storage key line in prose", "dibbla storage credentials my-uploads\n", "storage-credentials-printed"},
+		{"eval -q", fence("bash", `eval "$(dibbla storage credentials my-uploads -q)" && aws s3 ls "s3://$DIBBLA_BUCKET"`), ""},
+		{"eval --quiet, unquoted", fence("zsh", `eval $(dibbla storage credentials my-uploads --quiet)`), ""},
+		{"storage key for a person", fence("bash", `dibbla storage credentials my-uploads   # a person at a terminal only`), ""},
+		{"storage key usage in prose", "**Usage:** `dibbla storage credentials <name> [-q]`\n", ""},
+		{"storage key in a yaml fence", fence("yaml", `cmd: dibbla storage credentials my-uploads`), ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

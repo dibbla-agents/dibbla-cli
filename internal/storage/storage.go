@@ -6,6 +6,7 @@ package storage
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,6 +79,23 @@ type BucketDeleteResponse struct {
 	Bucket  string `json:"bucket"`
 }
 
+// BucketCredentials is a person's own short-lived key for one bucket
+// (POST /buckets/{name}/credentials, DIB-1344). It is minted for the caller,
+// works on that bucket's objects only and expires by itself — it is not the
+// app's key, which lives in the app's write-only STORAGE_<NAME>_* secrets.
+type BucketCredentials struct {
+	Endpoint        string    `json:"endpoint"`
+	Bucket          string    `json:"bucket"`
+	AccessKeyID     string    `json:"access_key_id"`
+	SecretAccessKey string    `json:"secret_access_key"`
+	SessionToken    string    `json:"session_token,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at"`
+}
+
+// ErrBucketKeysUnsupported is returned when the server has no route for a
+// person's bucket key: a Dibbla install older than DIB-1344.
+var ErrBucketKeysUnsupported = errors.New("this Dibbla server does not issue personal bucket keys yet — ask your platform admin to update it")
+
 // ErrorResponse represents an error response from the API.
 type ErrorResponse struct {
 	Status string   `json:"status"`
@@ -123,7 +141,18 @@ func parseError(body []byte, statusCode int) error {
 		}
 		return fmt.Errorf("%s", strings.TrimSuffix(msg, "\n"))
 	}
+	if statusCode == http.StatusNotFound {
+		return &unroutedError{body: string(body)}
+	}
 	return fmt.Errorf("API request failed with status %d: %s", statusCode, string(body))
+}
+
+// unroutedError is a 404 without the API's error envelope: the server has no
+// such route, as opposed to a route answering that a bucket does not exist.
+type unroutedError struct{ body string }
+
+func (e *unroutedError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", http.StatusNotFound, e.body)
 }
 
 func doJSON(method, url, token string, payload any, wantStatus int, out any) error {
@@ -220,6 +249,26 @@ func RotateBucket(apiURL, apiToken, name string, noRestart bool) (*BucketRotateR
 	var out BucketRotateResponse
 	if err := doJSON("POST", u, apiToken, nil, http.StatusOK, &out); err != nil {
 		return nil, err
+	}
+	return &out, nil
+}
+
+// IssueBucketCredentials asks for a key of the caller's own for one bucket,
+// valid for an hour. The API token is the caller's identity; the key that
+// comes back is theirs, not the app's.
+func IssueBucketCredentials(apiURL, apiToken, name string) (*BucketCredentials, error) {
+	u := makeAPIURL(apiURL, "/api/deploy/buckets/"+url.PathEscape(name)+"/credentials")
+	var out BucketCredentials
+	err := doJSON("POST", u, apiToken, nil, http.StatusOK, &out)
+	var unrouted *unroutedError
+	if errors.As(err, &unrouted) {
+		return nil, ErrBucketKeysUnsupported
+	}
+	if err != nil {
+		return nil, err
+	}
+	if out.AccessKeyID == "" || out.SecretAccessKey == "" {
+		return nil, fmt.Errorf("the server answered without a key")
 	}
 	return &out, nil
 }
