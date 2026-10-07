@@ -15,6 +15,10 @@ type EnvVariable struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
 	Source string `json:"source"`
+	// LooksLikeSecret: the server thinks this inline variable is a secret by
+	// its name or value (DIB-1339) — a candidate to move into the secrets
+	// store.
+	LooksLikeSecret bool `json:"looks_like_secret,omitempty"`
 }
 
 // EnvSecret is a secret in the app's environment: its name and the scope it

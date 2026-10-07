@@ -273,3 +273,22 @@ func TestEnvPullHelpStatesTheModel(t *testing.T) {
 		}
 	}
 }
+
+// DIB-1339: a plain env var the server flags as secret-looking is named, with
+// what to do about it — and its value is not printed.
+func TestEnvPullNamesVariablesThatLookLikeSecrets(t *testing.T) {
+	srv, _ := newEnvServer(t, 200, `{"deployment_alias":"shop","variables":[
+	  {"name":"PORT","value":"3000","source":"inline"},
+	  {"name":"STRIPE_SECRET_KEY","value":"sk_live_SYNTHETIC","source":"inline","looks_like_secret":true}
+	],"secrets":[]}`)
+	code, stdout, stderr := pull(t, srv, envPullInput{Dir: t.TempDir(), Deployment: "shop"})
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	if !strings.Contains(stdout, "STRIPE_SECRET_KEY look like secrets") || strings.Contains(stdout, "PORT look") || !strings.Contains(stdout, "dibbla secrets set NAME -d shop") {
+		t.Errorf("stdout:\n%s", stdout)
+	}
+	if strings.Contains(stdout+stderr, "sk_live_SYNTHETIC") {
+		t.Error("the value reached the terminal")
+	}
+}

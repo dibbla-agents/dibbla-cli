@@ -69,6 +69,7 @@ var (
 	deleteYes             bool
 	updateEnv             []string
 	updateEnvFile         string
+	updateAllowSecretEnv  bool
 	updateReplicas        int
 	updateCPU             string
 	updateMemory          string
@@ -103,6 +104,7 @@ func init() {
 	appsRestartCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
 	appsUpdateCmd.Flags().StringVar(&updateEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
+	appsUpdateCmd.Flags().BoolVar(&updateAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
 	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
 	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
 	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
@@ -258,6 +260,7 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		AppAccessPolicy:      accessPolicy,
 		GoogleScopes:         googleScopes,
 		MicrosoftScopes:      microsoftScopes,
+		AllowSecretShapedEnv: updateAllowSecretEnv && len(envMap) > 0,
 	}
 
 	fmt.Printf("%s Updating deployment '%s'...\n", platform.Icon("✏️", "[UPDATE]"), alias)

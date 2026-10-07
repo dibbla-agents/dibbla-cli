@@ -193,6 +193,15 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 	if n := len(secretNames); n > 0 {
 		fmt.Fprintf(stdout, "   %d secret(s) by name only — Dibbla never hands out a secret's value; fill in development values (%d already set here)\n", n, len(filled))
 	}
+	var suspects []string
+	for _, v := range vars {
+		if v.LooksLikeSecret {
+			suspects = append(suspects, v.Name)
+		}
+	}
+	if len(suspects) > 0 {
+		fmt.Fprintf(stdout, "   %s look like secrets but are plain env vars, readable by anyone who can read the app's configuration. Make them secrets: 'dibbla secrets set NAME -d %s', then drop them from -e / dibbla.yaml.\n", strings.Join(suspects, ", "), alias)
+	}
 	if len(filled) > 0 {
 		fmt.Fprintf(stdout, "   kept your local values for %s. If they came from a pull before secrets were write-only, they are the app's real secrets: replace them with development values.\n", strings.Join(filled, ", "))
 	}

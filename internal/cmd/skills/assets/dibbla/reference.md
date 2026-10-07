@@ -522,7 +522,8 @@ The same applies to Python (`pip install -r requirements.txt` rather than shippi
 || | `--force`, `-f` — recreate the deployment after a successful build if the alias exists (brief restart; a failed build leaves the running app untouched) |
 | | `--update`, `-u` — rolling update of existing deployment (zero downtime) |
 | | `--env`, `-e` — env var `KEY=value` (repeatable) |
-| | `--env-file <path>` — bulk-load env vars from a `.env`-style file. The file is the base layer; `-e` flags override individual keys (file < `-e`, same precedence as `dibbla run`). Keep the file **outside** the deploy directory (a `.env` in the deploy root is a guardrail blocker). |
+| | `--env-file <path>` — bulk-load env vars from a `.env`-style file. The file is the base layer; `-e` flags override individual keys (file < `-e`, same precedence as `dibbla run`). Keep the file **outside** the deploy directory (a `.env` in the deploy root is a guardrail blocker). These become **plain env vars**: a file of keys and passwords belongs in `dibbla secrets import <file> -d <alias>` instead. |
+| | `--allow-secret-env` — send env vars that look like secrets anyway, because they are not. Without it the server refuses them (`ENV_LOOKS_LIKE_SECRET`, exit non-zero, names the variables, never the values). It never covers a name that is one of the app's secrets (`ENV_SHADOWS_SECRET` — an env var of that name would replace the secret), and the server ignores it from an AI agent. **An agent does not pass this flag:** a value that looks like a secret goes in as a secret, entered by the person. |
 | | `--cpu` — CPU request (e.g. `500m`) |
 | | `--memory` — Memory request (e.g. `512Mi`) |
 | | `--port` — Container port (e.g. `3000`) |
@@ -698,6 +699,7 @@ dibbla preview --json | jq '.active_services'
 | **Arguments** | `alias` (required) — deployment alias |
 | **Flags** | `--env`, `-e` — env var `KEY=value` (repeatable) |
 | | `--env-file <path>` — bulk-load env vars from a `.env`-style file (base layer; `-e` overrides individual keys, file < `-e`) |
+| | `--allow-secret-env` — as on `deploy`: send changed env vars that look like secrets anyway. Only the keys the update changes are checked. |
 | | `--replicas` — desired replica count |
 | | `--cpu` — CPU request/limit (e.g. `500m`, `1`) |
 | | `--memory` — Memory request/limit (e.g. `256Mi`, `512Mi`) |

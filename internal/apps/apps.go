@@ -253,6 +253,8 @@ type UpdateDeploymentRequest struct {
 	AppAccessPolicy      *string           `json:"app_access_policy,omitempty"`
 	GoogleScopes         []string          `json:"google_scopes,omitempty"`
 	MicrosoftScopes      []string          `json:"microsoft_scopes,omitempty"`
+	// AllowSecretShapedEnv: see deploy.Options.AllowSecretEnv (DIB-1339).
+	AllowSecretShapedEnv bool `json:"allow_secret_shaped_env,omitempty"`
 }
 
 // ListApps makes an API call to list all deployed applications.

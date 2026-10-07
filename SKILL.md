@@ -431,6 +431,8 @@ Deletes a secret.
 
 Values live in Dibbla, names live in the code. Variables and secrets are injected into the app when it runs; `.env.example` in the repository lists the names the app needs (one `NAME= # what it is` per line — the one `.env*` file the platform keeps in the app's repo). An **env var** is not sensitive: it is stored as-is and its value may be read and used freely. A **secret** is write-only: Dibbla never hands out its value — not to the CLI, not to any API, not to an AI assistant — only the running app gets it. `dibbla env pull` fetches the variables' values and the secrets' names to a local `.env.local` so the app can run on this machine; each secret gets a development value of your own. That file never goes back: `.gitignore`, the VCS filter and the push hook all refuse it.
 
+An env var may not stand in for a secret. Every env write — `deploy -e` / `--env-file`, `apps update -e`, `dibbla.yaml` `environment:` — is checked: a name that is one of the app's secrets is refused (`ENV_SHADOWS_SECRET`, it would replace the secret at runtime); a name or value shaped like a secret is refused (`ENV_LOOKS_LIKE_SECRET`) unless a person passes `--allow-secret-env` because it is not one. In `dibbla.yaml` a secret-looking entry is a deploy warning for a person and a refusal for an agent. An agent never passes `--allow-secret-env`: the value belongs in a secret the person enters.
+
 #### `env pull`
 
 Writes the app's environment — as the running container sees it — to `.env.local`: every variable with its value, every secret by name only.
