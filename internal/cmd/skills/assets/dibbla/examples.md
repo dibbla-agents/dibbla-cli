@@ -461,7 +461,7 @@ services:
 ```
 
 A secret never goes in `environment:` — not literally, not through `${VAR}`.
-It is set by the person (`dibbla secrets set SENTRY_DSN -d myapp`) and reaches
+The person enters it (`dibbla secrets request SENTRY_DSN -d myapp` gives them the link) and it reaches
 every service without a line here; an `environment:` entry of the same name is
 refused (`ENV_SHADOWS_SECRET`).
 
@@ -641,17 +641,20 @@ When Loki isn't configured (or you specifically want the K8s-direct stream), `--
 ### Scope a secret to one service
 
 ```bash
-# The person runs each `set` and pastes the value on stdin (then Ctrl-D) —
+# Each request prints a link; the person enters the value on that page —
 # an agent names the secret, never the value.
 
 # Per-service secret: only the web container sees this
-dibbla secrets set NPM_TOKEN -d myapp --service web
+dibbla secrets request NPM_TOKEN -d myapp --service web --title "npm token for the web build"
 
 # Deployment-wide: every service sees this
-dibbla secrets set DATABASE_URL -d myapp
+dibbla secrets request DATABASE_URL -d myapp --title "Connection URL of the external database"
 
 # Org-global: every deployment sees this
-dibbla secrets set SHARED_API_KEY
+dibbla secrets request SHARED_API_KEY --title "Shared API key"
+
+# The same scopes in the person's own terminal (value at a hidden prompt):
+dibbla secrets set NPM_TOKEN -d myapp --service web
 
 # List by scope — names only, never values
 dibbla secrets list -d myapp                  # deployment-wide entries (service_name='')
@@ -839,7 +842,8 @@ RUN --mount=type=secret,id=npm_token \
 ```
 
 ```bash
-dibbla secrets set NPM_TOKEN_SECRET -d myapp   # the person runs this and pastes the token on stdin
+dibbla secrets request NPM_TOKEN_SECRET -d myapp --title "npm token for private packages"   # the person enters it on the linked page
+dibbla secrets request --status <request-id> --wait                                           # exit 0 once it is entered
 dibbla deploy --alias myapp -m "feat: private dep added"
 ```
 
@@ -874,7 +878,7 @@ Rules:
 - `${VAR}` with no shell value AND no default — the CLI errors before upload, naming the variable. Catches typos like `${DAATBASE_URL}`.
 - Variables starting with `DIBBLA_` are **reserved** — they pass through to the server unchanged, regardless of your shell. Lets `${DIBBLA_SVC_REDIS_URL}` and friends work as documented (server fills them in at render time).
 - Use `$$` to escape — `$${LITERAL}` ships as the literal text `${LITERAL}` in the YAML the server sees.
-- **Never a secret.** The substituted value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d myapp` and reaches the container without a line in `environment:`.
+- **Never a secret.** The substituted value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is entered by the person — `dibbla secrets request NAME -d myapp` gives them the link — and reaches the container without a line in `environment:`.
 
 CI integration with GitHub Actions:
 
@@ -962,17 +966,36 @@ its output, echoes it or writes it to a file.
 
 ## Secrets
 
-**Global (omit `-d`):**
+**When the app needs a secret — the agent's way (`secrets request`):**
+
+```bash
+# 1. A link for the person. --title and --why are what they read on the page.
+dibbla secrets request STRIPE_API_KEY -d myapp --title "Stripe secret key" \
+  --why "The shop charges cards with it. Stripe dashboard → Developers → API keys."
+#    → prints the link, the request id (sreq_…) and when it expires (15 min)
+
+# 2. Give the person the link. Then wait — exit 0 once the value is entered,
+#    1 if they cancelled it on the page, 7 if it expired:
+dibbla secrets request --status <request-id> --wait
+```
+
+The person opens the link signed in to the console and types the value there;
+it goes straight into the secrets store. It never passes through the terminal,
+the shell history or the agent's transcript, and the command never sees it.
+Only the person who made the request can open the page — in the same
+organization, with a role that may write secrets; anyone else sees "not found".
+It works before the app's first deploy. Run the request without `--wait`: an
+agent's shell call shows its output only when the command ends, so the link
+would arrive after the wait. A person at their own terminal can add `--wait` to
+the request itself. `--json` gives the server's document (`request_id`,
+`entry_url`, `expires_at`, `state`), never a value.
+
+**In the person's own terminal (`secrets set`):**
 
 ```bash
 dibbla secrets list
-dibbla secrets set API_KEY            # reads the value from stdin: paste it, then Ctrl-D
+dibbla secrets set API_KEY            # asks for the value without echoing it: paste, then Enter on an empty line
 dibbla secrets delete API_KEY --yes
-```
-
-**Per-deployment (`-d` or `--deployment`):**
-
-```bash
 dibbla secrets list -d myapp
 dibbla secrets set API_KEY -d myapp                  # works before the app's first deploy too
 dibbla secrets set DATABASE_URL --deployment myapp   # an external database; `db create` makes its own
@@ -984,16 +1007,35 @@ dibbla secrets delete API_KEY -d myapp -y
 (or use the console's Secrets page) and the value goes from their clipboard or
 file straight to Dibbla. An agent never supplies the value — not as the
 argument (`dibbla secrets set API_KEY "…"`), not through `echo "…" |`; either
-puts the secret into the agent's transcript and the shell history. The agent's
-part is to name the secret, give the command, and wait.
+puts the secret into the agent's transcript and the shell history, and the CLI
+warns when a value arrives as an argument. The agent's part is
+`dibbla secrets request`.
 
 A secret is write-only: there is no command that prints its value.
 `dibbla secrets get` was removed — it explains that and exits 1. The running
 app gets its secrets in its environment. (`dibbla storage credentials` prints
 no secret either: it mints a one-hour key of the person's own for one bucket,
-and the app's `STORAGE_*` secrets stay unread.) When a task needs a secret's value, ask the person to set it
-themselves (`dibbla secrets set`, the console, or the /platform connector's
-secret request page); never have a secret value pasted through an AI assistant.
+and the app's `STORAGE_*` secrets stay unread.) When a task needs a secret's value, request it
+(`dibbla secrets request`); never have a secret value pasted through an AI
+assistant.
+
+**A plain env var that should have been a secret (`env promote`):**
+
+```bash
+dibbla env pull -d myapp      # names the plain variables that look like secrets, e.g. STRIPE_SECRET_KEY
+dibbla env promote STRIPE_SECRET_KEY -d myapp --title "Stripe secret key" \
+  --why "Roll the key in the Stripe dashboard first: the old one was visible as a setting."
+dibbla secrets request --status <request-id> --wait
+```
+
+The value has been readable as configuration, so it counts as exposed: the
+person rotates it where it was issued and enters the **new** value on the page
+(the page refuses the unchanged one). Dibbla then stores the secret, removes
+the env var and restarts the app. `ENV_FROM_MANIFEST` means the variable is in
+`dibbla.yaml` `environment:` — remove the line, request the secret with
+`dibbla secrets request`, then deploy. `ENV_VAR_NOT_FOUND` means there is no
+plain env var of that name (check the case, and `--service` in a multi-service
+app).
 
 **Bulk import from a `.env` file (no redeploy):**
 
@@ -1075,10 +1117,23 @@ not ask them to understand git, secrets or environment variables; they said
 **The app needs a new secret** (an API key for a new integration, say):
 
 ```bash
-dibbla secrets set STRIPE_API_KEY -d my-app            # 1. the person runs this and types the value (stdin) — not through you
+dibbla secrets request STRIPE_API_KEY -d my-app --title "Stripe secret key"   # 1. a link: the person enters the value there — not through you
+dibbla secrets request --status <request-id> --wait                               #    exit 0 once it is entered
 printf 'STRIPE_API_KEY= # Stripe secret key\n' >> .env.example   # 2. the name goes into the code
 dibbla env pull                                        # 3. an empty STRIPE_API_KEY= line here — fill in a test key
 dibbla deploy -m "Stripe integration" --update         # the running app gets the real value from Dibbla
+```
+
+**`env pull` names a plain variable that looks like a secret** (it says
+`STRIPE_SECRET_KEY look like secrets but are plain env vars`): offer to
+promote it. It has been readable as configuration, so the person rotates it at
+the provider and enters the new value on the page; the env var is removed and
+the app restarted.
+
+```bash
+dibbla env promote STRIPE_SECRET_KEY --title "Stripe secret key" \
+  --why "Roll the key in the Stripe dashboard first: the old one was visible as a setting."
+dibbla secrets request --status <request-id> --wait
 ```
 
 Never write the value into `.env.local` by hand as the only place: the file
@@ -1324,10 +1379,11 @@ dibbla deploy . --alias my-app --update
 # 1. Check if the app already exists
 dibbla apps list
 
-# 2. If NOT listed, secrets first. The person sets each one the app reads —
-#    a secret can be set for an alias that has not been deployed yet. They run
-#    this in their own terminal and paste the value on stdin (then Ctrl-D):
-dibbla secrets set API_KEY -d my-app
+# 2. If NOT listed, secrets first. Request each one the app reads — a secret
+#    can be set for an alias that has not been deployed yet. Give the person
+#    the link it prints; they enter the value on that page, then wait:
+dibbla secrets request API_KEY -d my-app --title "API key for the payment provider"
+dibbla secrets request --status <request-id> --wait
 #    A managed database brings its own DATABASE_URL_<NAME> secret:
 dibbla db create my_app_db --deployment my-app
 
@@ -1347,7 +1403,7 @@ dibbla apps list
 dibbla deploy . --alias my-app --update
 
 # To change env vars without redeploying code (values that are not secret;
-# a secret is changed by the person: dibbla secrets set NAME -d my-app)
+# a secret gets a new value through: dibbla secrets request NAME -d my-app)
 dibbla apps update my-app -e LOG_LEVEL=debug -e NEW_VAR=value
 ```
 
@@ -1413,7 +1469,7 @@ Things that trip agents up here:
 if dibbla apps list 2>/dev/null | grep -q "my-app"; then
   dibbla deploy . --alias my-app --update
 else
-  # first deploy: the person has already set the app's secrets (dibbla secrets set NAME -d my-app)
+  # first deploy: the app's secrets are already entered (dibbla secrets request NAME -d my-app)
   dibbla deploy . --alias my-app \
     -e NODE_ENV=production
 fi
@@ -1429,9 +1485,10 @@ fi
 #    never the secret name (it is never a bare DATABASE_URL).
 dibbla db create my_app_db --deployment my-app
 
-# 2. Additional secrets: the person runs this and pastes the key on stdin
-#    (works before the app's first deploy)
-dibbla secrets set API_KEY -d my-app
+# 2. Additional secrets: a link for the person, who enters the key there
+#    (works before the app's first deploy); wait until it is entered
+dibbla secrets request API_KEY -d my-app --title "API key for the payment provider"
+dibbla secrets request --status <request-id> --wait
 
 # 3. Deploy, with -e only for values that are not secret
 dibbla deploy . --alias my-app \

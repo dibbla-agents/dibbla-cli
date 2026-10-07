@@ -125,7 +125,10 @@ func TestSkill_DocumentsEnvPull(t *testing.T) {
 		{"reference.md", reference, "### env pull"},
 		{"reference.md", reference, "`.env.example` and `.env.sample` (exact names) are kept"},
 		{"examples.md", examples, "### Set up a local development environment (env pull)"},
-		{"examples.md", examples, "dibbla secrets set STRIPE_API_KEY"},
+		// DIB-1343: the new-secret step is a request the person answers in
+		// the browser; DIB-1340: a secret-looking variable is promoted.
+		{"examples.md", examples, "dibbla secrets request STRIPE_API_KEY"},
+		{"examples.md", examples, "dibbla env promote STRIPE_SECRET_KEY"},
 		{"guardrails.md", guardrails, "A `.env.local` that *is* in `.gitignore` is expected"},
 		{"platform.md", platform, "**Except `.env.example` and `.env.sample`**"},
 		// DIB-1338: secrets are write-only, so the reveal row names no

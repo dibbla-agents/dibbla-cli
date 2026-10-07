@@ -55,9 +55,11 @@ fix has two halves:
    instead, and add the name to `.env.example` (`NAME= # what it is`).
 2. **The person's:** rotate the key at its provider first — a key that was
    committed is compromised, and moving it into a secret does not replace it —
-   then set the new value with `dibbla secrets set NAME -d <alias>` (pasted on
-   stdin) or the console's Secrets page. Never ask for the value to be pasted to
-   you.
+   then enter the new value on the page `dibbla secrets request NAME -d <alias>`
+   links to (run it, hand them the link, `--status <id> --wait`), or with their
+   own `dibbla secrets set NAME -d <alias>`. Never ask for the value to be
+   pasted to you. A key that sits in a plain env var instead of the code is
+   promoted the same way: `dibbla env promote NAME -d <alias>`.
 
 ---
 

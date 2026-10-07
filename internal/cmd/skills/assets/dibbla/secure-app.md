@@ -139,13 +139,16 @@ your agent did honestly will never leave one open.
 in a source file, so it is in your git history, in everyone's laptop copy, and in
 the container image.
 
-**Dibbla does.** Keeps secrets outside your code entirely: `dibbla secrets set`
-stores them and the platform injects them as environment variables when the app
-runs. A secret is write-only: once set, Dibbla never hands its value out again —
-not to the CLI, not to an API, not to an AI assistant. Uploads are stripped of
-`.env` files — only `.env.example` (names, no values) travels with your code.
-`dibbla env pull` gives you the names locally, to fill in with development values,
-without ever committing them.
+**Dibbla does.** Keeps secrets outside your code entirely: you type each value
+on a Dibbla page your agent links you to (`dibbla secrets request`), or with
+`dibbla secrets set` in your own terminal, and the platform injects it as an
+environment variable when the app runs. A secret is write-only: once set, Dibbla
+never hands its value out again — not to the CLI, not to an API, not to an AI
+assistant. Uploads are stripped of `.env` files — only `.env.example` (names, no
+values) travels with your code. `dibbla env pull` gives you the names locally,
+to fill in with development values, without ever committing them — and names
+any ordinary setting that looks like a key, which `dibbla env promote` turns
+into a secret.
 
 **Ask your agent.**
 
@@ -153,18 +156,20 @@ without ever committing them.
 > passwords, tokens and database connection strings, and list each one by file,
 > line and which service it belongs to — without showing or repeating any value.
 > Remove every value from the code, read it from an environment variable instead,
-> add the name to .env.example, and tell me which keys to rotate and the command
-> to set each new one."
+> add the name to .env.example, and tell me which keys to rotate. Then give me a
+> link for each new key (dibbla secrets request) — never ask me to paste one to
+> you."
 
 **How you know it's done.** Your agent gave you a list of places — file, line,
 which provider — with no key in it, and the code now reads each one from an
 environment variable. The rest is yours, because a key must never pass through
 the agent: for each key on the list, rotate it at the provider first (create a
 new one, revoke the old) — a key that was committed is compromised, and moving it
-into a secret is not the same as replacing it. Then set the new value yourself:
-`dibbla secrets set NAME -d <your-app>` in your own terminal, paste the key,
-press Enter and then Ctrl-D — or use the Secrets page in the console. Never paste
-a key to your agent. Afterwards `REVIEW.md` shows no `Hardcoded secrets` blocker,
+into a secret is not the same as replacing it. Then enter the new value yourself:
+open the link your agent gave you and type it there — or run
+`dibbla secrets set NAME -d <your-app>` in your own terminal and paste it at the
+hidden prompt, or use the Secrets page in the console. Never paste a key to your
+agent. Afterwards `REVIEW.md` shows no `Hardcoded secrets` blocker,
 and `dibbla secrets list -d <your-app>` shows the names your code reads.
 
 ---
