@@ -115,11 +115,15 @@ type Options struct {
 	// EnvFile, if non-empty, is a .env-style file read client-side as the base
 	// layer for env vars; Env entries override individual keys. See
 	// MergeEnvFileAndFlags for the precedence (identical to `dibbla run`).
-	EnvFile    string
-	CPU        string // e.g. 500m
-	Memory     string // e.g. 512Mi
-	Port       string // e.g. 3000
-	FaviconURL string // e.g. https://example.com/favicon.ico
+	EnvFile string
+	// AllowSecretEnv is the person's "these are not secrets" for env vars the
+	// server flags by their look (DIB-1339). It never covers a name that is
+	// one of the app's secrets, and the server ignores it from an agent.
+	AllowSecretEnv bool
+	CPU            string // e.g. 500m
+	Memory         string // e.g. 512Mi
+	Port           string // e.g. 3000
+	FaviconURL     string // e.g. https://example.com/favicon.ico
 	// Login guard settings
 	RequireLogin    bool     // Require authentication to access the app
 	AccessPolicy    string   // "all_members" or "invite_only"
@@ -597,6 +601,9 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 	if len(envMap) > 0 {
 		envJSON, _ := json.Marshal(envMap)
 		_ = writeField("env_vars", string(envJSON))
+		if opts.AllowSecretEnv {
+			_ = writeField("allow_secret_shaped_env", "true")
+		}
 	}
 	_ = writeField("cpu", opts.CPU)
 	_ = writeField("memory", opts.Memory)

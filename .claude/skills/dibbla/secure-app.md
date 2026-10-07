@@ -150,14 +150,22 @@ without ever committing them.
 **Ask your agent.**
 
 > "Search the whole project, including the git history, for hardcoded API keys,
-> passwords, tokens and database connection strings. Move every one to a Dibbla
-> secret, read them from environment variables, and tell me which keys I need to
-> rotate because they were committed."
+> passwords, tokens and database connection strings, and list each one by file,
+> line and which service it belongs to — without showing or repeating any value.
+> Remove every value from the code, read it from an environment variable instead,
+> add the name to .env.example, and tell me which keys to rotate and the command
+> to set each new one."
 
-**How you know it's done.** `REVIEW.md` shows no `Hardcoded secrets` blocker, and
-`dibbla secrets list` shows the names your code reads. If anything was found, your
-agent tells you plainly which keys to rotate — moving a leaked key is not the same
-as replacing it.
+**How you know it's done.** Your agent gave you a list of places — file, line,
+which provider — with no key in it, and the code now reads each one from an
+environment variable. The rest is yours, because a key must never pass through
+the agent: for each key on the list, rotate it at the provider first (create a
+new one, revoke the old) — a key that was committed is compromised, and moving it
+into a secret is not the same as replacing it. Then set the new value yourself:
+`dibbla secrets set NAME -d <your-app>` in your own terminal, paste the key,
+press Enter and then Ctrl-D — or use the Secrets page in the console. Never paste
+a key to your agent. Afterwards `REVIEW.md` shows no `Hardcoded secrets` blocker,
+and `dibbla secrets list -d <your-app>` shows the names your code reads.
 
 ---
 

@@ -22,6 +22,7 @@ var (
 	deployAlias           string
 	deployEnv             []string
 	deployEnvFile         string
+	deployAllowSecretEnv  bool
 	deployCPU             string
 	deployMemory          string
 	deployPort            string
@@ -110,6 +111,7 @@ func init() {
 	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
 	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
+	deployCmd.Flags().BoolVar(&deployAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
 	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
@@ -192,6 +194,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Alias:           deployAlias,
 		Env:             deployEnv,
 		EnvFile:         deployEnvFile,
+		AllowSecretEnv:  deployAllowSecretEnv,
 		CPU:             deployCPU,
 		Memory:          deployMemory,
 		Port:            deployPort,

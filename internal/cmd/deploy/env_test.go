@@ -34,7 +34,7 @@ const envDoc = `{"deployment_alias":"shop","variables":[
 // file names neither.
 const envSecretsBlock = "\n" + secretsBlockHeader + "\n" +
 	"API_KEY=\n" +
-	"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+	"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 	"DATABASE_URL_SHOP=\n"
 
 func newEnvServer(t *testing.T, status int, body string) (*httptest.Server, *recordedRequest) {
@@ -128,7 +128,7 @@ func TestEnvPullUpdatesInPlaceAndKeepsLocalLines(t *testing.T) {
 		"DIBBLA_ALIAS=shop\n" +
 		"MOTD='costs $5 today'\n" +
 		"\n" + secretsBlockHeader + "\n" +
-		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 		"DATABASE_URL_SHOP=\n"
 	if got != want {
 		t.Errorf(".env.local:\n%s\nwant:\n%s", got, want)
@@ -170,7 +170,7 @@ func TestEnvPullReplaceRewritesTheWholeFileButKeepsFilledSecrets(t *testing.T) {
 		"MOTD='costs $5 today'\n" +
 		"\n" + secretsBlockHeader + "\n" +
 		"API_KEY=sk-test-mine\n" +
-		"# DATABASE_URL_SHOP: for a connection of your own, run 'dibbla db connect shop'\n" +
+		"# DATABASE_URL_SHOP: for a connection of your own, use \"$(dibbla db connect shop -q)\" in the start command — it carries your API token, so not in this file\n" +
 		"DATABASE_URL_SHOP=\n"
 	if got != want {
 		t.Errorf("--replace:\n%s\nwant:\n%s", got, want)
@@ -271,5 +271,24 @@ func TestEnvPullHelpStatesTheModel(t *testing.T) {
 		if !strings.Contains(envPullCmd.Long, want) {
 			t.Errorf("--help lacks %q", want)
 		}
+	}
+}
+
+// DIB-1339: a plain env var the server flags as secret-looking is named, with
+// what to do about it — and its value is not printed.
+func TestEnvPullNamesVariablesThatLookLikeSecrets(t *testing.T) {
+	srv, _ := newEnvServer(t, 200, `{"deployment_alias":"shop","variables":[
+	  {"name":"PORT","value":"3000","source":"inline"},
+	  {"name":"STRIPE_SECRET_KEY","value":"sk_live_SYNTHETIC","source":"inline","looks_like_secret":true}
+	],"secrets":[]}`)
+	code, stdout, stderr := pull(t, srv, envPullInput{Dir: t.TempDir(), Deployment: "shop"})
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	if !strings.Contains(stdout, "STRIPE_SECRET_KEY look like secrets") || strings.Contains(stdout, "PORT look") || !strings.Contains(stdout, "dibbla secrets set NAME -d shop") {
+		t.Errorf("stdout:\n%s", stdout)
+	}
+	if strings.Contains(stdout+stderr, "sk_live_SYNTHETIC") {
+		t.Error("the value reached the terminal")
 	}
 }

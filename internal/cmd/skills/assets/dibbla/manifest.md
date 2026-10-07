@@ -218,15 +218,17 @@ services:
         FEATURE_FLAG_X: "false"
       prod:
         FEATURE_FLAG_X: "true"        # overlays default
-        SENTRY_DSN: "https://..."     # only in prod
+        API_BASE_URL: "https://api.example.com"   # only in prod
 ```
 
 Resolved environment for `--target-env prod`:
 ```
 LOG_LEVEL=info               (from default)
 FEATURE_FLAG_X=true          (prod overrides default)
-SENTRY_DSN=https://...       (prod-only)
+API_BASE_URL=https://api.example.com   (prod-only)
 ```
+
+`environment:` is for values that are not secret. A name that is one of the app's secrets is refused (`ENV_SHADOWS_SECRET`), and a name or value that looks like a secret is a deploy warning for a person and a refusal for an agent (`ENV_LOOKS_LIKE_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d <alias>` and reaches the container without a line here.
 
 You can mix flat and per-env forms across fields, but **not within one field**. The validator rejects `environment:` with mixed scalar and mapping values to keep resolution unambiguous.
 
@@ -268,11 +270,12 @@ services:
     public: true
     environment:
       default:
-        # In non-dev, MONGO_URL must come from somewhere outside the deploy:
-        #   — `dibbla apps update <alias> -e MONGO_URL=...`,
-        #   — a deployment secret, or
-        #   — shell-substituted from CI: `MONGO_URL=... dibbla deploy ...`.
-        MONGO_URL: ${MONGO_URL}
+        # Outside dev, MONGO_URL is a secret on the app — a managed database's
+        # URL carries its password. The person sets it once:
+        #   dibbla secrets set MONGO_URL -d <alias>     (value pasted on stdin)
+        # and it reaches the container without a line here. Naming it here
+        # would be refused (ENV_SHADOWS_SECRET).
+        LOG_LEVEL: info
       dev:
         # Service-discovery vars only resolve when `mongo` is in the active deploy.
         MONGO_URL: mongodb://${DIBBLA_SVC_MONGO_HOST}:${DIBBLA_SVC_MONGO_PORT}/
@@ -290,15 +293,16 @@ Deploy commands:
 
 ```bash
 # Dev — inline mongo container is part of the deploy, web reads ${DIBBLA_SVC_MONGO_*}
-dibbla deploy --target-env dev --profile dev -m "feat: ..."
+dibbla deploy --alias myapp-dev --target-env dev --profile dev -m "feat: ..."
 
-# Prod — mongo service is filtered out, web reads MONGO_URL from a managed source
-MONGO_URL=mongodb+srv://... dibbla deploy --target-env prod -m "feat: ..."
+# Prod — mongo service is filtered out, web reads MONGO_URL from the app's secret,
+# which the person set beforehand: dibbla secrets set MONGO_URL -d myapp
+dibbla deploy --alias myapp --target-env prod -m "feat: ..."
 ```
 
 Three things to know for this pattern:
 
-1. **`${DIBBLA_SVC_MONGO_*}` only resolves when `mongo` is in the active deploy.** That's why the `default:` branch above can't reuse those vars — they don't exist when mongo is profiled out. Use a different value source (managed-DB connection string, secret, shell var) for non-dev.
+1. **`${DIBBLA_SVC_MONGO_*}` only resolves when `mongo` is in the active deploy.** That's why the `default:` branch above can't reuse those vars — they don't exist when mongo is profiled out. For non-dev, the managed database's connection string is a secret the person sets on that app — never an `environment:` value, `-e` or shell variable, which would carry its password as plain text. Dev and prod are separate aliases here for the same reason: an app that has the secret `MONGO_URL` refuses an `environment:` entry of that name.
 2. **`depends_on` references are not env-filtered.** `depends_on: [mongo]` would stay valid in prod even though mongo is gone — at runtime the hint is just dropped (no `DEPENDS_ON_UNKNOWN`). Best practice for cross-profile deps: omit `depends_on` and rely on application-level retry (PyMongo reconnect, libpq retry, etc.) for connection robustness.
 3. **`--target-env dev` and `--profile dev` are independent flags.** The first selects the env-aware `dev:` branch; the second activates `profiles: [dev]` services. You almost always want both together for the dev variant — combine them in your dev deploy command (or wrap in a `make dev-deploy` target so you don't have to remember).
 
@@ -618,6 +622,7 @@ Rules:
 - v1 supports `image:` only — no `build:` for init containers. The container has to be a pre-built pulled image. Use a build step in your CI to produce one if you need code from this repo.
 - Each init container must **exit cleanly**. An init that runs forever blocks the rollout and the deploy will time out.
 - `environment:` here is a flat map (no per-env form); use a single map of literals or `${VAR}` substitutions.
+- **An init container gets no Dibbla secrets** — only that literal map, and a non-`DIBBLA_*` `${VAR}` in it is filled in from the deploy shell and written into the manifest as plain text. Never put a secret there. A migration that needs the database URL runs at the start of the service's own container instead (its `CMD`/entrypoint), where `DATABASE_URL_<NAME>` is injected.
 - `name:` must be unique within the service and DNS-safe (matches `^[a-z][a-z0-9-]{0,29}$`).
 
 Init containers count against the deploy's pod resource budget — the cluster needs to schedule them too. They share the pod's PVCs (so an init can write fixtures into a `/data` mount the main container then reads).
@@ -859,7 +864,7 @@ RUN --mount=type=secret,id=npm_token \
     NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
 ```
 
-The platform mounts the secret value into the BuildKit Solve via the named id; the value never lands in the image layer. You provide the value via `dibbla secrets set NPM_TOKEN_SECRET <value>` (deployment-wide, since builds happen before per-service routing).
+The platform mounts the secret value into the BuildKit Solve via the named id; the value never lands in the image layer. The person provides the value with `dibbla secrets set NPM_TOKEN_SECRET -d <alias>`, pasted on stdin (deployment-wide, since builds happen before per-service routing); an agent names the secret and never supplies the value.
 
 - `id` is the BuildKit identifier referenced in the Dockerfile (`--mount=…,id=<id>`).
 - `source` is the name of the secret in the dibbla secrets store. Per-service build secrets are not supported in v1 — the build is one operation per service, and the secret is scoped to that build.
@@ -905,7 +910,7 @@ services:
 # .github/workflows/deploy.yml
 env:
   BUILD_VERSION: ${{ github.sha }}
-  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+  RELEASE_CHANNEL: ${{ vars.RELEASE_CHANNEL }}
 
 steps:
   - run: dibbla deploy . --alias myapp --target-env prod -m "deploy ${{ github.sha }}"
@@ -920,9 +925,11 @@ services:
     public: true
     environment:
       APP_VERSION: ${BUILD_VERSION}    # GitHub SHA
-      SENTRY_DSN:  ${SENTRY_DSN:-}     # empty default if unset
+      RELEASE_CHANNEL: ${RELEASE_CHANNEL:-stable}   # default if unset
       LOG_LEVEL:   info
 ```
+
+**Never substitute a secret.** The value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d <alias>` and reaches the container without a line in `environment:`.
 
 **Difference from server-side `${DIBBLA_*}`:** two non-overlapping substitution layers. The CLI handles user shell vars (anything NOT starting with `DIBBLA_`); the server handles platform discovery vars (`DIBBLA_*`) at render time. Both pass through unchanged on the other side.
 
@@ -1036,15 +1043,15 @@ services:
         LOG_LEVEL: info
         NODE_ENV: production
       prod:
-        SENTRY_DSN: ${SENTRY_DSN}     # comes from a runtime secret of the same name
+        LOG_LEVEL: warn               # SENTRY_DSN is a secret: no line here, see below
       staging:
         LOG_LEVEL: debug
     init:
-      - name: migrate
-        image: registry.example.com/migrate:v1
-        command: [migrate, up]
+      - name: wait-for-redis          # an init gets no secrets — see § 11
+        image: busybox:1.36
+        command: [sh, -c, "until nc -z $REDIS_HOST 6379; do sleep 1; done"]
         environment:
-          DATABASE_URL: ${DATABASE_URL}
+          REDIS_HOST: ${DIBBLA_SVC_REDIS_HOST}
     healthcheck:
       liveness:
         http_get: { path: /healthz }
@@ -1118,8 +1125,9 @@ Operate per-service afterwards:
 ```bash
 dibbla logs myapp --service worker -f
 dibbla apps restart myapp --service worker
-dibbla secrets set NPM_TOKEN_SECRET <token> -d myapp           # build-time secret
-dibbla secrets set SENTRY_DSN https://... -d myapp --service web
+# The person runs these and pastes each value on stdin — an agent never supplies it:
+dibbla secrets set NPM_TOKEN_SECRET -d myapp                   # build-time secret
+dibbla secrets set SENTRY_DSN -d myapp --service web           # only web sees it
 ```
 
 ---

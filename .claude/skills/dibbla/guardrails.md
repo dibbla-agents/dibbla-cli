@@ -41,6 +41,24 @@ Mandatory for every deploy. Scan all application source files for:
 | Weak authentication in app-managed login (A07) — the app stores or checks credentials itself | BLOCKER | Passwords stored in plaintext or hashed with `md5`/`sha1`/`sha256` and no salt — use `bcrypt`, `scrypt` or `argon2id`; sessions/JWTs that never expire (`expiresIn` missing, `maxAge` unset), a session ID not rotated at login, a password reset token that is guessable or never invalidated; `cookie: { secure: false, httpOnly: false }`; login that reports "unknown user" vs "wrong password" separately. Applies only when the app has its own login — if it delegates to Dibbla `require_login` / OAuth, this row is N/A (note that in the report). |
 | Missing rate limiting on abuse-prone endpoints (A04) — login, signup, password reset, OTP/2FA, contact/email forms, expensive search or export | WARNING | `POST /login`, `POST /reset-password`, `POST /verify-code`, `POST /contact` with no rate-limit middleware (`express-rate-limit`, `slowapi`, `golang.org/x/time/rate`, `rack-attack`) and no lockout/backoff after repeated failures; an unauthenticated endpoint that triggers outbound email/SMS or an LLM call per request. Escalate to BLOCKER when the endpoint checks a short secret (OTP, PIN, reset code) — without a limit it is brute-forceable in minutes. |
 
+**A hardcoded secret is reported by place, never by value.** Name the file, the
+line and what it is — `src/pay.js:12 — a Stripe live secret key` — and never
+quote the value: not in the report, not in `REVIEW.md` (it is committed with the
+code), not in chat. Do not open `.env`, `.env.local`, `*.pem` or `*.key` to
+check them; whether git can see such a file is a question for `.gitignore` and
+`git ls-files`, not for its contents. Search so the output names the place
+rather than the value: `git grep -nIE 'sk_live_|ghp_|AKIA' | cut -d: -f1,2` in
+the tree, `git log -G'sk_live_' --format=%h --name-only` in the history. The
+fix has two halves:
+
+1. **Yours:** remove the value from the code, read the environment variable
+   instead, and add the name to `.env.example` (`NAME= # what it is`).
+2. **The person's:** rotate the key at its provider first — a key that was
+   committed is compromised, and moving it into a secret does not replace it —
+   then set the new value with `dibbla secrets set NAME -d <alias>` (pasted on
+   stdin) or the console's Secrets page. Never ask for the value to be pasted to
+   you.
+
 ---
 
 ## Check 2: Database usage

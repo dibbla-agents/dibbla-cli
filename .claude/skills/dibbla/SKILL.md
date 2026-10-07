@@ -44,6 +44,34 @@ nothing remote can reach.
 
 For what the connector can do at all, see [platform.md](platform.md) §0.
 
+## Secrets — rules for an AI agent
+
+A secret's value never passes through you. Dibbla makes secrets write-only — no
+command, API or tool hands one back — and these rules keep a value from coming
+in by another door. Every example in this skill follows them.
+
+- **Never read, print, echo, `cat`, `grep` or log a secret's value** — including
+  the contents of `.env`, `.env.local`, `*.pem` and `*.key`. Read `.env.example`
+  for the names the app needs.
+- **Never type a secret's value into a command:** not `dibbla secrets set NAME value`,
+  not a secret in `-e` / `--env-file` / `dibbla.yaml` `environment:`, not
+  `echo "…" | dibbla secrets set NAME`.
+- **When a task needs a secret, the person sets it.** Name the secret and give
+  them the command: `dibbla secrets set NAME -d <alias>` in their own terminal,
+  value pasted on stdin (it works before the app's first deploy), or the
+  console's Secrets page. A file of secrets they wrote goes in with
+  `dibbla secrets import <file> -d <alias>`, which never prints a value.
+- **Never pass `--allow-secret-env`.** When the platform says an env var looks
+  like a secret (`ENV_LOOKS_LIKE_SECRET`), it goes in as a secret, set by the
+  person. `ENV_SHADOWS_SECRET` means the name already is one of the app's
+  secrets: drop the env var — the app already gets the secret.
+- **`dibbla db connect` prints the person's own Dibbla API token** as the URL's
+  password — an account-wide credential. Use it only inside `$(...)`
+  (`psql "$(dibbla db connect <name> -q)"`); never print, echo or save its output.
+- **A secret you come across anyway** — hardcoded in source, in a log — is
+  reported by file, line and kind, never repeated. The person rotates it at its
+  provider: a value that was exposed is not made safe by moving it.
+
 ## Prerequisites
 
 **Install the CLI** if it isn't already on the user's `PATH`:
@@ -123,18 +151,22 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 
 **Deploying an app for the first time:**
 1. Check if the app already exists: `dibbla apps list`
-2. If it does **not** exist, deploy with all required environment variables included in the deploy command — there is no app to attach them to yet:
+2. If it does **not** exist, secrets come first. List the ones the app reads (`.env.example`, or the code's environment reads) and ask the person to set each on the alias — a secret can be set for an alias that has not been deployed yet, and the app gets it when it starts. A managed database brings its own: `dibbla db create <name> --deployment my-app` creates the `DATABASE_URL_<NAME>` secret.
    ```bash
-   dibbla deploy . --alias my-app -m "feat: initial deploy" \
-     -e DATABASE_URL=postgres://... -e API_KEY=secret -e NODE_ENV=production
+   # The person runs this in their own terminal and pastes the value on stdin (then Ctrl-D):
+   dibbla secrets set STRIPE_API_KEY -d my-app
+   ```
+   Then deploy, with `-e` only for values that are not secret:
+   ```bash
+   dibbla deploy . --alias my-app -m "feat: initial deploy" -e NODE_ENV=production
    ```
 3. If it **already** exists, use `--update` for a zero-downtime rolling update:
    ```bash
    dibbla deploy . --alias my-app -m "fix: resolve 500 on /search" --update
    ```
-   To change env vars on an existing app, use `apps update` instead:
+   To change env vars on an existing app, use `apps update` instead — values that are not secret only; a secret is changed by the person with `dibbla secrets set NAME -d my-app` or in the console:
    ```bash
-   dibbla apps update my-app -e NEW_VAR=value
+   dibbla apps update my-app -e LOG_LEVEL=debug
    ```
 
 **Key rules:**
@@ -143,15 +175,15 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
   - When the user says "save", "spara", "publish", "ship" or "deploy" in a directory with a local git repo and no remote, run `dibbla deploy . --alias <app> -m "<what changed>" --update`. Do **not** propose GitHub/GitLab, `git remote add` or `git push` as the way to save or share the app.
   - In a `dibbla clone` directory, deliver changes the same way and never attempt `git push` to the Dibbla remote — the platform answers **403 by design** (`push is not permitted; use the deploy pipeline`): the repo is written by deploys, not by pushes. If a push has already been rejected, explain in the user's own language that *Dibbla saves what is deployed — every deploy is a commit — so the way to save the change is `dibbla deploy --update`, not `git push`*, then deploy.
   - Local commits are fine to keep making; they are just not the delivery step. A GitHub mirror, if the org has one, is filled by deploys too — it never needs a push from you.
-- **Secrets and the local environment — values live in Dibbla, names live in the code.** A safe and a row of keyholes: the values sit in Dibbla's safe (`dibbla secrets set`, plus the platform's `DATABASE_URL_*`, `STORAGE_*`, `DIBBLA_*`); `.env.example` in the repo lists the keyholes — `NAME= # what it is` per line, committed, the one `.env*` the platform keeps. An **env var** is not sensitive: its value may be read and used freely. A **secret** is write-only: the safe opens only into the running app — Dibbla never hands out a secret's value, not to the CLI, not to an API, not to you. `dibbla env pull` copies the variables with their values into `.env.local` here, and each secret by name only, as an empty `NAME=` line; that file never goes back (`.gitignore` — the command adds the line — the VCS filter and the push hook all refuse it). **"Set up a local environment"** in a linked folder = (1) read `.env.example`, (2) `dibbla env pull`, (3) say in one sentence: settings fetched from Dibbla, only on this computer; each secret arrives empty and needs a development value (a test key, a sandbox account) — never the app's real one, (4) for each `DATABASE_URL_<NAME>`, offer a local Postgres, or — if the person wants the app's real data — `dibbla db connect <name> -q`, and then say plainly that the app runs here against the same database as the real app, (5) start the app as the Dockerfile/template does, with each `DATABASE_URL_<NAME>` set in the start command from `dibbla db connect <name> -q` or the local Postgres URL. `db connect` reaches the app's database through the public proxy, signed in with your own Dibbla login; `env pull` leaves the line empty with a hint pointing there. Set it in the start command (`docker run --env-file .env.local -e DATABASE_URL_<NAME>=…`, or `export` before `npm run dev` / `go run .`). A bucket's `STORAGE_<NAME>_*` keys cannot be fetched with the CLI at all (`storage credentials` was removed) — use a local S3-compatible store or run without the bucket. A secret line that already has a value is the developer's own and no pull overwrites it, not even `--replace`; if `env pull` names such lines and the file predates write-only secrets, they hold the app's real secrets — tell the person to replace them with development values. When a task needs a secret's value, do not look for a way to read it: a secret's value cannot be read. Ask the person to set it themselves — `dibbla secrets set`, the console, or the /platform connector's secret request page — and never have a secret value pasted through an AI assistant. **New secret:** the person sets it (`dibbla secrets set NAME -d <alias>`, value on stdin, or the console) → name into `.env.example` → `dibbla env pull` adds the empty line for a development value; never `.env.local` by hand as the only place. A `.env.local` git can see is the finding, not the file. Walkthrough: `examples.md` → "Set up a local development environment".
+- **Secrets and the local environment — values live in Dibbla, names live in the code.** A safe and a row of keyholes: the values sit in Dibbla's safe (`dibbla secrets set`, plus the platform's `DATABASE_URL_*`, `STORAGE_*`, `DIBBLA_*`); `.env.example` in the repo lists the keyholes — `NAME= # what it is` per line, committed, the one `.env*` the platform keeps. An **env var** is not sensitive: its value may be read and used freely. A **secret** is write-only: the safe opens only into the running app — Dibbla never hands out a secret's value, not to the CLI, not to an API, not to you. `dibbla env pull` copies the variables with their values into `.env.local` here, and each secret by name only, as an empty `NAME=` line; that file never goes back (`.gitignore` — the command adds the line — the VCS filter and the push hook all refuse it). **"Set up a local environment"** in a linked folder = (1) read `.env.example`, (2) `dibbla env pull`, (3) say in one sentence: settings fetched from Dibbla, only on this computer; each secret arrives empty and needs a development value (a test key, a sandbox account) — never the app's real one, (4) for each `DATABASE_URL_<NAME>`, offer a local Postgres, or — if the person wants the app's real data — the URL from `dibbla db connect <name> -q`, and then say plainly that the app runs here against the same database as the real app, (5) start the app as the Dockerfile/template does, with each `DATABASE_URL_<NAME>` set in the start command from `dibbla db connect <name> -q` or the local Postgres URL. `db connect` reaches the app's database through the public proxy, signed in with your own Dibbla login — its password is the person's API token, so it only ever appears inside `$(...)`; `env pull` leaves the line empty with a hint pointing there. Set it in the start command (`docker run --env-file .env.local -e DATABASE_URL_<NAME>="$(dibbla db connect <name> -q)"`, or `export` it the same way before `npm run dev` / `go run .`). A bucket's `STORAGE_<NAME>_*` keys cannot be fetched with the CLI at all (`storage credentials` was removed) — use a local S3-compatible store or run without the bucket. A secret line that already has a value is the developer's own and no pull overwrites it, not even `--replace`; if `env pull` names such lines and the file predates write-only secrets, they hold the app's real secrets — tell the person to replace them with development values. When a task needs a secret's value, do not look for a way to read it: a secret's value cannot be read. Ask the person to set it themselves — `dibbla secrets set`, the console, or the /platform connector's secret request page — and never have a secret value pasted through an AI assistant. **New secret:** the person sets it (`dibbla secrets set NAME -d <alias>`, value on stdin, or the console) → name into `.env.example` → `dibbla env pull` adds the empty line for a development value; never `.env.local` by hand as the only place. A `.env.local` git can see is the finding, not the file. Walkthrough: `examples.md` → "Set up a local development environment".
 - `--force` recreates the deployment after a successful build (brief restart). A failed build leaves the running app untouched. Prefer `--update` for existing apps (rolling, zero downtime).
 - `--force` and `--update` are mutually exclusive.
 - **Continuing work on another machine — `dibbla clone` vs. GitHub.** The deploy history *is* the sync between machines: every `dibbla deploy` is a commit in the app's Dibbla-managed repo. When the code is not on this machine, the flow is `dibbla login` → `dibbla clone <app> --into <dir>` → work → `dibbla deploy . --alias <app> -m "…" --update`. The clone holds exactly what was last deployed — **not** uncommitted or undeployed edits on the other machine, and no `.env`/secrets (those stay on the platform and survive `--update`; `.env.example` with the names *is* there, and `dibbla env pull` fetches the variables and the secrets' names for a local run) — and `--ref <sha>` checks out an older deploy. Changes go back with `deploy --update`, never `git push` (see "Where the code history lives"). If the team already keeps the source on GitHub/GitLab, clone from there and use `dibbla clone` to inspect what is actually running — but never *introduce* GitHub for the sake of saving. Walkthrough in `examples.md` → "Continue work on another machine".
-- Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once.
+- Environment variables set via `deploy -e` or `apps update -e` persist across updates — you only need to pass them once. They are for values that are not secret (`NODE_ENV`, `LOG_LEVEL`, a public URL): every env write — `-e`, `--env-file`, `dibbla.yaml` `environment:` — is refused when the name is one of the app's secrets (`ENV_SHADOWS_SECRET`, no override) or the name or value looks like a secret (`ENV_LOOKS_LIKE_SECRET`). Only a person may pass `--allow-secret-env`, for a value that is not a secret; an agent never does — the value goes in as a secret the person sets.
 - **Login guard:** Use `--require-login` to require authentication. Combine with `--access-policy invite_only` to restrict to invited users, or `all_members` for org-wide access. Use `--google-scopes` to request additional Google OAuth scopes (e.g. Drive, Calendar). Invitations to an `invite_only` app are made in the console's **Access & users** dialog: **Add member** for org members, **Invite by email** for anyone else — the latter grants access to that app only and never adds the person to the organisation (see `platform.md` §9).
 - Use `--quiet` / `-q` on `db list`, `db delete`, `db connect` for machine-readable output in scripts.
 - `db create --deployment <alias>` scopes the database and its auto-created secret to a specific deployment. The scoped secret is named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `DATABASE_URL_MY_DB` for database `my_db`), **not** a plain `DATABASE_URL` — app code must read the suffixed env var.
-- `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Use `-q` for scripting: `psql $(dibbla db connect mydb -q)`.
+- `db connect` prints a psql-compatible connection string via the Dibbla database proxy. Its password is the person's own Dibbla API token — an account-wide credential, not a database password. A person may print it at their terminal; an agent uses it only inside `$(...)` — `psql "$(dibbla db connect mydb -q)"` — and never prints it, echoes it or writes it to a file.
 - `storage create` provisions an S3 bucket with a **hard quota** and bucket-scoped credentials injected as `STORAGE_<NAME>_*` secrets (`<NAME>` = bucket name uppercased, hyphens → underscores; bucket `my-uploads` → `STORAGE_MY_UPLOADS_ACCESS_KEY_ID` etc.). App code reads those env vars and speaks plain S3. `storage rotate` restarts the bound deployment's services by design (envFrom secrets only refresh on restart) — use `--no-restart` only if you restart yourself. The keys are secrets, so nothing hands them out: `storage credentials` was removed and only explains that.
 - **Document the schema in the database itself.** After creating or migrating tables, set `COMMENT ON DATABASE`, `COMMENT ON TABLE` and `COMMENT ON COLUMN`. Postgres stores these alongside the schema, so unlike a README they cannot drift from it; the console renders them, and its database agent answers from documented meaning instead of inferring from identifiers.
 

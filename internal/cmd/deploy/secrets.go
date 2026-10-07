@@ -41,9 +41,13 @@ var secretsListCmd = &cobra.Command{
 var secretsSetCmd = &cobra.Command{
 	Use:   "set <name> [value]",
 	Short: "Create or update a secret",
-	Long:  `Set a secret by name. If value is omitted, it is read from stdin (e.g. echo "secret" | dibbla secrets set API_KEY). Use --deployment to attach to an app.`,
-	Args:  cobra.RangeArgs(1, 2),
-	Run:   runSecretsSet,
+	Long: `Set a secret by name. Leave the value out and it is read from stdin: paste it,
+then Ctrl-D (Ctrl-Z, Enter on Windows), or redirect a file (< key.txt). A value
+typed as an argument lands in your shell history — and, when an AI assistant
+runs the command, in its transcript. Use --deployment to attach to an app; it
+works before the app's first deploy.`,
+	Args: cobra.RangeArgs(1, 2),
+	Run:  runSecretsSet,
 }
 
 // secretsGetCmd stays registered so `secrets get` explains itself instead of
@@ -90,7 +94,7 @@ the deploy root is a pre-deploy guardrail BLOCKER and is stripped from VCS.
 Examples:
   dibbla secrets import .env
   dibbla secrets import ../secrets/.env.prod -d shop
-  dibbla secrets import .env -d shop -s web -e API_KEY=override
+  dibbla secrets import .env -d shop -s web -e STRIPE_MODE=test
   dibbla secrets import .env -d shop --dry-run`,
 	Args: cobra.ExactArgs(1),
 	Run:  runSecretsImport,
