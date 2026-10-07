@@ -141,9 +141,11 @@ the container image.
 
 **Dibbla does.** Keeps secrets outside your code entirely: `dibbla secrets set`
 stores them and the platform injects them as environment variables when the app
-runs. Uploads are stripped of `.env` files — only `.env.example` (names, no values)
-travels with your code. `dibbla env pull` gives you the real values locally without
-ever committing them.
+runs. A secret is write-only: once set, Dibbla never hands its value out again —
+not to the CLI, not to an API, not to an AI assistant. Uploads are stripped of
+`.env` files — only `.env.example` (names, no values) travels with your code.
+`dibbla env pull` gives you the names locally, to fill in with development values,
+without ever committing them.
 
 **Ask your agent.**
 

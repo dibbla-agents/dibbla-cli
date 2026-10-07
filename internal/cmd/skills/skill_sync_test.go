@@ -128,7 +128,10 @@ func TestSkill_DocumentsEnvPull(t *testing.T) {
 		{"examples.md", examples, "dibbla secrets set STRIPE_API_KEY"},
 		{"guardrails.md", guardrails, "A `.env.local` that *is* in `.gitignore` is expected"},
 		{"platform.md", platform, "**Except `.env.example` and `.env.sample`**"},
-		{"platform.md", platform, "`secrets get`, `env pull`, `storage credentials`, `db connect`"},
+		// DIB-1338: secrets are write-only, so the reveal row names only
+		// `db connect`, and env pull is said to reveal no secret value.
+		{"platform.md", platform, "| `cli.credentials.reveal` | `db connect` |"},
+		{"platform.md", platform, "`env pull` reveals no secret value"},
 	} {
 		if !strings.Contains(want.doc, want.needle) {
 			t.Errorf("%s no longer contains %q", want.file, want.needle)
@@ -141,11 +144,10 @@ func TestSkill_DocumentsEnvPull(t *testing.T) {
 }
 
 // TestSkill_LocalRunTakesDatabaseURLFromDBConnect pins where a local run gets
-// its database URL. On instances that do not inject the proxy URL, the
-// DATABASE_URL_* that `env pull` writes is a cluster-internal host: an agent
-// that starts the app with it gets `no such host`, and one that pastes the
-// `db connect` URL into .env.local has it overwritten by the next pull. The
-// skill must send local runs to `dibbla db connect`, set in the start command.
+// its database URL. `env pull` writes DATABASE_URL_* by name only — it is a
+// secret, write-only since DIB-1337 — and `dibbla db connect` is the way to a
+// connection of your own. That URL carries the person's API token, so the
+// skill sends it into the start command rather than into .env.local.
 func TestSkill_LocalRunTakesDatabaseURLFromDBConnect(t *testing.T) {
 	read := func(path string) string {
 		data, err := os.ReadFile(path)

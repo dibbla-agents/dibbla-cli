@@ -298,7 +298,7 @@ func yamlList(items []string) string {
 
 // readme is the human entry point of the export: what is in it and how to
 // bring it up somewhere else.
-func readme(m *Manifest, includeSecrets bool) string {
+func readme(m *Manifest) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Export of %s from Dibbla\n\n", m.App.Alias)
 	fmt.Fprintf(&b, "Exported %s", m.ExportedAt.Format("2006-01-02 15:04 UTC"))
@@ -328,11 +328,7 @@ func readme(m *Manifest, includeSecrets bool) string {
 	b.WriteString("| `dibbla-export.json` | machine-readable inventory of this export | JSON |\n\n")
 
 	b.WriteString("## Secrets\n\n")
-	if includeSecrets {
-		b.WriteString("Secret values **are included** in the `env/` files (you asked for `--include-secrets`). Treat this directory as you would a password file.\n\n")
-	} else {
-		b.WriteString("Secret values are **not** included: the `env/` files list every variable name the app reads, with blanks where a secret was. Fill them in, or re-run `dibbla export --include-secrets` to export the values.\n\n")
-	}
+	b.WriteString("Secret values are **not** part of an export: a secret is write-only on Dibbla, and no API, CLI or export hands out its value. The `env/` files list every name the app reads, with a blank where a secret is. Fill them in from wherever you keep the originals.\n\n")
 
 	b.WriteString("## Run it locally\n\n")
 	b.WriteString("Requires Docker with the compose plugin.\n\n```\ndocker compose up --build\n```\n\n")

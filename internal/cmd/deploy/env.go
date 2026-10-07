@@ -33,21 +33,28 @@ const envHeader = "# Pulled from Dibbla — lives only on this machine; run 'dib
 var envCmd = &cobra.Command{
 	Use:   "env",
 	Short: "The app's environment on this machine (values live in Dibbla, names in the code)",
-	Long: `Values live in Dibbla, names live in the code. Secrets and the variables the
-platform generates (DATABASE_URL_*, STORAGE_*, DIBBLA_*) are injected into the
-app when it runs; .env.example in the repository lists the names the app
-needs. 'dibbla env pull' fetches the values to a local .env.local so the app
-can run here — that file never goes back: .gitignore, the VCS filter and the
-push hook all refuse it.`,
+	Long: `Values live in Dibbla, names live in the code. Variables and secrets are
+injected into the app when it runs; .env.example in the repository lists the
+names the app needs. 'dibbla env pull' fetches the variables' values and the
+secrets' names to a local .env.local so the app can run here. A secret's value
+never leaves Dibbla: you set your own development value for each. The file
+never goes back: .gitignore, the VCS filter and the push hook all refuse it.`,
 }
 
 var envPullCmd = &cobra.Command{
 	Use:   "pull",
 	Short: "Write the app's environment to .env.local for running it locally",
-	Long: `Fetch the app's environment — its secrets, resolved exactly as the running
-app gets them (global, then per app, then per service with --service), plus
-the platform-generated variables it sees (DATABASE_URL_*, STORAGE_*,
-DIBBLA_*) — and write it to .env.local in the current folder.
+	Long: `Fetch the app's environment, resolved exactly as the running app gets it
+(global, then per app, then per service with --service), and write it to
+.env.local in the current folder: every variable with its value, and every
+secret by name.
+
+Secrets are write-only. Dibbla never hands out a secret's value — not to this
+command, not to an API, not to an AI assistant — so a secret arrives in
+.env.local as an empty NAME= line. Fill in a development value of your own (a
+test key, a local database). A secret line that already has a value is yours
+and is never overwritten, not even by --replace. For the app's database,
+'dibbla db connect <name>' gives you a connection of your own.
 
 Values live in Dibbla, names live in the code: keep the names in .env.example
 (committed), set a new value with 'dibbla secrets set', and run this again.
@@ -55,16 +62,12 @@ The file lives only on this machine; .gitignore gets a .env.local line if it
 lacks one, and the VCS filter and the push hook refuse the file on top of that.
 
 The app is the one this folder is linked to (dibbla clone / dibbla link), or
---deployment <alias>. An existing .env.local is updated in place: keys that
-exist in Dibbla are refreshed, everything else you put there stays; --replace
-rewrites the whole file.
+--deployment <alias>. An existing .env.local is updated in place: variables
+that exist in Dibbla are refreshed, everything else you put there stays;
+--replace rewrites the file, keeping only the secrets you filled in.
 
-A local run with this file talks to the app's real database and buckets —
-Dibbla has one environment per app. Say so before starting the app, and offer
-a local Postgres if the person wants to work in isolation.
-
-Reading values needs the deploy roles (owner, admin, developer), the same rule
-as 'dibbla secrets get'; a viewer is refused.
+Reading the environment needs the deploy roles (owner, admin, developer); a
+viewer is refused.
 
 Examples:
   dibbla env pull                          # linked folder → .env.local
@@ -149,7 +152,7 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 		var statusErr *apps.StatusError
 		if errors.As(err, &statusErr) && statusErr.Status == 403 && statusErr.Code == "ROLE_FORBIDDEN" {
 			fmt.Fprintf(stderr, "%s env pull %s refused: %s\n", bad, alias, statusErr.Message)
-			fmt.Fprintln(stderr, "  Reading values needs the deploy roles (owner, admin, developer) — the same rule as 'dibbla secrets get'.")
+			fmt.Fprintln(stderr, "  Reading the environment needs the deploy roles (owner, admin, developer).")
 			return statusErr.ExitCode()
 		}
 		return reportAppError(stderr, "env pull", alias, err)
@@ -160,15 +163,20 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 	}
 	vars := doc.Variables
 	sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
+	secretNames := doc.Secrets
+	sort.Slice(secretNames, func(i, j int) bool { return secretNames[i].Name < secretNames[j].Name })
 	if in.Stdout {
 		for _, v := range vars {
 			fmt.Fprintln(stdout, envfile.FormatLine(v.Name, v.Value))
+		}
+		for _, sec := range secretNames {
+			fmt.Fprintf(stdout, "# %s is a secret: Dibbla never hands out its value\n", sec.Name)
 		}
 		return 0
 	}
 
 	path := filepath.Join(in.Dir, envLocalFile)
-	written, kept, err := writeEnvLocal(path, vars, in.Replace)
+	kept, filled, err := writeEnvLocal(path, vars, secretNames, in.Replace)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s %v\n", bad, err)
 		return 1
@@ -182,14 +190,19 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 
 	fmt.Fprintf(stdout, "%s %s: %d variable(s) from Dibbla (app %s%s) — %s\n",
 		platform.Icon("✅", "[OK]"), envLocalFile, len(vars), alias, serviceSuffix(doc.Service), summarizeSources(vars))
+	if n := len(secretNames); n > 0 {
+		fmt.Fprintf(stdout, "   %d secret(s) by name only — Dibbla never hands out a secret's value; fill in development values (%d already set here)\n", n, len(filled))
+	}
+	if len(filled) > 0 {
+		fmt.Fprintf(stdout, "   kept your local values for %s. If they came from a pull before secrets were write-only, they are the app's real secrets: replace them with development values.\n", strings.Join(filled, ", "))
+	}
 	if kept > 0 {
 		fmt.Fprintf(stdout, "   kept %d local line(s) that Dibbla does not know about (--replace rewrites the file)\n", kept)
 	}
 	if added {
 		fmt.Fprintf(stdout, "   added %s to .gitignore so git never sees it\n", envLocalFile)
 	}
-	fmt.Fprintln(stdout, "   This file lives only on this machine. A local run with it uses the app's real database and buckets.")
-	_ = written
+	fmt.Fprintln(stdout, "   This file lives only on this machine.")
 	return 0
 }
 
@@ -200,8 +213,8 @@ func serviceSuffix(service string) string {
 	return ", service " + service
 }
 
-// summarizeSources renders "3 global, 7 app, 2 platform" — names and counts
-// only, never values.
+// summarizeSources renders "3 inline, 2 platform" — names and counts only,
+// never values.
 func summarizeSources(vars []apps.EnvVariable) string {
 	counts := map[string]int{}
 	for _, v := range vars {
@@ -221,47 +234,100 @@ func summarizeSources(vars []apps.EnvVariable) string {
 	return strings.Join(parts, ", ")
 }
 
-// writeEnvLocal writes vars to path. With replace, the file is the header and
-// the variables and nothing else. Otherwise an existing file is updated in
-// place — keys Dibbla knows are refreshed where they stand, every other line
-// (a local override, a comment) survives, new keys are appended — and the
-// header is put on top if it is missing. Returns the keys written and the
-// number of lines kept that Dibbla did not decide.
-func writeEnvLocal(path string, vars []apps.EnvVariable, replace bool) (written []string, kept int, err error) {
+// secretsBlockHeader introduces the secret lines env pull appends. Recognised
+// on re-pull so it is written once.
+const secretsBlockHeader = "# Secrets: Dibbla never hands out a secret's value. Set a development value for each one here."
+
+// secretHint is the comment written above a secret's empty line when there is
+// something more specific to say than the block header.
+func secretHint(name string) string {
+	if db, ok := strings.CutPrefix(name, "DATABASE_URL_"); ok && db != "" {
+		return fmt.Sprintf("# %s: for a connection of your own, run 'dibbla db connect %s'", name, strings.ToLower(db))
+	}
+	return ""
+}
+
+// writeEnvLocal writes the pulled environment to path.
+//
+// Variables carry their values. With replace, the file is the header, the
+// variables and the secrets and nothing else. Otherwise an existing file is
+// updated in place — variables Dibbla knows are refreshed where they stand,
+// every other line (a local override, a comment) survives, new variables are
+// appended — and the header is put on top if it is missing.
+//
+// Secrets come by name only (DIB-1337). A secret's line that is already in the
+// file is the developer's own and is never touched, not even by replace; a
+// missing one is appended as an empty NAME= line under secretsBlockHeader.
+//
+// Returns the number of lines kept that Dibbla did not decide (secret lines
+// excluded) and the names of the secrets that already had a local value.
+func writeEnvLocal(path string, vars []apps.EnvVariable, secrets []apps.EnvSecret, replace bool) (kept int, filled []string, err error) {
 	updates := make(map[string]string, len(vars))
 	for _, v := range vars {
 		updates[v.Name] = v.Value
 	}
-	if replace {
-		var b strings.Builder
-		b.WriteString(envHeader + "\n")
-		for _, v := range vars {
-			b.WriteString(envfile.FormatLine(v.Name, v.Value) + "\n")
-			written = append(written, v.Name)
-		}
-		return written, 0, envfile.WriteFile(path, []byte(b.String()))
+	isSecret := make(map[string]bool, len(secrets))
+	for _, sec := range secrets {
+		isSecret[sec.Name] = true
+		// A secret's name is never written as a variable, even if a variable
+		// of the same name came back too.
+		delete(updates, sec.Name)
 	}
+
 	existing, rerr := os.ReadFile(path)
 	if rerr != nil && !os.IsNotExist(rerr) {
-		return nil, 0, fmt.Errorf("read %s: %w", path, rerr)
+		return 0, nil, fmt.Errorf("read %s: %w", path, rerr)
 	}
-	hasHeader := false
+	localSecret := map[string]string{} // secret name → its line as it stands
+	hasHeader, hasSecretsHeader := false, false
 	for _, line := range strings.Split(string(existing), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == envHeader {
+		switch trimmed {
+		case envHeader:
 			hasHeader = true
 			continue
-		}
-		if trimmed == "" {
+		case secretsBlockHeader:
+			hasSecretsHeader = true
+			continue
+		case "":
 			continue
 		}
 		if key, ok := envfile.ParseKey(line); ok {
+			if isSecret[key] {
+				if _, seen := localSecret[key]; !seen {
+					localSecret[key] = line
+					if hasLocalValue(line) {
+						filled = append(filled, key)
+					}
+				}
+				continue
+			}
 			if _, fromDibbla := updates[key]; fromDibbla {
 				continue
 			}
 		}
+		if strings.HasPrefix(trimmed, "# DATABASE_URL_") && strings.Contains(trimmed, "dibbla db connect") {
+			continue // a hint this command wrote
+		}
 		kept++
 	}
+	sort.Strings(filled)
+
+	if replace {
+		var b strings.Builder
+		b.WriteString(envHeader + "\n")
+		names := make([]string, 0, len(updates))
+		for name := range updates {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			b.WriteString(envfile.FormatLine(name, updates[name]) + "\n")
+		}
+		writeSecretsBlock(&b, secrets, localSecret)
+		return 0, filled, envfile.WriteFile(path, []byte(b.String()))
+	}
+
 	if len(existing) == 0 || !hasHeader {
 		// Header first: a file that starts with what it is, before any value.
 		body := string(existing)
@@ -269,9 +335,73 @@ func writeEnvLocal(path string, vars []apps.EnvVariable, replace bool) (written 
 			body += "\n"
 		}
 		if err := envfile.WriteFile(path, []byte(envHeader+"\n"+body)); err != nil {
-			return nil, 0, err
+			return 0, nil, err
 		}
 	}
-	written, err = envfile.MergeEnvFile(path, updates)
-	return written, kept, err
+	if _, err := envfile.MergeEnvFile(path, updates); err != nil {
+		return 0, nil, err
+	}
+
+	// Append the secrets the file does not name yet; the ones it does are
+	// left exactly as they are.
+	var missing []apps.EnvSecret
+	for _, sec := range secrets {
+		if _, ok := localSecret[sec.Name]; !ok {
+			missing = append(missing, sec)
+		}
+	}
+	if len(missing) == 0 {
+		return kept, filled, nil
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return 0, nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var b strings.Builder
+	b.Write(current)
+	if len(current) > 0 && !strings.HasSuffix(string(current), "\n") {
+		b.WriteString("\n")
+	}
+	if hasSecretsHeader {
+		writeSecretLines(&b, missing, nil)
+	} else {
+		writeSecretsBlock(&b, missing, nil)
+	}
+	return kept, filled, envfile.WriteFile(path, []byte(b.String()))
+}
+
+// writeSecretsBlock writes the secrets header and one line per secret: the
+// developer's own line where there is one, an empty NAME= line otherwise.
+func writeSecretsBlock(b *strings.Builder, secrets []apps.EnvSecret, local map[string]string) {
+	if len(secrets) == 0 {
+		return
+	}
+	b.WriteString("\n" + secretsBlockHeader + "\n")
+	writeSecretLines(b, secrets, local)
+}
+
+func writeSecretLines(b *strings.Builder, secrets []apps.EnvSecret, local map[string]string) {
+	for _, sec := range secrets {
+		if line, ok := local[sec.Name]; ok {
+			b.WriteString(line + "\n")
+			continue
+		}
+		if hint := secretHint(sec.Name); hint != "" {
+			b.WriteString(hint + "\n")
+		}
+		b.WriteString(sec.Name + "=\n")
+	}
+}
+
+// hasLocalValue reports whether an env line assigns a non-empty value.
+func hasLocalValue(line string) bool {
+	_, v, ok := strings.Cut(line, "=")
+	if !ok {
+		return false
+	}
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		v = v[1 : len(v)-1]
+	}
+	return v != ""
 }

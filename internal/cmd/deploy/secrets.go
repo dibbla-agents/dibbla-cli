@@ -24,7 +24,11 @@ var secretNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,127}$`)
 var secretsCmd = &cobra.Command{
 	Use:   "secrets",
 	Short: "Manage secrets (global or per-deployment)",
-	Long:  `Create, list, get, and delete secrets. Omit --deployment for global secrets; set it to scope to an app.`,
+	Long: `Create, list and delete secrets. Omit --deployment for global secrets; set it to scope to an app.
+
+A secret is write-only: Dibbla never hands out its value — not to this CLI, not
+to an API, not to an AI assistant. The app gets it in its environment when it
+runs. To change one, set a new value.`,
 }
 
 var secretsListCmd = &cobra.Command{
@@ -42,12 +46,19 @@ var secretsSetCmd = &cobra.Command{
 	Run:   runSecretsSet,
 }
 
+// secretsGetCmd stays registered so `secrets get` explains itself instead of
+// answering "unknown command": a secret's value cannot be read back
+// (DIB-1337), and the server refuses it for every older CLI too.
 var secretsGetCmd = &cobra.Command{
 	Use:   "get <name>",
-	Short: "Get a secret's value",
-	Long:  `Get a secret by name. Use --deployment for a deployment-scoped secret.`,
-	Args:  cobra.ExactArgs(1),
-	Run:   runSecretsGet,
+	Short: "Removed: a secret's value cannot be read back",
+	Long: `A secret is write-only: Dibbla never hands out its value. The app gets it in
+its environment when it runs.
+
+  dibbla secrets list [-d <alias>]           # which secrets exist
+  dibbla secrets set <name> [-d <alias>]     # change one`,
+	Args: cobra.MaximumNArgs(1),
+	Run:  runSecretsGet,
 }
 
 var secretsDeleteCmd = &cobra.Command{
@@ -232,24 +243,16 @@ func runSecretsSet(cmd *cobra.Command, args []string) {
 }
 
 func runSecretsGet(cmd *cobra.Command, args []string) {
-	if !requireServiceWithDeployment(os.Stderr, secretsGetDeployment, secretsGetService) {
-		os.Exit(1)
-	}
-	name := args[0]
+	os.Exit(refuseSecretValueRead(os.Stderr, "secrets get"))
+}
 
-	cfg := config.Load()
-	requireToken(cfg)
-
-	res, err := secrets.GetSecret(cfg.APIURL, cfg.APIToken, name, secretsGetDeployment, secretsGetService)
-	if err != nil {
-		fmt.Printf("%s Failed to get secret: %v\n", platform.Icon("❌", "[X]"), err)
-		os.Exit(1)
-	}
-
-	fmt.Print(res.Value)
-	if !strings.HasSuffix(res.Value, "\n") {
-		fmt.Println()
-	}
+// refuseSecretValueRead is the answer to every command that used to print a
+// secret's value. Exit 1: the request cannot succeed, now or on retry.
+func refuseSecretValueRead(w io.Writer, command string) int {
+	fmt.Fprintf(w, "%s %s: a secret's value cannot be read back — secrets are write-only on Dibbla.\n", platform.Icon("❌", "[X]"), command)
+	fmt.Fprintln(w, "  The app gets its secrets in its environment when it runs.")
+	fmt.Fprintln(w, "  See which exist: dibbla secrets list [-d <alias>]   Change one: dibbla secrets set <name> [-d <alias>]")
+	return 1
 }
 
 func runSecretsDelete(cmd *cobra.Command, args []string) {
