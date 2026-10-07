@@ -46,8 +46,8 @@ then Ctrl-D (Ctrl-Z, Enter on Windows), or redirect a file (< key.txt). A value
 typed as an argument lands in your shell history — and, when an AI assistant
 runs the command, in its transcript. Use --deployment to attach to an app; it
 works before the app's first deploy.`,
-	Args:  cobra.RangeArgs(1, 2),
-	Run:   runSecretsSet,
+	Args: cobra.RangeArgs(1, 2),
+	Run:  runSecretsSet,
 }
 
 // secretsGetCmd stays registered so `secrets get` explains itself instead of
