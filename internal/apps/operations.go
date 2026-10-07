@@ -44,6 +44,20 @@ type OperationResult struct {
 	DeploymentID string `json:"deployment_id"`
 	Status       string `json:"status"`
 	CommitSHA    string `json:"commit_sha"`
+
+	// The notices the deploy's own response carried (DIB-1353), copied by
+	// deploy-api under the names a direct deploy's response uses, so a push
+	// deploy ends with the same lines. A deploy-api from before DIB-1353
+	// sends none of them. trial_warning is deliberately not here: the push
+	// printed it on its remote: lines when the deploy started.
+	SupportNotice string   `json:"support_notice,omitempty"`
+	ChecksNotice  string   `json:"checks_notice,omitempty"`
+	VCSError      string   `json:"vcs_error,omitempty"`
+	VCSFiltered   []string `json:"vcs_filtered,omitempty"`
+	EnvWarnings   []string `json:"env_warnings,omitempty"`
+	MCPPublished  []string `json:"mcp_published,omitempty"`
+	MCPNotice     string   `json:"mcp_notice,omitempty"`
+	MCPWithdrawn  []string `json:"mcp_withdrawn,omitempty"`
 }
 
 // OperationEvent is one lifecycle line of an operation.

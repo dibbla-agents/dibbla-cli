@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
+	"github.com/dibbla-agents/dibbla-cli/internal/cmd/mcp"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy/render"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
@@ -111,8 +112,14 @@ func printOperation(w io.Writer, op *apps.Operation) {
 	if op.FinishedAt != nil {
 		fmt.Fprintf(w, "   Finished: %s\n", op.FinishedAt.Local().Format("2006-01-02 15:04:05"))
 	}
-	if res := decodeResult(op); res != nil && res.URL != "" {
-		fmt.Fprintf(w, "   URL:     %s\n", res.URL)
+	if res := decodeResult(op); res != nil {
+		if res.URL != "" {
+			fmt.Fprintf(w, "   URL:     %s\n", res.URL)
+		}
+		// The same caveats `--follow` ends with (DIB-1353).
+		for _, n := range operationDeployResult(res).Notices() {
+			fmt.Fprintf(w, "   ! %s: %s\n", n.Label, n.Text)
+		}
 	}
 	if op.Failure != nil {
 		fmt.Fprintf(w, "   Failure: %s — %s\n", op.Failure.Code, op.Failure.Summary)
@@ -202,11 +209,7 @@ func terminalEvent(op *apps.Operation) render.DeployEvent {
 		if res == nil {
 			res = &apps.OperationResult{Alias: op.Alias, Status: "success"}
 		}
-		return render.DeployEvent{Type: "result", Ts: ts, Result: &render.DeployResult{
-			Status:     "success",
-			Deployment: render.ResultDeployment{ID: res.DeploymentID, Alias: res.Alias, URL: res.URL, Status: res.Status},
-			VCSCommit:  res.CommitSHA,
-		}}
+		return render.DeployEvent{Type: "result", Ts: ts, Result: operationDeployResult(res)}
 	case "cancelled":
 		return render.DeployEvent{Type: "error", Ts: ts, Error: &render.DeployError{APIError: &render.APIError{Code: "CANCELLED", Message: "the deploy was cancelled"}}}
 	default:
@@ -221,6 +224,42 @@ func terminalEvent(op *apps.Operation) render.DeployEvent {
 		}
 		return render.DeployEvent{Type: "error", Ts: ts, Error: &render.DeployError{APIError: &render.APIError{Code: code, Message: msg}}}
 	}
+}
+
+// operationMCPAddress is the MCP address of a published tool server, the one
+// a direct deploy prints (mcp.ServerAddress); a var so tests do not resolve
+// it from the signed-in installation.
+var operationMCPAddress = mcp.ServerAddress
+
+// operationDeployResult turns a finished operation's result into the result
+// a direct deploy's response would have rendered: the deployment, and the
+// notices deploy-api copied from that same response (DIB-1353), so every
+// renderer prints them through the same Notices() and with the same words.
+// There is no trial heads-up here, by design — a push prints it on its
+// remote: lines, and printing the operation's copy too would say it twice.
+func operationDeployResult(res *apps.OperationResult) *render.DeployResult {
+	out := &render.DeployResult{
+		Status:        "success",
+		Deployment:    render.ResultDeployment{ID: res.DeploymentID, Alias: res.Alias, URL: res.URL, Status: res.Status},
+		VCSCommit:     res.CommitSHA,
+		SupportNotice: res.SupportNotice,
+		ChecksNotice:  res.ChecksNotice,
+		VCSError:      res.VCSError,
+		VCSFiltered:   res.VCSFiltered,
+		EnvWarnings:   res.EnvWarnings,
+		MCPPublished:  res.MCPPublished,
+		MCPNotice:     res.MCPNotice,
+		MCPWithdrawn:  res.MCPWithdrawn,
+	}
+	if len(out.MCPPublished) > 0 && operationMCPAddress != nil {
+		out.MCPAddresses = map[string]string{}
+		for _, server := range out.MCPPublished {
+			if addr := operationMCPAddress(server); addr != "" {
+				out.MCPAddresses[server] = addr
+			}
+		}
+	}
+	return out
 }
 
 func reportOperationError(stderr io.Writer, id string, err error) int {
