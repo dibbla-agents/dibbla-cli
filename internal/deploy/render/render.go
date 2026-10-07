@@ -55,6 +55,12 @@ type DeployResult struct {
 	// failed version-control commit and the list of paths excluded from it.
 	VCSError    string   `json:"vcs_error,omitempty"`
 	VCSFiltered []string `json:"vcs_filtered,omitempty"`
+	// EnvWarnings are the server's sentences about dibbla.yaml environment:
+	// entries that look like secrets (DIB-1339): a person's deploy goes ahead
+	// and is told, an agent's is refused. Each names a variable and a reason,
+	// never a value. The server has sent them since DIB-1339; without this
+	// field the CLI dropped them, and the deploy looked clean.
+	EnvWarnings []string `json:"env_warnings,omitempty"`
 	// MCPPublished names the tool servers this deploy published as MCPs of
 	// their own (`mcp:` on a service, DIB-1222). Drawn with the command that
 	// connects a client, so the deploy output is where the address is found.
@@ -242,7 +248,25 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 		add("vcs", fmt.Sprintf("%d path(s) excluded from version control: %s",
 			len(r.VCSFiltered), strings.Join(r.VCSFiltered, ", ")))
 	}
+	for _, w := range r.EnvWarnings {
+		add("env", w)
+	}
+	if len(r.EnvWarnings) > 0 {
+		add("env", envWarningsHint(r.Deployment.Alias))
+	}
 	return out
+}
+
+// envWarningsHint is the line under the env warnings: how an entry becomes a
+// secret. Not 'dibbla env promote', which refuses a dibbla.yaml entry because
+// the next deploy would put it back — the line goes, and the value is entered
+// through a secret entry request, a new one since the old was readable.
+func envWarningsHint(alias string) string {
+	if alias == "" {
+		alias = "<alias>"
+	}
+	return "to move one into secrets: remove its line from dibbla.yaml, run dibbla secrets request NAME -d " + alias +
+		" for a new value (the old one was readable), and deploy again"
 }
 
 // mcpConnectCommand is what a person runs to connect a client to a published
