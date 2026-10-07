@@ -287,6 +287,12 @@ dibbla deploy status deployment:2b1c… --follow   # stream build log + rollout;
 dibbla deploy status deployment:2b1c… --follow --json
 ```
 
+A finished deploy ends with the same notices a `dibbla deploy` prints — a
+secret-looking `dibbla.yaml` entry, paths left out of version control, a
+support setting the manifest overrode — and needs a platform that records
+them on the operation; an older one simply has none to show. The trial's
+last-week heads-up is on the push's `remote:` lines and is not repeated.
+
 A failed build leaves `main` on the pushed commit and the running app on its
 previous revision (`dibbla apps get` shows the running commit); fix it with
 the next commit.
