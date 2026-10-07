@@ -32,6 +32,10 @@ import (
 //     example — its output is a bucket key of the person's own (DIB-1344), so
 //     an agent loads it into the shell and never onto the screen.
 //
+// And the rules block itself must say how an agent asks instead (DIB-1343):
+// `dibbla secrets request`, waited on with `--status <id> --wait`, and
+// `dibbla env promote` for a plain env var that should be a secret.
+//
 // Only code is checked: fenced blocks and inline code spans, the text an agent
 // copies. A line may name a bad form to say it is wrong; that is allowed when
 // the same sentence (prose) or the line's own comment (fenced code) says
@@ -405,7 +409,31 @@ func TestSkill_NeverHandsAnAgentASecretValue(t *testing.T) {
 				t.Errorf("%s no longer contains %q", n, needle)
 			}
 		}
+		// The rules say how to ask, not only what not to do (DIB-1343): a
+		// request the person answers in the browser, waited on by its id, and
+		// a promotion for a plain env var that should have been a secret.
+		rules := secretRulesBlock(docs[n])
+		for _, needle := range []string{"dibbla secrets request NAME -d <alias>", "dibbla secrets request --status <id> --wait", "dibbla env promote NAME -d <alias>"} {
+			if !strings.Contains(rules, needle) {
+				t.Errorf("%s: the secrets rules no longer tell the agent %q", n, needle)
+			}
+		}
 	}
+}
+
+// secretRulesBlock is the "Secrets — rules for an AI agent" section: from its
+// heading to the next second-level heading.
+func secretRulesBlock(doc string) string {
+	const heading = "## Secrets — rules for an AI agent"
+	i := strings.Index(doc, heading)
+	if i < 0 {
+		return ""
+	}
+	rest := doc[i+len(heading):]
+	if j := strings.Index(rest, "\n## "); j >= 0 {
+		rest = rest[:j]
+	}
+	return rest
 }
 
 // TestSecretScan_Rules proves each rule fails on the shapes it exists for, and

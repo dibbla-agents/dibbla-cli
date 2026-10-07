@@ -228,7 +228,7 @@ FEATURE_FLAG_X=true          (prod overrides default)
 API_BASE_URL=https://api.example.com   (prod-only)
 ```
 
-`environment:` is for values that are not secret. A name that is one of the app's secrets is refused (`ENV_SHADOWS_SECRET`), and a name or value that looks like a secret is a deploy warning for a person and a refusal for an agent (`ENV_LOOKS_LIKE_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d <alias>` and reaches the container without a line here.
+`environment:` is for values that are not secret. A name that is one of the app's secrets is refused (`ENV_SHADOWS_SECRET`), and a name or value that looks like a secret is a deploy warning for a person and a refusal for an agent (`ENV_LOOKS_LIKE_SECRET`). A secret is entered by the person — `dibbla secrets request NAME -d <alias>` gives them the link — and reaches the container without a line here. A secret-looking line already in `environment:` stays a plain env var until it is removed and its value (a new one: the old was readable) entered the same way; `dibbla env promote` refuses it with `ENV_FROM_MANIFEST` because the next deploy would put it back.
 
 You can mix flat and per-env forms across fields, but **not within one field**. The validator rejects `environment:` with mixed scalar and mapping values to keep resolution unambiguous.
 
@@ -271,8 +271,8 @@ services:
     environment:
       default:
         # Outside dev, MONGO_URL is a secret on the app — a managed database's
-        # URL carries its password. The person sets it once:
-        #   dibbla secrets set MONGO_URL -d <alias>     (value pasted on stdin)
+        # URL carries its password. The person enters it once, on the page
+        #   dibbla secrets request MONGO_URL -d <alias> links to,
         # and it reaches the container without a line here. Naming it here
         # would be refused (ENV_SHADOWS_SECRET).
         LOG_LEVEL: info
@@ -296,7 +296,7 @@ Deploy commands:
 dibbla deploy --alias myapp-dev --target-env dev --profile dev -m "feat: ..."
 
 # Prod — mongo service is filtered out, web reads MONGO_URL from the app's secret,
-# which the person set beforehand: dibbla secrets set MONGO_URL -d myapp
+# which the person entered beforehand: dibbla secrets request MONGO_URL -d myapp
 dibbla deploy --alias myapp --target-env prod -m "feat: ..."
 ```
 
@@ -864,7 +864,7 @@ RUN --mount=type=secret,id=npm_token \
     NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
 ```
 
-The platform mounts the secret value into the BuildKit Solve via the named id; the value never lands in the image layer. The person provides the value with `dibbla secrets set NPM_TOKEN_SECRET -d <alias>`, pasted on stdin (deployment-wide, since builds happen before per-service routing); an agent names the secret and never supplies the value.
+The platform mounts the secret value into the BuildKit Solve via the named id; the value never lands in the image layer. The person provides the value on the page `dibbla secrets request NPM_TOKEN_SECRET -d <alias>` links to, or with `dibbla secrets set` in their own terminal (deployment-wide, since builds happen before per-service routing); an agent names the secret and never supplies the value.
 
 - `id` is the BuildKit identifier referenced in the Dockerfile (`--mount=…,id=<id>`).
 - `source` is the name of the secret in the dibbla secrets store. Per-service build secrets are not supported in v1 — the build is one operation per service, and the secret is scoped to that build.
@@ -929,7 +929,7 @@ services:
       LOG_LEVEL:   info
 ```
 
-**Never substitute a secret.** The value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is set by the person with `dibbla secrets set NAME -d <alias>` and reaches the container without a line in `environment:`.
+**Never substitute a secret.** The value is written into the `dibbla.yaml` that is uploaded, as an env var: a name or value that looks like a secret is refused from an agent (`ENV_LOOKS_LIKE_SECRET`), and a name that is one of the app's secrets is refused from anyone (`ENV_SHADOWS_SECRET`). A secret is entered by the person — `dibbla secrets request NAME -d <alias>` gives them the link — and reaches the container without a line in `environment:`.
 
 **Difference from server-side `${DIBBLA_*}`:** two non-overlapping substitution layers. The CLI handles user shell vars (anything NOT starting with `DIBBLA_`); the server handles platform discovery vars (`DIBBLA_*`) at render time. Both pass through unchanged on the other side.
 
@@ -1125,9 +1125,9 @@ Operate per-service afterwards:
 ```bash
 dibbla logs myapp --service worker -f
 dibbla apps restart myapp --service worker
-# The person runs these and pastes each value on stdin — an agent never supplies it:
-dibbla secrets set NPM_TOKEN_SECRET -d myapp                   # build-time secret
-dibbla secrets set SENTRY_DSN -d myapp --service web           # only web sees it
+# Each prints a link; the person enters the value there — an agent never supplies it:
+dibbla secrets request NPM_TOKEN_SECRET -d myapp --title "npm token"            # build-time secret
+dibbla secrets request SENTRY_DSN -d myapp --service web --title "Sentry DSN"   # only web sees it
 ```
 
 ---
