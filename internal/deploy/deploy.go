@@ -27,6 +27,9 @@ type DeployResponse struct {
 	MCPPublished []string `json:"mcp_published,omitempty"`
 	MCPNotice    string   `json:"mcp_notice,omitempty"`
 	MCPWithdrawn []string `json:"mcp_withdrawn,omitempty"`
+	// EnvWarnings, likewise: secret-looking dibbla.yaml environment: entries
+	// a person's deploy went ahead with (DIB-1339).
+	EnvWarnings []string `json:"env_warnings,omitempty"`
 }
 
 // Deployment contains deployment details
@@ -696,6 +699,7 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 				MCPPublished: deployResp.MCPPublished,
 				MCPNotice:    deployResp.MCPNotice,
 				MCPWithdrawn: deployResp.MCPWithdrawn,
+				EnvWarnings:  deployResp.EnvWarnings,
 			}
 			complete(res)
 			r.OnEvent(render.DeployEvent{Type: "result", Result: res})

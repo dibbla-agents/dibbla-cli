@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,89 @@ func TestRunStream_VerboseQueryParam(t *testing.T) {
 	}
 	if !strings.Contains(seenURL, "verbose=1") {
 		t.Errorf("expected verbose=1 in request URL, got %q", seenURL)
+	}
+}
+
+// envWarningServer answers a deploy the way deploy-api does for a person
+// whose dibbla.yaml carries secret-looking environment: entries (DIB-1339):
+// streamed as the result event's DeployResponse, or — an older negotiation —
+// as the single JSON document. warnings nil is the same deploy without them.
+func envWarningServer(t *testing.T, streamed bool, warnings []string) (*httptest.Server, string) {
+	return newDibblaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		result := render.DeployResult{
+			Status:      "success",
+			Deployment:  render.ResultDeployment{ID: "dep_1", Alias: "shop", URL: "https://shop.dibbla.com", Status: "running"},
+			EnvWarnings: warnings,
+		}
+		if !streamed {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("\n"))
+		helperWriteEvent(w, render.DeployEvent{Type: "result", Result: &result})
+	})
+}
+
+// The server's env_warnings reach the person on both response paths, in the
+// human output and in --json, and a deploy without them prints nothing new.
+func TestRun_EnvWarningsAreReported(t *testing.T) {
+	warnings := []string{
+		"STRIPE_SECRET_KEY has the name of a secret — consider making it a secret (dibbla.yaml environment is readable by anyone who can read the app's source)",
+	}
+	for _, path := range []struct {
+		name     string
+		streamed bool
+	}{{"stream", true}, {"legacy", false}} {
+		t.Run(path.name, func(t *testing.T) {
+			deploy := func(warnings []string, r func(*bytes.Buffer) render.Renderer) string {
+				srv, dir := envWarningServer(t, path.streamed, warnings)
+				var out bytes.Buffer
+				rr := r(&out)
+				if _, err := Run(Options{APIURL: srv.URL, APIToken: "stub", Path: dir, Alias: "shop"}, rr); err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				if code := rr.OnDone(); code != 0 {
+					t.Fatalf("exit %d — the deploy went ahead", code)
+				}
+				return out.String()
+			}
+			quiet := func(b *bytes.Buffer) render.Renderer { return render.NewQuiet(b) }
+			asJSON := func(b *bytes.Buffer) render.Renderer { return render.NewJSON(b) }
+
+			got := deploy(warnings, quiet)
+			for _, want := range []string{
+				"! env: " + warnings[0] + "\n",
+				"! env: to move one into secrets: remove its line from dibbla.yaml, run dibbla secrets request NAME -d shop",
+			} {
+				if !strings.Contains(got, want) {
+					t.Errorf("output lacks %q:\n%s", want, got)
+				}
+			}
+			t.Logf("quiet output:\n%s", got)
+
+			var doc map[string]any
+			if err := json.Unmarshal([]byte(deploy(warnings, asJSON)), &doc); err != nil {
+				t.Fatal(err)
+			}
+			if list, _ := doc["env_warnings"].([]any); len(list) != 1 || list[0] != warnings[0] {
+				t.Errorf("--json env_warnings = %v", doc["env_warnings"])
+			}
+
+			if clean := deploy(nil, quiet); strings.Contains(clean, "!") || strings.Count(clean, "\n") != 1 {
+				t.Errorf("a deploy without env_warnings must print its one line and nothing else:\n%s", clean)
+			}
+			doc = nil
+			if err := json.Unmarshal([]byte(deploy(nil, asJSON)), &doc); err != nil {
+				t.Fatal(err)
+			}
+			if _, present := doc["env_warnings"]; present {
+				t.Errorf("env_warnings present without warnings: %v", doc)
+			}
+		})
 	}
 }
 

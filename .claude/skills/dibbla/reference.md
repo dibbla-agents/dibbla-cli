@@ -583,6 +583,16 @@ the upgrade link (`trial_warning` in `--json`; on a `git push` it is on the
 `remote:` lines). The deploy worked — tell the user once, with the link, and
 carry on.
 
+**Secret-looking `environment:` (not an error, not fine either).** When a
+`dibbla.yaml` `environment:` entry looks like a secret, a person's deploy goes
+ahead and ends with an `env ·` line per entry — the variable and the reason,
+never the value — and one line on how to move it (`env_warnings` in
+`--json`). The entry is still a plain env var, readable by anyone who can read
+the app's source. Tell the person; the fix is to remove the line, have them
+enter a new value through `dibbla secrets request NAME -d <alias>`, and deploy
+again (`dibbla env promote` refuses a `dibbla.yaml` entry — the next deploy
+would put it back).
+
 ---
 
 ## clone / link

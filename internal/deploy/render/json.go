@@ -59,6 +59,9 @@ func (j *JSONRenderer) OnDone() int {
 		if len(j.result.VCSFiltered) > 0 {
 			out["vcs_filtered"] = j.result.VCSFiltered
 		}
+		if len(j.result.EnvWarnings) > 0 {
+			out["env_warnings"] = j.result.EnvWarnings
+		}
 		if len(j.result.MCPPublished) > 0 {
 			out["mcp_published"] = j.result.MCPPublished
 		}
