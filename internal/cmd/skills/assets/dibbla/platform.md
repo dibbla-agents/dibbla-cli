@@ -727,6 +727,8 @@ something on the caller's own machine that no remote call can reach:
 | `cli.run` | `run` | Executes commands on the caller's machine. |
 | `cli.manifest.validate` | `manifest validate` | A local file walk. Server-side validation of the same manifest is remote (`platform.manifests.validate`, which is `platform_deployment_preflight`). |
 | `cli.credentials.reveal` | `db connect`, `storage credentials` | Each returns a credential of the caller's own, in plaintext to the terminal: `db connect` a connection string carrying their API token as its password, `storage credentials` a one-hour key minted for them for one bucket's objects (never the app's key). Keeping credentials out of a model's context window is an invariant, not a precaution — an agent uses either only inside `$(…)` / `eval "$(…)"`. `env pull` reveals no secret value: it writes `.env.local` on the caller's disk with the variables' values and the secrets' names only. `secrets get` reveals nothing at all any more — a secret is write-only, so it explains that and exits 1. |
+| `cli.env.pull` | `env pull` | Writes `.env.local` and a `.gitignore` line in the caller's working directory, merging into what is there. `env pull` reveals no secret value: variables arrive with their values, secrets by name only. Reading the same environment remotely is not a `/platform` capability — tool results keep environment values out. |
+| `cli.secrets.get` | `secrets get` | Reads nothing and calls nothing. A secret is write-only, so the command only says so and exits 1; there is no capability behind it to make remote, on any surface. |
 | `platform.secrets.set` | `secrets set` | Takes the value as an argument or on stdin on the caller's machine. Since DIB-928 no tool takes a secret value at all: remotely an agent asks the person to enter it on a signed-in Dibbla page (`platform.secrets.request`, `platform_secret_write` action=request) and polls `platform.secrets.request_status`. The same page is what `dibbla secrets request` links to, for an agent in a terminal. |
 | `cli.secrets.import` | `secrets import` | Reads a `.env` file from disk. Setting a value remotely goes through the request page above, never through a tool argument. |
 | `cli.db.dump` | `db dump` | Needs the caller's `pg_dump` and writes to the caller's disk. |
@@ -740,8 +742,8 @@ something on the caller's own machine that no remote call can reach:
 | `cli.admin.models` | `admin models list`, `admin models set`, `admin models delete` | Edits the platform-wide model catalog in the AI gateway, which only a Dibbla global admin may do. That is an operator authority no OAuth scope carries, and the catalog is not a tenant's resource. |
 
 There is nothing else. Every other CLI capability is reachable through
-`/platform` today; a gap would be a `not-yet-available` row with an owner and a
-work item, never silence, and there are none. The authoritative, always-current
+`/platform` today; a gap is a `not-yet-available` row with an owner and a work
+item, never silence — and there are none. The authoritative, always-current
 table is the [platform capability contract](https://docs.dibbla.com/reference/platform-contract).
 
 **This is enforced, not documented.** `dibbla-cli` fails its own build when a

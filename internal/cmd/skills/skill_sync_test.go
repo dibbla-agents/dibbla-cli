@@ -131,11 +131,12 @@ func TestSkill_DocumentsEnvPull(t *testing.T) {
 		{"examples.md", examples, "dibbla env promote STRIPE_SECRET_KEY"},
 		{"guardrails.md", guardrails, "A `.env.local` that *is* in `.gitignore` is expected"},
 		{"platform.md", platform, "**Except `.env.example` and `.env.sample`**"},
-		// DIB-1338: secrets are write-only, so the reveal row names no
-		// command that reads a secret, and env pull is said to reveal no
-		// secret value. DIB-1344: `storage credentials` is back on it — it
-		// reveals a key of the person's own, not the app's secret.
+		// DIB-1338/DIB-1345: secrets are write-only, so the reveal row names
+		// the caller's own credentials only — `db connect` and `storage
+		// credentials` — and env pull is its own row, which reveals no
+		// secret value.
 		{"platform.md", platform, "| `cli.credentials.reveal` | `db connect`, `storage credentials` |"},
+		{"platform.md", platform, "| `cli.env.pull` | `env pull` |"},
 		{"platform.md", platform, "`env pull` reveals no secret value"},
 	} {
 		if !strings.Contains(want.doc, want.needle) {
