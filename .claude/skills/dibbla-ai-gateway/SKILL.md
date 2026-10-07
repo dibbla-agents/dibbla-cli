@@ -28,6 +28,8 @@ eval $(dibbla ai env)   # exports ANTHROPIC_BASE_URL, OPENAI_BASE_URL, *_API_KEY
 dibbla ai test          # /health + token validation
 ```
 
+**An AI agent only ever runs it as `eval "$(dibbla ai env)"`.** Its plain output is export lines carrying the person's own Dibbla API token — printing it puts an account-wide credential into the transcript. The same goes for `<your dibbla token>` below: the person types it into their own config; an agent never fetches, prints or pastes it.
+
 After `eval $(dibbla ai env)` in a shell, any tool in that shell that respects `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` (most of them) routes through the gateway with no extra config. That includes Claude Code, opencode in Anthropic mode, the official `openai` / `anthropic` SDKs, `aichat`, and so on.
 
 Resolution:
