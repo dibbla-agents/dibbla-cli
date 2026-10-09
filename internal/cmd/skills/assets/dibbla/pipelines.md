@@ -126,21 +126,21 @@ them up whenever you create more than one pipeline for the same purpose.
 
 ### Order — `runs_after`
 
-A pipeline can declare the pipelines it **runs after**. The console lists
-linked pipelines together at the top, under one line that says who runs after
-whom and what they end up writing to:
+A pipeline can declare the pipelines it **runs after**. The console then lists
+it together with those pipelines (and anything linked to them further along),
+under one plain line that says who runs after whom and where they write:
 
 ```
-LINKED BY RUNS AFTER   Discourse sync, Reddit sync → Classify feedback · writes to lumen_feedback (app lumen-feedback)
+Classify feedback runs after Discourse sync and Reddit sync · all write to lumen_feedback (app lumen-feedback)
 ```
 
-Read the arrow as "runs after", nothing more. Names before the same arrow are
-not claimed to run at the same time — each keeps its own schedule — and the
-group has no name or settings of its own: it is just the pipelines that
-`runs_after` connects. The dependent pipeline's row and page say *Runs after:
-Discourse sync, Reddit sync*. Everything not linked is listed under *Other
-pipelines*. This is for understanding how chained pipelines feed a database
-and app — it is **not** an orchestrator.
+That line is generated from `runs_after` and the jobs' *Writes to*; it says
+nothing about timing — each pipeline keeps its own schedule — and the group
+has no name or settings of its own. Two unrelated chains are two groups;
+everything not linked is listed under *Other pipelines*. The dependent
+pipeline's row and page also say *Runs after: Discourse sync, Reddit sync*.
+This is for understanding how chained pipelines feed a database and app — it
+is **not** an orchestrator.
 
 **`runs_after` is information only.** Cron still decides when each pipeline
 runs; nothing is held back or chained. If the dependent pipeline's latest run
@@ -162,8 +162,8 @@ from every `runs_after`.
    schedule** if it is earlier.
 2. Open Classify → **Edit** → **Runs after** → add *Discourse sync* and
    *Reddit sync* → **Save**.
-3. The list now shows the three together under *Linked by Runs after*:
-   `Discourse sync, Reddit sync → Classify`.
+3. The list now shows the three together under the line *Classify runs
+   after Discourse sync and Reddit sync*.
 4. Tell the user plainly: this documents the order and warns if Classify
    starts early; it does not make Classify wait. If it must truly wait, the
    job itself has to check (or the schedule has to leave enough margin).
