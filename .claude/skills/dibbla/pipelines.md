@@ -69,24 +69,167 @@ Two things that decide how the run *reads* to a human:
   `nil` makes a broken run look successful — and no alert is sent, because
   from the platform's side nothing broke.
 
-## 3. Binding the job to a schedule
+## 3. Creating and running pipelines: the console's Pipelines tab
 
-Pipelines are created in the console (the workflows app, **Pipelines**); there
-is **no `dibbla` CLI command for pipelines** — do not invent one, and do not
-tell the user to put a pipeline in `dibbla.yaml`. The worker appears under
-**Tool servers** once it has connected, with the jobs it advertises; a
-pipeline then binds one of those jobs to:
+Pipelines live in the console: **Pipelines** in the main navigation
+(`console.dibbla.com/pipelines`). There is **no `dibbla` CLI command and no MCP
+tool for pipelines** — do not invent one, and do not tell the user to put a
+pipeline in `dibbla.yaml`. (The older separate Pipelines app is still reachable
+through **Old view** in the tab's header and shows the same pipelines; the
+Scheduler for *workflows* lives there.)
 
-- **Parameter values** — filled from the job's declared parameters.
-- **A cron expression** (optional). No cron = manual trigger only.
-- **A concurrency policy** — `Skip`, `Queue`, or `Allow parallel`. This is a
-  real operational decision: a nightly report usually wants `Skip`, a queue
-  drainer usually wants `Queue`.
+**+ New pipeline** binds one job that a connected worker advertises to:
 
-With no worker connected, every pipeline screen is an empty state waiting for
-one. That is the normal first experience, not a misconfiguration.
+- **Job** — picked from the job catalog; each job is tagged *Online* or
+  *Offline* depending on whether a worker serving it is connected.
+- **Title** and optional **Description** — what this pipeline is for. Name
+  variants so they share a prefix: `Confluence – Engineering`,
+  `Confluence – Sales` (see § 4).
+- **Parameters** — typed inputs built from the job's declared parameters.
+- **Schedule** — *Manual only*, *Hourly*, *Daily*, *Weekly* or *Custom cron*,
+  in UTC, with a preview of the next runs. No schedule = manual trigger only.
+- **Runs after** (optional) — the pipelines this one is expected to follow
+  (§ 4).
+- **If a run is still going** — *Skip if still running* (`skip`), *Queue
+  behind the running one* (`queue`) or *Runs may overlap* (`allow`). This is a
+  real operational decision: a nightly report usually wants Skip, a queue
+  drainer usually wants Queue.
 
-## 4. Alerts — what reaches a person
+Steering, from the row (▶ and the ⋯ menu) and from the pipeline's own page:
+**Run now**, **Stop run** (while a run is going, § 5), **Edit schedule**,
+**Edit**, **Duplicate** (same job, parameters and schedule — the way to add a
+variant), **Enable/Disable** (Disable stops the schedule; nothing alerts while
+disabled) and **Delete**.
+
+What a person sees:
+
+- **The list** — tiles *Total / Failing / Running / Disabled* (click to
+  filter), a filter box that also matches database and app, and the columns
+  *Pipeline, Job, Writes to, Schedule, Last status, Last run*. Flows are listed
+  first (§ 4).
+- **The pipeline page** (`/pipelines/<id>`) — a fact row (*Job & worker*,
+  *Writes to*, *Schedule* incl. *Runs after*, *Concurrency*, *Last success*,
+  *Alerts*), then *Runs*: a history bar and a table with *Status, Started,
+  Duration, Error*. Clicking a run opens the **run panel** — parameters, the
+  task list (*Progress*) and searchable *Logs*. This is where "why did last
+  night's run fail?" is answered without asking whoever built it.
+
+With no worker connected, every job shows *Offline* and nothing runs. That is
+the normal first experience, not a misconfiguration.
+
+## 4. Making a set of pipelines readable: flows, variants, Writes to
+
+A handful of pipelines that together solve one problem used to be scattered
+across a flat list — order hidden in cron times, the target only in the code,
+one copy per parameter value. Three things make the structure visible. Set
+them up whenever you create more than one pipeline for the same purpose.
+
+### Order — `runs_after`
+
+A pipeline can declare the pipelines it **runs after**. The console then groups
+them into a **flow** at the top of the list and summarises it, for example:
+
+```
+Flow   First · parallel (Discourse sync, Reddit sync) → Expected after (Classify)
+```
+
+and the dependent pipeline's page says *Runs after: Discourse sync, Reddit
+sync*.
+
+**`runs_after` is information only.** Cron still decides when each pipeline
+runs; nothing is held back or chained. If the dependent pipeline's latest run
+started while an upstream run was still going, the list shows **Started
+early** and its page explains which upstream run overlapped — but the run went
+ahead. So the schedule must still leave room: put the dependent cron after the
+upstreams normally finish, and make the job tolerate reading data that is
+still arriving (incremental reads, not "assume the sync finished").
+
+Rules the platform enforces: the ids must be pipelines in the same
+organization, a pipeline cannot run after itself, and a cycle is refused
+(`runs_after would make a cycle: A → B → A`). Deleting a pipeline removes it
+from every `runs_after`.
+
+**Worked example — "set it up so Classify runs after the syncs":**
+
+1. Check the schedules: the syncs at e.g. 06:00 UTC, Classify at 08:00 UTC
+   (after the syncs normally finish). Change Classify's schedule with **Edit
+   schedule** if it is earlier.
+2. Open Classify → **Edit** → **Runs after** → add *Discourse sync* and
+   *Reddit sync* → **Save**.
+3. The list now shows the flow `First · parallel (Discourse sync, Reddit
+   sync) → Expected after (Classify)`.
+4. Tell the user plainly: this documents the order and warns if Classify
+   starts early; it does not make Classify wait. If it must truly wait, the
+   job itself has to check (or the schedule has to leave enough margin).
+
+The same field is available over the pipelines API (`PUT /pipelines/<id>`
+with `"runs_after": ["<id>", …]`; `[]` clears it), but the console is the
+supported surface.
+
+### Variants — one job, several parameter sets
+
+The same job run with different parameters — Confluence per space, a report
+per region — is several pipelines with the same job. The list shows them as
+**one row** with the shared title prefix (`Confluence`) that expands into the
+variants, each with its parameters (`space=ENG`). The row's status is the most
+urgent of its variants. There is no separate group object: **variants are
+pipelines that share a job**. Create one with **Duplicate** and change only
+what differs. Use a common prefix in the titles; without one the row is named
+after the job id.
+
+### Target — **Writes to**
+
+Each pipeline shows the database it writes to and the app that owns that
+database (*Writes to: `feedback` (feedback-portal)*). It comes from the
+**job's code**, not from a pipeline parameter, so what is shown is always where
+the job actually writes. Implement the optional `jobs.DatabaseWriter`
+interface on the job:
+
+```go
+// Shown as "Writes to" on every pipeline that runs this job.
+func (j *ClassifyJob) WritesToDatabase() string { return "feedback" }
+```
+
+`server.RegisterJob` picks it up; nothing else to register. Requires sdk-go
+**v0.0.27 or later**. A job without it shows `—`. A name the organization has
+no database for shows a warning, which usually means a typo or a database that
+was never created.
+
+## 5. Stopping a run — the cancel contract
+
+**Stop run** (row menu, pipeline page or run panel) asks the worker to stop at
+once. A job written against sdk-go **v0.0.27 or later** sees the stop through
+its context and should end quickly:
+
+```go
+func (j *SyncJob) Execute(ctx *jobs.JobContext) error {
+    for _, page := range pages {
+        if ctx.IsCancelled() {      // check before each write
+            return ctx.Err()        // context.Canceled
+        }
+        if err := fetchAndStore(ctx, page); err != nil { // pass ctx on
+            return err
+        }
+    }
+    return nil
+}
+```
+
+- `*jobs.JobContext` is a `context.Context`: pass it to HTTP and database
+  calls, `select` on `ctx.Done()` while waiting, and return `ctx.Err()`.
+  `context.Cause(ctx.Context()) == jobs.ErrRunCancelled` tells a stop apart
+  from other cancellations.
+- Status goes *Running → Stopping… → Stopped*. A stopped run is **not a
+  failure**: no `pipeline.run.failed` alert.
+- **Older workers** do not hear the stop. If the worker has not confirmed
+  within about a minute, the run is closed as **Stopped (unconfirmed)** — the
+  job may still be running on the worker, and anything it reports later is
+  ignored. The schedule is released, so the next run goes as usual. Upgrade
+  the worker's sdk-go to make Stop actually stop the work.
+- A stop that arrives after the job already finished is answered with
+  *Already stopped* or the run's real outcome.
+
+## 6. Alerts — what reaches a person
 
 Four events, delivered through the platform's ordinary notification system
 (email, Slack, webhook, Discourse):
@@ -143,7 +286,7 @@ whole answer: a job in a worker, a pipeline with a cron and `Skip`, and the
 default subscription on their Slack or email channel. They do not need to
 build a health endpoint or an application check to watch it.
 
-## 5. Gotchas
+## 7. Gotchas
 
 - **A pipeline is only as alive as its worker.** Deploy the worker as an app
   so it restarts with the platform; a laptop process that exits at 18:00 turns
