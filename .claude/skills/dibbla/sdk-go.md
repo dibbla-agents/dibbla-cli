@@ -187,6 +187,11 @@ func (j *DataProcessingJob) Execute(ctx *jobs.JobContext) error {
 
 `GetParameters()` is what makes the dashboard render an input form — declare every argument up front, with `Type` as one of `string` / `integer` / `boolean` / `number`.
 
+Two optional pieces (sdk-go **v0.0.27+**) that the console's Pipelines tab shows — see [pipelines.md](pipelines.md) § 4–5:
+
+- **Writes to:** implement `jobs.DatabaseWriter` — `func (j *DataProcessingJob) WritesToDatabase() string { return "analytics" }` — and every pipeline running the job shows that database and the app that owns it.
+- **Stop:** `*jobs.JobContext` is a `context.Context` that is cancelled when someone presses **Stop run**. Pass `ctx` to I/O, check `ctx.IsCancelled()` before each write and `return ctx.Err()`; the run then ends *Stopped*, not failed.
+
 ### 6.2 Registration
 
 ```go
