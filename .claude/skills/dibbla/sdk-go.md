@@ -78,7 +78,7 @@ All options are functional; pass any subset to `sdk.New`. Each option also has a
 | `WithServerName(name)` | `SERVER_NAME` | `codex-go-worker` | Unique per worker. Functions are keyed by `(server_name, function_name)`. |
 | `WithServerApiToken(t)` | `SERVER_API_TOKEN` | _(empty)_ | A **personal API token (`ak_…`)** from the Dibbla console — **not** the internal `WORKFLOW_SERVER_API_TOKEN`. Required against production. See §8. |
 | `WithOrgID(id)` | `SERVER_ORG_ID` | _(token's default org)_ | Pin registration to a specific org when the token owner belongs to several. The owner must be a member. |
-| `WithGrpcServerAddress(a)` | `GRPC_SERVER_ADDRESS` | `grpc.dibbla.com:443` | `grpc.<domain>:443` on self-hosted clusters; `localhost:50051` for local dev. |
+| `WithGrpcServerAddress(a)` | `GRPC_SERVER_ADDRESS` | `DIBBLA_GRPC_SERVER_ADDRESS` (set by the platform), else `grpc.dibbla.com:443` | **Leave unset in a deployed worker** (§8). For a worker you run yourself: `grpc.<domain>:443` for a self-hosted install, `localhost:50051` for a local workflow server. |
 | `WithGrpcTLS(bool)` | `GRPC_USE_TLS` (`true`/`false`/`1`) | _auto-detect_ | Auto-on for `*.dibbla.com`, auto-off for `localhost`/`127.0.0.1`/`[::1]`. |
 | `WithCodexEnvPath(path)` | `CODEX_ENV_PATH` | _(none)_ | Loads an additional `.env` after the default `.env`. |
 | `WithPingInterval(sec)` | — | `30` | gRPC ping cadence (`0` disables). |
@@ -256,12 +256,16 @@ server, _ := sdk.New(
 
 **Endpoint** (`GRPC_SERVER_ADDRESS`):
 
-- Dibbla cloud: `grpc.dibbla.com:443` (default, TLS).
-- Self-hosted cluster: `grpc.<your-domain>:443` (whatever hostname your install exposes the workflow server on).
-- Local workflow server on your laptop: `localhost:50051` (auto-detected as no-TLS).
+- **Deployed on Dibbla: leave it unset.** The platform gives every app the gRPC address of the installation it runs on (`DIBBLA_GRPC_SERVER_ADDRESS`), and the SDK uses it when `GRPC_SERVER_ADDRESS` is unset — the same worker connects to the right server on Dibbla cloud and on a self-hosted install. Set it only to reach a different server on purpose, and know that a value in `dibbla.yaml` `environment:` outranks everything set later with `apps update -e` or a secret.
+- **A worker you run yourself** (laptop, CI, another host) — set it in that process's environment or its local `.env`:
+  - Dibbla cloud: `grpc.dibbla.com:443` (the default, TLS).
+  - Self-hosted install: `grpc.<your-domain>:443` (whatever hostname your install exposes the workflow server on).
+  - Local workflow server on your laptop: `localhost:50051` (auto-detected as no-TLS).
+
+An option passed in code outranks its env var and the platform's address, so keep the address out of the code of a worker you deploy:
 
 ```go
-sdk.WithGrpcServerAddress("localhost:50051") // dev; TLS auto-off for localhost
+sdk.WithGrpcServerAddress("localhost:50051") // local runs only; TLS auto-off for localhost
 sdk.WithGrpcTLS(true)                          // force TLS on a non-standard host
 // GRPC_USE_TLS=false ./my-worker               // env wins over auto-detect
 ```
@@ -274,7 +278,8 @@ sdk.WithGrpcTLS(true)                          // force TLS on a non-standard ho
 
 These cost real debugging time — check them before suspecting your handler code:
 
-- **Worker hangs at `Connecting with TLS to …` with no error and no `✅ … successfully connected`.** This is almost always grpc-go's **client-side DNS resolver**, not the platform. Its `dns` resolver issues an extra `TXT _grpc_config.<host>` service-config lookup that silently stalls (~20s/attempt) on split-DNS / VPN / Tailscale networks where that record isn't answered. Current `sdk-go` disables that lookup — make sure you're on a recent version (`go get github.com/dibbla-agents/sdk-go@latest`). To confirm it's *your* DNS and not the server, point at a numeric IP (`GRPC_SERVER_ADDRESS=<ip>:443`): if that connects, it's your resolver. (`grpcurl` uses a different resolver, so "grpcurl works" does **not** rule this out.)
+- **Worker hangs at `Connecting with TLS to …` with no error and no `✅ … successfully connected`.** This is almost always grpc-go's **client-side DNS resolver**, not the platform. Its `dns` resolver issues an extra `TXT _grpc_config.<host>` service-config lookup that silently stalls (~20s/attempt) on split-DNS / VPN / Tailscale networks where that record isn't answered. Current `sdk-go` disables that lookup — make sure you're on a recent version (`go get github.com/dibbla-agents/sdk-go@latest`). To confirm it's *your* DNS and not the server, point a local run at a numeric IP (`GRPC_SERVER_ADDRESS=<ip>:443`): if that connects, it's your resolver. (`grpcurl` uses a different resolver, so "grpcurl works" does **not** rule this out.)
+- **A deployed worker dials a server other than its own installation's** (e.g. `grpc.dibbla.com` on a self-hosted install — the `Connecting … to <address>` log line names it). Something pinned the address: a `GRPC_SERVER_ADDRESS` line in `dibbla.yaml` `environment:` (it outranks `apps update -e` and secrets — remove the line and deploy), a `WithGrpcServerAddress(...)` in the code, or an `sdk-go` too old to read the platform's address (`go get github.com/dibbla-agents/sdk-go@latest`).
 - **`Registered N functions` is logged, but the function isn't in `dibbla functions list` / the dashboard.** That log means the worker *sent* its list, not that the engine accepted it. Usual causes: (1) **org mismatch** — you're viewing a different org than the token's (see scoping above); (2) the stream connects, then **drops every ~30s with a `502` and reconnects** — that's an ingress/proxy not doing full-duplex gRPC streaming, a **platform-side infra** issue (not your worker). 
 - **Registration is ephemeral.** Functions exist only while the worker's gRPC stream is open; they vanish the instant it disconnects and reappear on reconnect. A flapping connection means a function that blinks in and out of the registry.
 
@@ -362,6 +367,7 @@ Key facts:
 - **`Start()` blocks forever.** Register every function and job before calling it.
 - **Authenticate with an `ak_` API token, not `WORKFLOW_SERVER_API_TOKEN`.** The latter is a platform-internal service token; user workers use a personal `ak_…` token and register scoped to its org. (§8)
 - **A registered function is org-scoped — check you're viewing the token's org.** The #1 reason a function "doesn't appear" in `dibbla functions list` / the dashboard. (§8)
+- **A deployed worker needs no `GRPC_SERVER_ADDRESS`.** The platform supplies the address of the installation it runs on; a value in `dibbla.yaml` `environment:` or in code pins it elsewhere, and `apps update -e` cannot undo the manifest. (§8)
 - **A silent connect-hang is your local DNS, not the platform.** grpc-go's service-config `TXT` lookup stalls on split-DNS/VPN/Tailscale; use a current SDK (it disables the lookup) or a numeric IP to confirm. (§8.1)
 - **`JobHost` is gone.** Use `server.RegisterJob(handler)` directly. `server.NewJobHost(...)` no longer exists.
 - **Don't ship `codex-go-worker` as your real `SERVER_NAME`.** It's the default; two workers using it race for the same registry slot.
@@ -394,7 +400,7 @@ Key facts:
 ## 13. End-to-end deploy
 
 1. Write your worker (`main.go`) using the patterns above.
-2. Author a `Dockerfile` that builds the binary and runs it. `SERVER_NAME` and `SERVER_API_TOKEN` arrive via env: `SERVER_NAME` as an env var, `SERVER_API_TOKEN` as a **secret** — an `ak_…` token is an account-wide credential.
+2. Author a `Dockerfile` that builds the binary and runs it. `SERVER_NAME` and `SERVER_API_TOKEN` arrive via env: `SERVER_NAME` as an env var, `SERVER_API_TOKEN` as a **secret** — an `ak_…` token is an account-wide credential. Set no `GRPC_SERVER_ADDRESS`: the platform supplies the address of the installation the app runs on (§8).
 3. The person enters the token before the first deploy (it works for an alias that does not exist yet) on the page `dibbla secrets request SERVER_API_TOKEN -d my-worker --title "Dibbla API token for the worker"` links to; wait with `dibbla secrets request --status <id> --wait`. Then `dibbla deploy . --alias my-worker -m "feat: register summarize_doc fn" -e SERVER_NAME=my-worker` — same flow as any Dibbla app, see [platform.md](platform.md). Never pass the token with `-e`: the platform refuses it (`ENV_LOOKS_LIKE_SECRET`), and typed by an agent it would sit in its transcript.
 4. After the worker comes up, verify it registered: `dibbla functions list` (should show your `(server, function)` pair) and check `dibbla logs my-worker` for the "Registered N functions" / "Registered N jobs" lines.
 5. Reference the function from a workflow YAML by `(server, function)` — see [workflows.md](workflows.md) for the `function` node shape and the agent+tools wiring pattern.

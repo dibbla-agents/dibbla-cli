@@ -299,8 +299,11 @@ build a health endpoint or an application check to watch it.
 - **A pipeline is only as alive as its worker.** Deploy the worker as an app
   so it restarts with the platform; a laptop process that exits at 18:00 turns
   every night's run into `pipeline.run.host_offline`.
-- **The SDK defaults to production.** Set `GRPC_SERVER_ADDRESS` deliberately if
-  the worker should register anywhere else — see [sdk-go.md](sdk-go.md).
+- **A deployed worker registers with the installation it runs on.** Leave
+  `GRPC_SERVER_ADDRESS` out of its `dibbla.yaml`: the platform supplies the
+  address, and a value in `environment:` outranks `apps update -e` and secrets.
+  A worker run anywhere else defaults to production, so set it there if it
+  should register elsewhere — see [sdk-go.md](sdk-go.md) § 8.
 - **Parameters are stored per pipeline.** Changing a job's declared parameters
   can leave a pipeline holding values the job no longer accepts; that surfaces
   as `pipeline.run.missed`, not as a failed run.

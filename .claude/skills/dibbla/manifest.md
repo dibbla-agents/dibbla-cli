@@ -778,13 +778,13 @@ services:
       access_policy: all_members       # or invite_only
     environment:
       SERVER_NAME: my-tools            # must be the same name as mcp:
-      GRPC_SERVER_ADDRESS: grpc.dibbla.com:443
 ```
 
 The worker itself is any `sdk-go` tool server — a `create go-worker` project, or the minimal one in [sdk-go.md](sdk-go.md): register functions under `SERVER_NAME`, start.
 
 - **The value is the tool server's name** — what the worker registers under (`SERVER_NAME` / `WithServerName`) — and it is the last part of the address. 1–64 characters of letters, digits, `.`, `_`, `-`; one service per name. Anything else is `MANIFEST_INVALID` at `services.<name>.mcp`.
 - **Who may deploy may publish.** No org admin exposes anything. The worker's credential in the pod is the app's workload identity, so no API token is set.
+- **No `GRPC_SERVER_ADDRESS` either.** The platform gives the worker the address of the installation the app runs on, and the SDK uses it when `GRPC_SERVER_ADDRESS` is unset — so one manifest connects to the right server on Dibbla cloud and on a self-hosted install. Set it only to reach a different server on purpose: a value in `environment:` outranks everything set later with `apps update -e` or a secret, so the worker keeps dialling it until the line is removed and the app deployed again.
 - **Who gets the tools follows the app's access list.** `all_members`: every member of the app's organization. `invite_only`: the people under "Access & users" in the console, plus the org's owners and admins. A published server always requires a Dibbla login and an account in the organization; an app that is open without login does not make its MCP open. List changes apply to the next call, a policy change within 30 seconds.
 - **Every function of the server that can be a tool is one** (no agents, no `_`-prefixed internal functions). Published functions never appear in `platform_tools`.
 - **The deploy never fails over it, and never stays silent.** Every deploy with an `mcp:` line answers with exactly one of: what was published (`published as MCP: <name>`; `mcp_published` in `--json`), or why not and what to do (`mcp_notice`: a name another app owns → rename the server and the line; the installation has no workflow engine or per-server addresses are switched off → ask the operator; publishing failed → deploy again). A deploy that removed the line says the MCP was withdrawn.
