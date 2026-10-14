@@ -146,6 +146,7 @@ The shell installer drops the binary into `~/.local/bin` and adjusts `PATH` if n
 | Tools      | `tools add <wf> <agent> <tool>`, `tools remove` |
 | Revisions  | `revisions list <wf>`, `revisions create`, `revisions restore` |
 | Functions  | `functions list`, `functions get <server> <name>`; `functions exposed`, `functions expose <server> <name> [--min-role viewer\|developer\|admin\|owner] [--disabled]`, `functions unexpose <server> <name> [-y]` (admin/owner) — expose a registered function so members at or above the min role can call it directly, outside any workflow — from an agent as `platform_tools` on the Dibbla MCP connector, or with `functions invoke <server> <name> [--input JSON \| -f file]` from a shell; `functions invocations [--server --function --source --user --since -n]`, `functions invocation <id> [--logs]` — every direct call is a **tool invocation**, not a run |
+| Data sources | `datasource list`; `datasource query <id> "<question>" [--filter col=value]… [--top-k 1–20] [--target label] [--min-score 0–1]` — semantic search in a data source an admin has exposed to agents (same answers as `platform_data_sources` on the connector); filters only on the source's declared columns; recorded as a tool invocation with source `cli`, never in `functions invocations` |
 
 ## Agent guidelines
 
