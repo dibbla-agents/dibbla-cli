@@ -478,6 +478,33 @@ dibbla db dump mydb --output mydb.dump
 | `db restore <name> -f <file>` | Restore from a dump file (e.g. pg_dump custom format) |
 | `db dump <name> [-o file]` | Download a database dump (default: `<name>.dump`) |
 
+### Query Data Sources
+
+A managed database configured as a data source with semantic search can be
+exposed to agents by an admin (Console → MCP). Exposed sources can be asked
+questions from the terminal — the same sources and the same answers as the
+`platform_data_sources` tool on the Dibbla MCP connector.
+
+```bash
+dibbla datasource list
+dibbla datasource query voicelines "an angry line" --filter speaker=mario
+dibbla datasource query voicelines "a happy line" --filter speaker=mario --filter speaker=luigi --top-k 3
+dibbla ds query voicelines "an angry line" -o json   # ds is short for datasource
+```
+
+| Command | Description |
+|---------|-------------|
+| `datasource list` | The sources you can query: ID, name, min role, filterable columns (with types) and description. `-o yaml/json` adds example questions and search targets |
+| `datasource query <id> "<question>"` | Semantic search. `--filter column=value` (repeat for several values or columns), `--top-k N` (1–20, default 10), `--target <label>`, `--min-score 0–1` |
+
+Only the columns listed under FILTERS can be filtered on; any other column is
+refused with the filterable ones named. An unknown, unexposed or switched-off
+source is one 404 (exit 4); a role below the source's min role is 403
+(exit 3). Answers are capped at 16 KiB — a cut answer carries
+`truncated: true` and a note, which the CLI also prints on stderr. Every query
+is recorded as a tool invocation with source `cli`; it is not a workflow run
+and is not listed by `dibbla fn invocations`.
+
 ### Manage Secrets
 
 Secrets can be global or scoped to a deployment. Omit `--deployment` for global secrets.

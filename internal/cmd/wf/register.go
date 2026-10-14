@@ -56,6 +56,7 @@ func Register(root *cobra.Command) {
 		toolsCmd,
 		revisionsCmd,
 		functionsCmd,
+		dataSourcesCmd,
 	}
 
 	for _, cmd := range parents {

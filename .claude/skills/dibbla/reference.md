@@ -1904,6 +1904,32 @@ Alias: `fn`.
 | **Behavior** | Calls the function directly, outside any workflow, synchronously (the engine waits up to 30 s) and records a tool invocation with source `cli`. Same endpoint and body as the connector's `platform_tools action=invoke`. Refusals: not registered / not exposed / disabled are one 404 (exit 4) on purpose; a min role above yours is 403 (exit 3); a function that fails is 502 with its error, recorded in the ledger (`fn invocation <id> --logs`); a timeout is 504 and the invocation is recorded as timed out; inputs over 64 KiB are 400. |
 
 **Agent guidance:** exposing is a policy decision for an admin, not a step in workflow authoring — a function does not need to be exposed to be used in a workflow. Reach for `fn exposed` / `fn invocations` when someone asks "which of our functions can agents call directly" or "who called this tool, and what happened".
+
+---
+
+## Data sources
+
+An admin exposes a managed data source to agents (Console → MCP, with a min role); the source's search configuration and `filter_schema` decide what a query can search and filter on. These commands call the same endpoints as the `platform_data_sources` tool on the Dibbla MCP connector, so they return the same answers. Alias: `ds`.
+
+### datasource list
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla datasource list` |
+| **Output** | Table: ID, NAME, MIN ROLE, FILTERS, DESCRIPTION (default); YAML/JSON with `-o` adds `capabilities`, `examples` and `search_targets` |
+| **Behavior** | Lists the sources you can query: exposed, switched on, and with a min role your organization role meets. FILTERS is the source's `filter_schema` — the only columns a query can filter on — as `column (type)`; `-` means none. ID is the `source_id` a query takes. |
+
+### datasource query
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla datasource query <id> "<question>" [--filter column=value]… [--top-k N] [--target label] [--min-score 0–1]` |
+| **Arguments** | `id` — a source from `datasource list`; `question` — natural language, at most 1000 characters |
+| **Flags** | `--filter column=value` — equality on a declared column; repeat for the same column to allow any of several values, for different columns to require all. `--top-k` — 1–20, default 10 (20 is the search engine's cap, shared with workflow agents; above it the CLI refuses rather than silently returning 20). `--target` — search one search target only (label or table). `--min-score` — drop hits below this similarity. |
+| **Output** | YAML (default) or JSON with `-o json`: `invocation_id`, `status`, `top_k`, `count`, `truncated`, and `results` (each with `id`, `title`, `metadata` holding the content columns, `_score` and `_table`) |
+| **Behavior** | Semantic search: the question is embedded with the source's own model on the platform. Answers are capped at 16 KiB — long values are shortened, then the last hits dropped; a cut answer has `truncated: true` and a `truncation_note`, which the CLI repeats on stderr. Refusals: unknown / not exposed / switched off are one 404 (exit 4) on purpose; a min role above yours is 403 (exit 3); a filter on an undeclared column is 400 naming the filterable ones; too many queries for the organization is 429. Every query past those checks is recorded as a tool invocation with source `cli` — not a run, and not listed by `functions invocations`, which shows function calls only. |
+
+**Agent guidance:** there is no free SQL here, by design — a source returns only what its search configuration exposes. Run `datasource list` first to see which columns can be filtered on, then query with filters on exactly those.
 ---
 
 ---
@@ -1982,3 +2008,5 @@ Alias: `fn`.
 | Functions | `dibbla functions invocations [filters]` | List calls made to exposed functions |
 | Functions | `dibbla functions invocation <id> [--logs]` | Show one call, optionally with its logs |
 | Functions | `dibbla functions invoke <server> <name> [--input <json> \| -f <file>]` | Call an exposed function directly (source `cli`) |
+| Data sources | `dibbla datasource list` | Data sources you can query, with their filterable columns |
+| Data sources | `dibbla datasource query <id> "<question>" [--filter col=value] [--top-k N]` | Semantic search in an exposed data source (source `cli`) |
