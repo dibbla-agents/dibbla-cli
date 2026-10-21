@@ -341,25 +341,6 @@ func (t *TTY) finalize() {
 		t.paint("follow logs ·", colorDim),
 		t.paint(fmt.Sprintf("dibbla logs %s -f", t.result.Deployment.Alias), colorBright),
 	)
-	t.printTrialWarning()
-}
-
-// printTrialWarning ends a successful deploy with the trial's last-week
-// heads-up (DIB-1048): dimmed, wrapped, the link whole on its own line. A
-// reminder, so no icon and no colour that reads as a problem.
-func (t *TTY) printTrialWarning() {
-	w := t.result.TrialWarning
-	if w == nil || w.Message == "" {
-		return
-	}
-	text, url := w.Split()
-	fmt.Fprintln(t.w)
-	for _, line := range wrapWords(text, 72) {
-		fmt.Fprintf(t.w, "  %s\n", t.paint(line, colorDim))
-	}
-	if url != "" {
-		fmt.Fprintf(t.w, "  %s\n", t.link(url))
-	}
 }
 
 // printServicesTable prints a per-service summary line under the DEPLOYED
@@ -493,11 +474,11 @@ func (t *TTY) printFailure() {
 	}
 }
 
-// printPlanRefusal draws TRIAL_EXPIRED / PLAN_LIMIT_EXCEEDED (DIB-1045). It
-// is not a failure of anything the customer did, so there is no red cross
-// and no code: the server's thank-you and promise in white, the upgrade link
-// bright and clickable (OSC 8) on its own line, then the Docs line as for
-// every plan error. The code stays in --json.
+// printPlanRefusal draws PLAN_LIMIT_EXCEEDED, and an older server's
+// TRIAL_EXPIRED (DIB-1045). It is not a failure of anything the customer
+// did, so there is no red cross and no code: the server's words in white,
+// the upgrade link bright and clickable (OSC 8) on its own line, then the
+// Docs line as for every plan error. The code stays in --json.
 func (t *TTY) printPlanRefusal(e *APIError) {
 	linked := false
 	for i, line := range strings.Split(strings.TrimRight(e.Message, "\n"), "\n") {

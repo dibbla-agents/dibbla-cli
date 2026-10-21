@@ -175,9 +175,9 @@ In CI, set environment variables instead of using `login`:
 
 Get your API token at [app.dibbla.com/api-keys](https://app.dibbla.com/api-keys).
 
-### Upgrade from a trial
+### Upgrade from Hobby to Business
 
-`dibbla upgrade` prints a Stripe Checkout link that moves the organization the CLI acts as from its free trial to Business — the same link the console's Plan tab and a connected agent give you. Nothing changes until the payment goes through; right after it does, deploys work again. Running apps and data are untouched either way.
+`dibbla upgrade` prints a Stripe Checkout link that moves the organization the CLI acts as from Hobby (free) to Business — the same link the console's Plan tab and a connected agent give you. Nothing changes until the payment goes through; right after it does, Business applies, with no limit on apps or databases. Running apps and data are untouched either way.
 
 ```bash
 dibbla upgrade            # print the payment link
@@ -185,7 +185,7 @@ dibbla upgrade --open     # print it and open it in your browser
 dibbla upgrade --json     # {"status":"checkout_ready","checkout_url":"https://checkout.stripe.com/…",…}
 ```
 
-Only an owner or admin can upgrade. Anyone else — and an organization already on Business, on an Enterprise agreement or billed by Dibbla directly — gets a short explanation and no link (`"status":"not_available"` with a `reason` in `--json`). `dibbla status` names the command under the `Plan:` line of every trial, and a deploy refused because the trial ended ends with it too. Managing or cancelling a subscription stays in the console (Org settings → Plan → Manage billing).
+Only an owner or admin can upgrade. Anyone else — and an organization already on Business, on an Enterprise agreement or billed by Dibbla directly — gets a short explanation and no link (`"status":"not_available"` with a `reason` in `--json`). `dibbla status` names the command under the `Plan:    Hobby` line, and a deploy or create refused at the Hobby plan's limit ends with it too. Managing or cancelling a subscription stays in the console (Org settings → Plan → Manage billing).
 
 ### Update notifications
 
@@ -290,8 +290,7 @@ dibbla deploy status deployment:2b1c… --follow --json
 A finished deploy ends with the same notices a `dibbla deploy` prints — a
 secret-looking `dibbla.yaml` entry, paths left out of version control, a
 support setting the manifest overrode — and needs a platform that records
-them on the operation; an older one simply has none to show. The trial's
-last-week heads-up is on the push's `remote:` lines and is not repeated.
+them on the operation; an older one simply has none to show.
 
 A failed build leaves `main` on the pushed commit and the running app on its
 previous revision (`dibbla apps get` shows the running commit); fix it with

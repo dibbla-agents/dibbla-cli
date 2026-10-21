@@ -96,10 +96,10 @@ func TestCommandHint(t *testing.T) {
 	review := "https://console.dibbla.com/org-settings/plan?upgrade=review"
 	plan := "https://console.dibbla.com/org-settings/plan"
 	if CommandHint("TRIAL_EXPIRED", review) == "" {
-		t.Fatal("an ended trial names dibbla upgrade")
+		t.Fatal("an older server's TRIAL_EXPIRED names dibbla upgrade")
 	}
 	if CommandHint("PLAN_LIMIT_EXCEEDED", review) == "" {
-		t.Fatal("a full trial names dibbla upgrade")
+		t.Fatal("a full Hobby org names dibbla upgrade")
 	}
 	if CommandHint("PLAN_LIMIT_EXCEEDED", plan) != "" {
 		t.Fatal("a full paid plan has nothing to upgrade")

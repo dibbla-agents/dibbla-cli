@@ -97,7 +97,7 @@ func TestBuildStatusReport_JSONShape(t *testing.T) {
 	}
 	// Same omitempty discipline for the plan fields (P-0027): --no-validate
 	// makes no network call, so no plan can have been fetched.
-	for _, absent := range []string{`"plan"`, `"trial_ends_at"`} {
+	for _, absent := range []string{`"plan"`, `"upgrade_url"`, `"upgrade_command"`} {
 		if strings.Contains(string(out), absent) {
 			t.Errorf("JSON should omit %s under --no-validate: %s", absent, out)
 		}

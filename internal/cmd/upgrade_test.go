@@ -26,7 +26,7 @@ type fakeUpgrade struct {
 func (f *fakeUpgrade) deps() upgradeDeps {
 	return upgradeDeps{
 		validate: func(_, _, _ string) (*apiclient.ValidateInfo, error) {
-			return &apiclient.ValidateInfo{OrganizationID: "org-1", OrgRole: f.role, OrgSlug: "acme", OrgPlan: "trial"}, nil
+			return &apiclient.ValidateInfo{OrganizationID: "org-1", OrgRole: f.role, OrgSlug: "acme", OrgPlan: "hobby"}, nil
 		},
 		listOrgs: func(_, _ string) ([]orgs.Org, error) {
 			return []orgs.Org{{ID: "org-1", Name: "Acme AB"}}, nil

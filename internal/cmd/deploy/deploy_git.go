@@ -138,8 +138,8 @@ func cloneHostOf(apiURL, apiToken string) func(app string) string {
 
 var operationLine = regexp.MustCompile(`(?m)operation:\s*(deployment:\S+)`)
 
-// planRefusedPush is the pre-receive refusal of a push to main after the
-// trial ended: the upgrade link on a "remote:" line.
+// planRefusedPush is the pre-receive refusal of a push to main the plan does
+// not allow, whatever its wording: the upgrade link on a "remote:" line.
 var planRefusedPush = regexp.MustCompile(`(?m)^remote:\s+https://\S+/org-settings/plan\b`)
 
 // pushMain is gitlink.Push, indirected so tests can add the "remote:" lines
@@ -209,8 +209,8 @@ func runGitDeploy(in gitDeployInput, stdout, stderr io.Writer, follow func(opID 
 	if err != nil {
 		if planRefusedPush.MatchString(out) {
 			// The platform's own "remote:" lines above already said it
-			// (DIB-1045): the trial ended, the apps keep running, here is
-			// the link. Only what the push did is added.
+			// (DIB-1045): why, that the apps keep running, and the link.
+			// Only what the push did is added.
 			fmt.Fprintf(stderr, "%s Nothing was deployed: main at Dibbla is unchanged and %s keeps running.\n", platform.Icon("●", "[i]"), in.App)
 		} else if strings.Contains(out, "fetch first") || strings.Contains(out, "non-fast-forward") {
 			fmt.Fprintf(stderr, "%s push rejected: main at Dibbla moved while deploying. Run git pull --rebase %s %s and deploy again.\n", bad, in.Remote, in.Branch)

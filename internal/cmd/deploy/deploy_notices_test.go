@@ -3,8 +3,8 @@ package deploy
 // DIB-1353: a deploy started by `git push` — `dibbla deploy` in a linked
 // folder, or a plain push followed with `dibbla deploy status --follow` —
 // ends with the same notices a direct deploy's response prints, read from the
-// operation's result. The trial heads-up is the exception on purpose: the
-// push's remote: lines carry it, and it is printed once.
+// operation's result. An older deploy-api's trial heads-up is never printed:
+// Hobby does not end (DIB-1519).
 
 import (
 	"bytes"
@@ -18,12 +18,12 @@ import (
 	"github.com/dibbla-agents/dibbla-cli/internal/deploy/render"
 )
 
-const trialHeadsUp = "Heads-up: your free trial ends in 3 days (Oct 10)."
+// legacyHeadsUp is the trial_warning an older deploy-api may still send.
+const legacyHeadsUp = "Heads-up: deploys pause in 3 days (Oct 10)."
 
 // pushNotices is a finished push deploy's result as deploy-api records it:
 // the deployment plus the notices HandleDeploy's response carried. It also
-// carries a trial_warning, which deploy-api does not put there — so the test
-// proves the CLI would not print a second copy even if one arrived.
+// carries a legacy trial_warning, which the CLI ignores.
 func pushNotices() map[string]any {
 	return map[string]any{
 		"result": "deployed", "alias": "shop", "url": "https://shop.example", "deployment_id": "dep_1",
@@ -33,7 +33,7 @@ func pushNotices() map[string]any {
 		"support_notice": "dibbla.yaml's support: block overrides the console setting",
 		"checks_notice":  "Application Checks could not be promoted onto this revision",
 		"mcp_published":  []string{"shop-tools"},
-		"trial_warning":  map[string]any{"days_left": 3, "ends_at": "2026-10-10T00:00:00Z", "message": trialHeadsUp},
+		"trial_warning":  map[string]any{"days_left": 3, "ends_at": "2026-10-10T00:00:00Z", "message": legacyHeadsUp},
 	}
 }
 
@@ -85,8 +85,7 @@ func TestPushDeployEndsWithTheNoticesADirectDeployPrints(t *testing.T) {
 	stubPushOutput(t, "remote: Dibbla: deploying 4f2a9c1e0b7d to shop\n"+
 		"remote:   operation: deployment:op-1\n"+
 		"remote:   follow:    dibbla deploy status deployment:op-1 --follow\n"+
-		"remote: \n"+
-		"remote: "+trialHeadsUp+"\n")
+		"remote: \n")
 	srv, _ := operationServer(t, map[string]any{"phase": "succeeded", "terminal": true,
 		"finished_at": "2026-09-19T10:01:00Z", "result": pushNotices()})
 
@@ -111,10 +110,8 @@ func TestPushDeployEndsWithTheNoticesADirectDeployPrints(t *testing.T) {
 			strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	// The heads-up came on the push's remote: lines; it is not printed again.
-	all := stdout.String() + stderr.String()
-	if n := strings.Count(all, trialHeadsUp); n != 1 {
-		t.Errorf("the trial heads-up is printed %d times, want once:\n%s", n, all)
+	if all := stdout.String() + stderr.String(); strings.Contains(all, legacyHeadsUp) {
+		t.Errorf("a legacy trial heads-up is printed:\n%s", all)
 	}
 }
 
@@ -138,7 +135,7 @@ func TestPushDeployJSONCarriesTheNotices(t *testing.T) {
 		}
 	}
 	if doc["trial_warning"] != nil {
-		t.Errorf("--json repeats the trial heads-up the push already printed: %s", stdout.String())
+		t.Errorf("--json passes on a legacy trial heads-up: %s", stdout.String())
 	}
 }
 
@@ -164,7 +161,7 @@ func TestDeployStatusOfAFinishedPushShowsItsNotices(t *testing.T) {
 			t.Errorf("status lacks %q:\n%s", want, stdout.String())
 		}
 	}
-	if strings.Contains(stdout.String(), trialHeadsUp) {
-		t.Errorf("status repeats the trial heads-up:\n%s", stdout.String())
+	if strings.Contains(stdout.String(), legacyHeadsUp) {
+		t.Errorf("status prints a legacy trial heads-up:\n%s", stdout.String())
 	}
 }
