@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -80,17 +78,14 @@ type statusReport struct {
 	ValidationError string `json:"validation_error,omitempty"`
 	// Plan fields (P-0027) come from the same validate call — absent under
 	// --no-validate (no network) and on orgs/installs without a plan.
-	Plan        string `json:"plan,omitempty"`
-	TrialEndsAt string `json:"trial_ends_at,omitempty"`
-	// TrialDaysLeft, TrialEnded and UpgradeURL are a trial org's clock
-	// (DIB-1048), counted the way the console counts: never negative, and
-	// "ended" once the end has passed. UpgradeURL comes from deploy-api's
-	// GET /plan and is absent when that could not be read.
-	TrialDaysLeft *int   `json:"trial_days_left,omitempty"`
-	TrialEnded    bool   `json:"trial_ended,omitempty"`
-	UpgradeURL    string `json:"upgrade_url,omitempty"`
-	// UpgradeCommand is the terminal's way to the payment link for a trial
-	// org (DIB-1047): "dibbla upgrade". Absent for any other plan.
+	// Plan is the stored name (hobby, standard, enterprise), with the legacy
+	// "trial" an older server may still send read as hobby (DIB-1519).
+	Plan string `json:"plan,omitempty"`
+	// UpgradeURL and UpgradeCommand are a Hobby org's way to Business: the
+	// console page from deploy-api's GET /plan (absent when that could not
+	// be read) and "dibbla upgrade" for the payment link (DIB-1047). Absent
+	// for any other plan.
+	UpgradeURL     string `json:"upgrade_url,omitempty"`
 	UpgradeCommand string `json:"upgrade_command,omitempty"`
 	// Folder describes the git repo status was run in when that repo has a
 	// Dibbla remote (DIB-905); nil elsewhere.
@@ -188,96 +183,53 @@ func buildStatusReport(noValidate bool) statusReport {
 		return r
 	}
 	if info != nil {
-		r.Plan = info.OrgPlan
-		r.TrialEndsAt = info.OrgTrialEndsAt
+		// org_trial_ends_at from an older server is ignored: Hobby never ends.
+		r.Plan = normalizePlan(info.OrgPlan)
 	}
 	r.LoggedIn = true
-	if r.Plan == "trial" && r.TrialEndsAt != "" {
-		r.readTrialClock(apps.GetPlanStatus(apiURL, token))
-	}
-	if r.Plan == "trial" {
+	if r.Plan == "hobby" {
 		r.UpgradeCommand = upgradeCommand
+		if ps, err := apps.GetPlanStatus(apiURL, token); err == nil && ps != nil {
+			r.UpgradeURL = ps.UpgradeURL
+		}
 	}
 	return r
 }
 
-// trialWarningDays is the trial's last stretch, in which status says "ends in
-// N days" and links the upgrade: seven days or fewer, as deploy does.
-const trialWarningDays = 7
-
-// readTrialClock fills the trial clock from deploy-api's answer, or — from a
-// server that does not carry it, or none at all — counts it here by the same
-// rule, without the link.
-func (r *statusReport) readTrialClock(ps *apps.PlanStatus, err error) {
-	if err == nil && ps != nil && ps.DaysLeft != nil {
-		days := *ps.DaysLeft
-		r.TrialDaysLeft, r.TrialEnded, r.UpgradeURL = &days, ps.TrialEnded, ps.UpgradeURL
-		return
+// normalizePlan reads the legacy "trial" as "hobby" (DIB-1519): every trial
+// org became Hobby, but a server mid-rollout may still say trial.
+func normalizePlan(plan string) string {
+	if plan == "trial" {
+		return "hobby"
 	}
-	if days, ended, ok := trialClock(r.TrialEndsAt, time.Now()); ok {
-		r.TrialDaysLeft, r.TrialEnded = &days, ended
-	}
+	return plan
 }
 
-// trialClock is the console's count (deploy-ui/src/lib/plan.ts): whole days
-// left rounded up, never negative, ended once the end is reached.
-func trialClock(endsAt string, now time.Time) (days int, ended, ok bool) {
-	end, err := time.Parse(time.RFC3339, endsAt)
-	if err != nil {
-		return 0, false, false
+// planLabel is the Plan: line's value — the plan as the console names it.
+// "standard" stays the stored name and reads Business; an unknown name is
+// shown as it is.
+func planLabel(plan string) string {
+	switch normalizePlan(plan) {
+	case "hobby":
+		return "Hobby"
+	case "standard":
+		return "Business"
+	case "enterprise":
+		return "Enterprise"
 	}
-	remaining := end.Sub(now)
-	if remaining <= 0 {
-		return 0, true, true
-	}
-	return int(math.Ceil(float64(remaining) / float64(24*time.Hour))), false, true
+	return plan
 }
 
-// planLine is the Plan: line's value, and the upgrade link to print under it
-// ("" when there is none to print). A trial in its last week says "ends in N
-// days" instead of the bare date; an ended one says so.
-func (r *statusReport) planLine() (string, string) {
-	if r.Plan != "trial" || r.TrialEndsAt == "" {
-		return r.Plan, ""
-	}
-	if r.TrialDaysLeft == nil {
-		return fmt.Sprintf("%s (ends %s)", r.Plan, r.TrialEndsAt), ""
-	}
-	date := r.TrialEndsAt
-	if t, err := time.Parse(time.RFC3339, r.TrialEndsAt); err == nil {
-		date = t.UTC().Format("Jan 2")
-	}
-	switch days := *r.TrialDaysLeft; {
-	case r.TrialEnded:
-		return fmt.Sprintf("%s (ended %s — running apps keep serving, deploys are paused)", r.Plan, date), r.UpgradeURL
-	case days <= trialWarningDays:
-		unit := "days"
-		if days == 1 {
-			unit = "day"
-		}
-		return fmt.Sprintf("%s (ends in %d %s, %s)", r.Plan, days, unit, date), r.UpgradeURL
-	default:
-		return fmt.Sprintf("%s (ends %s)", r.Plan, r.TrialEndsAt), ""
-	}
-}
-
-// upgradeCommand is what status names as the way to pay from a trial.
+// upgradeCommand is what status names as the way from Hobby to Business.
 const upgradeCommand = "dibbla upgrade"
 
-// upgradeLines are the lines under Plan: for a trial (DIB-1047): always the
-// command that prints the payment link, and in the last week or after the end
-// the console link beside it. Nothing for any other plan.
-func (r *statusReport) upgradeLines(consoleURL string) []string {
+// upgradeLines are the lines under Plan: for a Hobby org (DIB-1047): the
+// command that prints the payment link. Nothing for any other plan.
+func (r *statusReport) upgradeLines() []string {
 	if r.UpgradeCommand == "" {
-		if consoleURL != "" {
-			return []string{"upgrade: " + consoleURL}
-		}
 		return nil
 	}
-	if consoleURL == "" {
-		return []string{"upgrade: run " + r.UpgradeCommand + " for a payment link"}
-	}
-	return []string{"upgrade: " + consoleURL, "         or run " + r.UpgradeCommand + " for a payment link"}
+	return []string{"upgrade: run " + r.UpgradeCommand + " to move to Business"}
 }
 
 // resolvedToken is the token the folder check may use — the same one the
@@ -463,9 +415,8 @@ func printStatusHuman(r statusReport) {
 	}
 
 	if r.Plan != "" {
-		line, upgrade := r.planLine()
-		fmt.Printf("Plan:    %s\n", line)
-		for _, l := range r.upgradeLines(upgrade) {
+		fmt.Printf("Plan:    %s\n", planLabel(r.Plan))
+		for _, l := range r.upgradeLines() {
 			fmt.Printf("         %s\n", l)
 		}
 	}

@@ -27,12 +27,13 @@ var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Get a payment link to upgrade your organization to Business",
 	Long: `Print a Stripe Checkout link that upgrades the organization the CLI acts as
-from its trial to Business — the same link the console's Plan tab and a
+from Hobby to Business — the same link the console's Plan tab and a
 connected agent hand out.
 
 Nothing changes until the payment goes through: the link only opens Stripe's
-checkout, and it expires unused after 24 hours. Once paid, deploys work again
-right away; running apps and data are untouched either way.
+checkout, and it expires unused after 24 hours. Once paid, Business applies
+right away, with no limit on apps or databases; running apps and data are
+untouched either way.
 
 Only an owner or admin can upgrade. For anyone else, and for an organization
 already on Business, on an Enterprise agreement or billed by Dibbla directly,

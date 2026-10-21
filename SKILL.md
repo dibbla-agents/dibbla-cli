@@ -133,13 +133,13 @@ The selection is stored **on the active context**, and `org list` shows the orga
 
 ### `upgrade`
 
-Print a Stripe Checkout link that upgrades the organization the CLI acts as from its trial to Business — the same link the console and a connected agent hand out. Nothing changes until the payment goes through; right after it does, deploys work again, and running apps and data are untouched either way.
+Print a Stripe Checkout link that upgrades the organization the CLI acts as from Hobby to Business — the same link the console and a connected agent hand out. Nothing changes until the payment goes through; right after it does, Business applies (no limit on apps or databases), and running apps and data are untouched either way.
 
 -   **Usage:** `dibbla upgrade` — `dibbla upgrade --open` — `dibbla upgrade --json`
 -   **Flags:**
     -   `--open`: also open the link in the browser.
     -   `--json`: `status` (`checkout_ready` with `checkout_url`, or `not_available` with `reason`), `message`, `org_id`, `org_name`.
--   **Who gets a link:** an owner or admin of an organization on a trial (running or ended). A member or viewer, and an organization already on Business (`ALREADY_SUBSCRIBED`), on Enterprise (`ENTERPRISE_PLAN`) or billed by Dibbla directly (`EXTERNALLY_BILLED`), gets the explanation and no link — exit code 0, it is an answer.
+-   **Who gets a link:** an owner or admin of an organization on Hobby. A member or viewer, and an organization already on Business (`ALREADY_SUBSCRIBED`), on Enterprise (`ENTERPRISE_PLAN`) or billed by Dibbla directly (`EXTERNALLY_BILLED`), gets the explanation and no link — exit code 0, it is an answer.
 -   **Notes:** Show the user the link exactly as printed and let them pay; do not open it for them unless asked. Managing or cancelling a subscription is not done here but in the console (Org settings → Plan → Manage billing).
 -   **Example:** `dibbla upgrade` — `dibbla --org <id> upgrade --json`
 

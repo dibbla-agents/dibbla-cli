@@ -51,13 +51,6 @@ func (l *Log) OnEvent(ev DeployEvent) {
 			for _, n := range l.result.Notices() {
 				l.line("warn", n.Label, n.Text)
 			}
-			if w := l.result.TrialWarning; w != nil && w.Message != "" {
-				text, url := w.Split()
-				l.line("info", "trial", text)
-				if url != "" {
-					l.line("info", "trial", url)
-				}
-			}
 		}
 	case "error":
 		l.errEv = ev.Error
@@ -220,7 +213,7 @@ type structuredFailureEvent struct {
 	// UpgradeURL is the console page that lifts a plan refusal (DIB-1045).
 	UpgradeURL string `json:"upgrade_url,omitempty"`
 	// UpgradeCommand is "dibbla upgrade" when the refusal is lifted by
-	// upgrading a trial (DIB-1047): the payment link, one command away.
+	// upgrading Hobby to Business (DIB-1047): the payment link, one command away.
 	UpgradeCommand string `json:"upgrade_command,omitempty"`
 }
 

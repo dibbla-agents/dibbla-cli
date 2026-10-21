@@ -76,37 +76,6 @@ type DeployResult struct {
 	// the CLI from the installation it is signed in to; the server only
 	// sends names. Absent when the address cannot be derived.
 	MCPAddresses map[string]string `json:"-"`
-	// TrialWarning is the last-week heads-up (DIB-1048): the org's trial
-	// ends within seven days. Drawn once, last, in a calm style — it is a
-	// reminder on a success, not a notice about this deploy.
-	TrialWarning *TrialWarning `json:"trial_warning,omitempty"`
-}
-
-// TrialWarning mirrors deploy-api's models.TrialWarning. Message is the whole
-// text, link included, as the server wrote it.
-type TrialWarning struct {
-	DaysLeft   int    `json:"days_left"`
-	EndsAt     string `json:"ends_at"`
-	UpgradeURL string `json:"upgrade_url,omitempty"`
-	Message    string `json:"message"`
-}
-
-// Split separates the heads-up's sentence from its link, so a renderer can
-// wrap the one and keep the other whole and clickable on its own line. url is
-// "" when the message carries none (no console on this install).
-func (w *TrialWarning) Split() (text, url string) {
-	var parts []string
-	for _, line := range strings.Split(w.Message, "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case line == "":
-		case w.UpgradeURL != "" && line == w.UpgradeURL:
-			url = line
-		default:
-			parts = append(parts, line)
-		}
-	}
-	return strings.Join(parts, " "), url
 }
 
 type ResultDeployment struct {
@@ -197,14 +166,15 @@ type APIError struct {
 	// (first real producer: the plan-limit errors, P-0027).
 	Documentation string `json:"documentation,omitempty"`
 	// UpgradeURL is the console page that lifts a plan refusal
-	// (TRIAL_EXPIRED, PLAN_LIMIT_EXCEEDED — DIB-1045). The server's message
+	// (PLAN_LIMIT_EXCEEDED, or TRIAL_EXPIRED from an older server — DIB-1045,
+	// DIB-1519). The server's message
 	// already names it; renderers use the field to tell a plan refusal
 	// apart and to make the link clickable.
 	UpgradeURL string `json:"upgrade_url,omitempty"`
 }
 
 // IsPlanRefusal reports whether the error is a plan refusal that names its
-// way forward. Those are not faults — the trial ended, or the plan is full —
+// way forward. Those are not faults — the plan is full —
 // and are drawn as a calm note rather than a red failure.
 func IsPlanRefusal(e *DeployError) bool {
 	return e != nil && e.APIError != nil && e.APIError.UpgradeURL != ""
@@ -289,27 +259,6 @@ func (r *DeployResult) mcpPublishedLine(server string) string {
 // publishing.
 func mcpWithdrawnLine(server string) string {
 	return "withdrawn as MCP: " + server + " (its mcp: line left the manifest; the address no longer answers and the name is free)"
-}
-
-// wrapWords breaks text into lines of at most width columns, on spaces.
-func wrapWords(text string, width int) []string {
-	var lines []string
-	cur := ""
-	for _, word := range strings.Fields(text) {
-		switch {
-		case cur == "":
-			cur = word
-		case len([]rune(cur))+1+len([]rune(word)) > width:
-			lines = append(lines, cur)
-			cur = word
-		default:
-			cur += " " + word
-		}
-	}
-	if cur != "" {
-		lines = append(lines, cur)
-	}
-	return lines
 }
 
 // formatElapsed renders a duration with the same shape the design uses

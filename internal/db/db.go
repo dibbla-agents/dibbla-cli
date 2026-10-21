@@ -59,8 +59,8 @@ type APIError struct {
 	UpgradeURL    string            `json:"upgrade_url"`
 }
 
-// PlanRefusal is a TRIAL_EXPIRED / PLAN_LIMIT_EXCEEDED answer that names its
-// way forward (DIB-1045). The command prints it as the note it is — the
+// PlanRefusal is a PLAN_LIMIT_EXCEEDED answer (or an older server's
+// TRIAL_EXPIRED) that names its way forward (DIB-1045). The command prints it as the note it is — the
 // server's own words, the upgrade link, the docs line — not as a failure.
 type PlanRefusal struct {
 	Code          string

@@ -73,7 +73,7 @@ func Ready(orgID, orgName, checkoutURL string) Result {
 		OrgName:     orgName,
 		Message: fmt.Sprintf("Here is your upgrade link — Business for %s, paid by card in Stripe's secure checkout, VAT included; "+
 			"Stripe shows the exact amount in your currency before you pay.\n\n"+
-			"Nothing changes until the payment goes through. Right after it does, deploys work again and the trial countdown is gone; "+
+			"Nothing changes until the payment goes through. Right after it does, the organization is on Business, with no limit on apps or databases; "+
 			"your apps and data are exactly as they are now. The link is personal to this organization and expires in 24 hours.",
 			displayName(orgName)),
 	}
@@ -197,9 +197,10 @@ func readError(raw []byte) (code, message string) {
 }
 
 // CommandHint is the line a plan refusal ends with in the terminal when the
-// way forward is an upgrade from a trial (DIB-1047): the same link is one
+// way forward is an upgrade from Hobby (DIB-1047): the same link is one
 // command away. "" for any other error, and for a paid plan that is full —
-// there is nothing to upgrade there.
+// there is nothing to upgrade there. TRIAL_EXPIRED only comes from a server
+// older than DIB-1519.
 func CommandHint(code, upgradeURL string) string {
 	switch {
 	case code == "TRIAL_EXPIRED":

@@ -276,15 +276,15 @@ func TestHostMismatch_GitHostDifferentFromAPIHostIsFineWhenTheServerSaysSo(t *te
 	}
 }
 
-// After the trial ended the platform refuses main in pre-receive and says why
-// on its own "remote:" lines (DIB-1045). The CLI adds only what the push did,
-// never a bare "git push: exit status 1".
-func TestGitDeployAfterTheTrialEndedSaysNothingWasDeployed(t *testing.T) {
+// When the plan refuses the deploy, the platform refuses main in pre-receive
+// and says why on its own "remote:" lines (DIB-1045). The CLI adds only what
+// the push did, never a bare "git push: exit status 1", whatever the text.
+func TestGitDeployRefusedByThePlanSaysNothingWasDeployed(t *testing.T) {
 	gitEnv(t)
 	work, _ := linkedRepo(t)
 	os.WriteFile(filepath.Join(work, "app.py"), []byte("print('v2')\n"), 0o644)
-	refusal := "remote: Your free trial has ended — thanks for trying Dibbla!\n" +
-		"remote: Your apps keep running exactly as they are. To deploy again, upgrade to Business:\n" +
+	refusal := "remote: This organization's plan does not allow this deploy.\n" +
+		"remote: Your apps keep running exactly as they are. To deploy, upgrade to Business:\n" +
 		"remote:   https://console.dibbla.com/org-settings/plan?upgrade=review\n" +
 		" ! [remote rejected] HEAD -> main (pre-receive hook declined)\n"
 	orig := pushMain

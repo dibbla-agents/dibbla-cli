@@ -235,8 +235,6 @@ var operationMCPAddress = mcp.ServerAddress
 // a direct deploy's response would have rendered: the deployment, and the
 // notices deploy-api copied from that same response (DIB-1353), so every
 // renderer prints them through the same Notices() and with the same words.
-// There is no trial heads-up here, by design — a push prints it on its
-// remote: lines, and printing the operation's copy too would say it twice.
 func operationDeployResult(res *apps.OperationResult) *render.DeployResult {
 	out := &render.DeployResult{
 		Status:        "success",

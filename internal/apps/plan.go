@@ -10,16 +10,11 @@ import (
 )
 
 // PlanStatus is the part of deploy-api's GET /plan that `dibbla status`
-// prints for a trial org (DIB-1048): the day count as the console counts it
-// and the page that upgrades. The CLI has no console URL of its own, so the
-// link can only come from the server.
+// reports for a Hobby org (DIB-1048, DIB-1519): the page that upgrades it to
+// Business. The CLI has no console URL of its own, so the link can only come
+// from the server. The trial fields an older server still sends are ignored.
 type PlanStatus struct {
-	Plan        string `json:"plan"`
-	TrialEndsAt string `json:"trial_ends_at"`
-	// DaysLeft is never negative; TrialEnded says whether it ended. Both are
-	// absent (nil / false) for any other plan and from an older server.
-	DaysLeft   *int   `json:"days_left"`
-	TrialEnded bool   `json:"trial_ended"`
+	Plan       string `json:"plan"`
 	UpgradeURL string `json:"upgrade_url"`
 }
 
