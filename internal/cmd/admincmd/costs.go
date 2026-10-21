@@ -183,7 +183,13 @@ func printCosts(stdout io.Writer, rep costReport) {
 		}
 		margin := "—"
 		if u.MarginEUR != nil && u.Requests > 0 {
-			margin = money(*u.MarginEUR, "€")
+			// Below a hundredth of a cent the margin is rounding, not
+			// money: the console shows it as €0.00 too.
+			m := *u.MarginEUR
+			if math.Abs(m) < 0.00005 {
+				m = 0
+			}
+			margin = money(m, "€")
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, part, count(u.Requests), count(u.PromptTokens), count(u.CompletionTokens),
 			cost, pays, margin, notes(u))

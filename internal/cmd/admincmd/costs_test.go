@@ -140,6 +140,20 @@ func TestCostsRefusals(t *testing.T) {
 	}
 }
 
+func TestCostsRoundingMarginIsZero(t *testing.T) {
+	defer resetCostsFlags()
+	resetCostsFlags()
+	body := strings.Replace(october, `"margin_eur": 0.002}`, `"margin_eur": -0.0000004}`, 1)
+	f := &fakeCosts{body: []byte(body)}
+	var out, errb bytes.Buffer
+	if code := runCosts(f.factory(), &out, &errb); code != 0 {
+		t.Fatal(errb.String())
+	}
+	if strings.Contains(out.String(), "-<€") {
+		t.Errorf("a rounding margin is shown as money:\n%s", out.String())
+	}
+}
+
 func TestMoney(t *testing.T) {
 	for v, want := range map[float64]string{2.5: "$2.50", 1234.5: "$1,234.50", 0.0123: "$0.0123", 0.5: "$0.50", 0.00001: "<$0.0001", -1.18: "-$1.18", 0: "$0.00"} {
 		if got := money(v, "$"); got != want {
