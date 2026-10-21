@@ -46,6 +46,81 @@ type orgCosts struct {
 	Ops      costUsage `json:"ops"`
 	Customer costUsage `json:"customer"`
 	Total    costUsage `json:"total"`
+	hostingTotals
+}
+
+// Hosting (DIB-1557): the cluster's monthly cost divided by what the apps
+// reserved — an estimate — and AI + hosting = total.
+type hostingShare struct {
+	EUR           float64 `json:"eur"`
+	CPUMillicores float64 `json:"cpu_millicores"`
+	MemoryBytes   float64 `json:"memory_bytes"`
+}
+
+type hostingTotals struct {
+	Hosting        *hostingShare `json:"hosting"`
+	TotalCostEUR   *float64      `json:"total_cost_eur"`
+	TotalMarginEUR *float64      `json:"total_margin_eur"`
+}
+
+type hostingSummary struct {
+	Status         string        `json:"status"`
+	Message        string        `json:"message"`
+	Days           int           `json:"days"`
+	DaysInMonth    int           `json:"days_in_month"`
+	CostEUR        float64       `json:"cost_eur"`
+	Platform       *hostingShare `json:"platform"`
+	UnusedEUR      float64       `json:"unused_eur"`
+	UnallocatedEUR float64       `json:"unallocated_eur"`
+}
+
+// divided is whether the month's hosting has figures to show.
+func (h *hostingSummary) divided() bool {
+	return h != nil && (h.Status == "ok" || h.Status == "no_snapshots")
+}
+
+func (h *hostingSummary) notice() string {
+	if h == nil {
+		return ""
+	}
+	switch h.Status {
+	case "no_cost":
+		return "Hosting: no monthly cost is entered for this environment ('dibbla admin hosting-cost set')."
+	case "no_snapshots":
+		return "Hosting: deploy-api has taken no snapshot of what the apps reserve for this month yet."
+	case "unavailable":
+		return "Hosting could not be divided: " + h.Message
+	}
+	return ""
+}
+
+func hostingCell(h *hostingShare) string {
+	if h == nil || h.EUR == 0 {
+		return "—"
+	}
+	return "≈" + money(h.EUR, "€")
+}
+
+func totalCell(t hostingTotals) string {
+	if t.TotalCostEUR == nil {
+		return "—"
+	}
+	c := money(*t.TotalCostEUR, "€")
+	if t.Hosting != nil && t.Hosting.EUR > 0 {
+		c = "≈" + c
+	}
+	return c
+}
+
+func totalMarginCell(t hostingTotals) string {
+	if t.TotalMarginEUR == nil {
+		return "—"
+	}
+	m := *t.TotalMarginEUR
+	if math.Abs(m) < 0.00005 {
+		m = 0
+	}
+	return money(m, "€")
 }
 
 type costReport struct {
@@ -55,8 +130,9 @@ type costReport struct {
 		Source    string   `json:"source"`
 		RateDate  string   `json:"rate_date"`
 	} `json:"fx"`
-	Orgs   []orgCosts `json:"orgs"`
-	Totals orgCosts   `json:"totals"`
+	Orgs    []orgCosts      `json:"orgs"`
+	Totals  orgCosts        `json:"totals"`
+	Hosting *hostingSummary `json:"hosting_summary"`
 }
 
 var costsFlags struct {
@@ -107,7 +183,7 @@ func init() {
 	f := costsCmd.Flags()
 	f.StringVar(&costsFlags.month, "month", "", "Calendar month, YYYY-MM (default: the current month)")
 	f.BoolVar(&costsFlags.json, "json", false, "Emit the gateway's JSON answer")
-	f.StringVar(&costsFlags.sort, "sort", "cost", "Order: cost, price, margin, calls, tokens or org")
+	f.StringVar(&costsFlags.sort, "sort", "cost", "Order: cost, hosting, total, price, margin, calls, tokens or org")
 	f.StringVar(&costsFlags.org, "org", "", "Drill one organization down (its slug or id)")
 	f.StringVar(&costsFlags.app, "app", "", "With --org: only this app (alias, or deployment:<id>)")
 }
@@ -137,7 +213,7 @@ func runCosts(newClient func(io.Writer) (catalogClient, bool), stdout, stderr io
 	}
 	less, ok := costsOrder[costsFlags.sort]
 	if !ok {
-		fmt.Fprintf(stderr, "%s --sort must be cost, price, margin, calls, tokens or org\n", platform.Icon("❌", "[X]"))
+		fmt.Fprintf(stderr, "%s --sort must be cost, hosting, total, price, margin, calls, tokens or org\n", platform.Icon("❌", "[X]"))
 		return 1
 	}
 	if costsFlags.app != "" && strings.TrimSpace(costsFlags.org) == "" {
@@ -176,7 +252,11 @@ var costsOrder = map[string]func(a, b orgCosts) bool{
 	"cost":  func(a, b orgCosts) bool { return a.Total.CostUSD > b.Total.CostUSD },
 	"price": func(a, b orgCosts) bool { return a.Total.PriceEUR > b.Total.PriceEUR },
 	"margin": func(a, b orgCosts) bool {
-		return marginOrLowest(a.Total) > marginOrLowest(b.Total)
+		return marginOrLowest(a) > marginOrLowest(b)
+	},
+	"hosting": func(a, b orgCosts) bool { return hostingEUR(a) > hostingEUR(b) },
+	"total": func(a, b orgCosts) bool {
+		return orLowest(a.TotalCostEUR) > orLowest(b.TotalCostEUR)
 	},
 	"calls": func(a, b orgCosts) bool { return a.Total.Requests > b.Total.Requests },
 	"tokens": func(a, b orgCosts) bool {
@@ -185,11 +265,27 @@ var costsOrder = map[string]func(a, b orgCosts) bool{
 	"org": func(a, b orgCosts) bool { return strings.ToLower(orgName(a)) < strings.ToLower(orgName(b)) },
 }
 
-func marginOrLowest(u costUsage) float64 {
-	if u.MarginEUR == nil {
+// marginOrLowest is the org's margin: against AI + hosting where hosting is
+// divided, else the AI's.
+func marginOrLowest(o orgCosts) float64 {
+	if o.TotalMarginEUR != nil {
+		return *o.TotalMarginEUR
+	}
+	return orLowest(o.Total.MarginEUR)
+}
+
+func orLowest(v *float64) float64 {
+	if v == nil {
 		return math.Inf(-1)
 	}
-	return *u.MarginEUR
+	return *v
+}
+
+func hostingEUR(o orgCosts) float64 {
+	if o.Hosting == nil {
+		return 0
+	}
+	return o.Hosting.EUR
 }
 
 func orgName(o orgCosts) string {
@@ -202,8 +298,15 @@ func orgName(o orgCosts) string {
 func printCosts(stdout io.Writer, rep costReport) {
 	fmt.Fprintf(stdout, "What customers cost Dibbla, %s (UTC)\n\n", rep.Month)
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ORGANIZATION\tPART\tCALLS\tTOKENS IN\tTOKENS OUT\tCOST (USD)\tCUSTOMER PAYS (EUR)\tMARGIN (EUR)\tNOTES")
-	line := func(name, part string, u costUsage, ops bool) {
+	hosting := rep.Hosting.divided()
+	if hosting {
+		fmt.Fprintln(w, "ORGANIZATION\tPART\tCALLS\tTOKENS IN\tTOKENS OUT\tAI COST (USD)\tHOSTING ≈ (EUR)\tTOTAL COST (EUR)\tCUSTOMER PAYS (EUR)\tMARGIN (EUR)\tNOTES")
+	} else {
+		fmt.Fprintln(w, "ORGANIZATION\tPART\tCALLS\tTOKENS IN\tTOKENS OUT\tCOST (USD)\tCUSTOMER PAYS (EUR)\tMARGIN (EUR)\tNOTES")
+	}
+	// h is the line's hosting where it has one (an org, the total); a split
+	// of an org (ops, own traffic) has none and keeps the AI's margin.
+	line := func(name, part string, u costUsage, ops bool, h *hostingTotals) {
 		pays := money(u.PriceEUR, "€")
 		if ops {
 			pays = "—"
@@ -227,8 +330,20 @@ func printCosts(stdout io.Writer, rep costReport) {
 			}
 			margin = money(m, "€")
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, part, count(u.Requests), count(u.PromptTokens), count(u.CompletionTokens),
-			cost, pays, margin, notes(u))
+		if !hosting {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, part, count(u.Requests), count(u.PromptTokens), count(u.CompletionTokens),
+				cost, pays, margin, notes(u))
+			return
+		}
+		hc, tc := "—", "—"
+		if h != nil {
+			hc, tc = hostingCell(h.Hosting), totalCell(*h)
+			if h.TotalMarginEUR != nil && (u.Requests > 0 || h.Hosting != nil) {
+				margin = totalMarginCell(*h)
+			}
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, part, count(u.Requests), count(u.PromptTokens), count(u.CompletionTokens),
+			cost, hc, tc, pays, margin, notes(u))
 	}
 	if len(rep.Orgs) == 0 {
 		_ = w.Flush()
@@ -236,17 +351,34 @@ func printCosts(stdout io.Writer, rep costReport) {
 		return
 	}
 	for _, o := range rep.Orgs {
-		line(orgName(o), "total", o.Total, false)
+		o := o
+		line(orgName(o), "total", o.Total, false, &o.hostingTotals)
 		if o.Ops.Requests > 0 {
-			line("", "ops", o.Ops, true)
+			line("", "ops", o.Ops, true, nil)
 		}
 		if o.Customer.Requests > 0 {
-			line("", "own traffic", o.Customer, false)
+			line("", "own traffic", o.Customer, false, nil)
 		}
 	}
-	line(fmt.Sprintf("TOTAL (%d orgs)", len(rep.Orgs)), "total", rep.Totals.Total, false)
-	line("", "ops", rep.Totals.Ops, true)
-	line("", "own traffic", rep.Totals.Customer, false)
+	line(fmt.Sprintf("TOTAL (%d orgs)", len(rep.Orgs)), "total", rep.Totals.Total, false, &rep.Totals.hostingTotals)
+	line("", "ops", rep.Totals.Ops, true, nil)
+	line("", "own traffic", rep.Totals.Customer, false, nil)
+	if hosting {
+		h := rep.Hosting
+		only := func(name string, eur float64) {
+			fmt.Fprintf(w, "%s\t\t\t\t\t\t≈%s\t\t\t\t\n", name, money(eur, "€"))
+		}
+		platformEUR := 0.0
+		if h.Platform != nil {
+			platformEUR = h.Platform.EUR
+		}
+		only("Dibbla platform", platformEUR)
+		only("Unused capacity", h.UnusedEUR)
+		if h.UnallocatedEUR > 0.005 {
+			only("Not divided", h.UnallocatedEUR)
+		}
+		only(fmt.Sprintf("Cluster (%d of %d days)", h.Days, h.DaysInMonth), h.CostEUR)
+	}
 	_ = w.Flush()
 
 	fmt.Fprintln(stdout)
@@ -264,6 +396,12 @@ func printCosts(stdout io.Writer, rep costReport) {
 		fmt.Fprintln(stdout, "No EUR rate is stored, so there is no margin.")
 	}
 	fmt.Fprintln(stdout, "Ops: what Dibbla runs for the organization and pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
+	if rep.Hosting.divided() {
+		fmt.Fprintln(stdout, "Hosting ≈ is an estimate: the cluster's monthly cost divided by what each app reserved (CPU, memory, stored bytes) in a daily snapshot, not what it used. The margin is against AI + hosting.")
+	}
+	if n := rep.Hosting.notice(); n != "" {
+		fmt.Fprintln(stdout, n)
+	}
 }
 
 // notes are the marks the console shows beside a figure.

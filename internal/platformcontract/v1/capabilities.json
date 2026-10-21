@@ -1470,10 +1470,13 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "A platform-operator authority: the report spans every tenant and carries Dibbla’s purchase prices, readable only by a Dibbla global admin, checked by the AI gateway on the validated identity (DIB-1120). An OAuth grant is consent for one organization, so no scope can carry a read across all of them, and inventing one would put an operator power inside a customer consent screen.",
+      "reason": "A platform-operator authority: the report spans every tenant and carries Dibbla’s purchase prices, readable only by a Dibbla global admin, checked by the AI gateway on the validated identity (DIB-1120). The same authority keeps what the cluster costs a month, which the report divides among the apps as hosting (DIB-1557). An OAuth grant is consent for one organization, so no scope can carry a read across all of them, and inventing one would put an operator power inside a customer consent screen.",
       "source": "dibbla-cli/internal/cmd/admincmd/costs.go",
       "cli_commands": [
-        "admin costs"
+        "admin costs",
+        "admin hosting-cost list",
+        "admin hosting-cost set",
+        "admin hosting-cost delete"
       ]
     },
     {
