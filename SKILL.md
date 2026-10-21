@@ -259,7 +259,7 @@ Inspect and run an app's **application checks** — the assertions in `dibbla-ch
 
 Inspect, enable and run an app's **maintenance agent** — an opt-in overnight look at logs, source and check history. It never deploys on its own. The alias is always positional.
 
--   **`apps maintenance status <alias> [--json]`** — effective settings and the latest run. Org capability off is `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit **4**), not a missing alias.
+-   **`apps maintenance status <alias> [--json]`** — effective settings and the latest run. Without the organization's Maintenance Agent add-on (Business, 300 kr/month, added on the console's Plan page, all inference included) this is `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit **4**), not a missing alias.
 -   **`apps maintenance enable|disable <alias> [--yes]`** — per-app switch. Requires owner/admin. Shipping code does not start anything; this command does.
 -   **`apps maintenance run <alias> [--async|--follow] [--quiet|--json] [--mode nightly|check-triage] [--check-run <id>] [--idempotency-key <key>]`** — start one run. **Product exits:** `0` found_nothing/proposed/budget_exhausted/skipped/cancelled, `11` finding_recorded. Transport keeps `1/3/4/5/6/7`. `--follow --json` is NDJSON with exactly one terminal `summary`. Reusing `--idempotency-key` replays the original execution.
 -   **`apps maintenance runs <alias> [--limit N] [--json]`** — history, newest first, with summary/fingerprint/proposal when present.

@@ -603,8 +603,9 @@ dibbla apps proposals approve myapp pr_0123456789abcdef0123 --yes
 dibbla apps proposals deny myapp pr_0123456789abcdef0123 --yes
 ```
 
-A `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit 4) means the organization is
-not switched on — not a missing alias. Reusing `--idempotency-key` follows the
+A `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit 4) means the organization does
+not have the Maintenance Agent add-on (Business, added on the console's Plan
+page) — not a missing alias. Reusing `--idempotency-key` follows the
 original execution; it does not start a second run. The CLI never computes who
 may approve: `show` prints the server `decision` object, and the author of a
 maintenance proposal cannot approve it.

@@ -420,9 +420,14 @@ Commands: `dibbla apps maintenance status|enable|disable|run|runs` and
 
 ### Two switches, both off by default
 
-1. **Org capability.** Feature-gated per organization. When it is off, every
-   maintenance call is a `404` with `MAINTENANCE_AGENT_NOT_FOUND` (CLI exit 4).
-   That is the rollout, not a missing app — do not send the user to `apps list`.
+1. **Org capability: the Maintenance Agent add-on.** An owner or admin adds it
+   on the console's Plan page (`/org-settings/plan`): 300 kr/month per
+   organization, Business only, all AI inference included — runs never draw
+   from AI credits and there is no own key to bring. When the organization
+   does not have it, every maintenance call is a `404` with
+   `MAINTENANCE_AGENT_NOT_FOUND` (CLI exit 4). That is the add-on, not a
+   missing app — do not send the user to `apps list`; send an owner/admin to
+   the Plan page.
 2. **Per-app enablement.** `dibbla apps maintenance enable <alias>` (owner/admin)
    turns this app on. Shipping code does not start anything. `disable` stops new
    runs and keeps history readable.
