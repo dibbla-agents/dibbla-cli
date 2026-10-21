@@ -1465,6 +1465,18 @@
       ]
     },
     {
+      "id": "cli.admin.costs",
+      "title": "Read what every customer’s AI calls cost Dibbla, from a global admin’s machine",
+      "state": "local-only",
+      "scopes": [],
+      "auth": "none",
+      "reason": "A platform-operator authority: the report spans every tenant and carries Dibbla’s purchase prices, readable only by a Dibbla global admin, checked by the AI gateway on the validated identity (DIB-1120). An OAuth grant is consent for one organization, so no scope can carry a read across all of them, and inventing one would put an operator power inside a customer consent screen.",
+      "source": "dibbla-cli/internal/cmd/admincmd/costs.go",
+      "cli_commands": [
+        "admin costs"
+      ]
+    },
+    {
       "id": "platform.tools.list",
       "title": "List the functions the organization exposes as tools",
       "state": "remote-read",

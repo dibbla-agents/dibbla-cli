@@ -145,6 +145,11 @@ func newCatalogClient(stderr io.Writer) (catalogClient, bool) {
 }
 
 func reportError(stderr io.Writer, err error) int {
+	return reportErrorFor(stderr, err, "the model catalog is for global admins only")
+}
+
+// reportErrorFor is reportError with the words a 403 is answered with.
+func reportErrorFor(stderr io.Writer, err error, forbidden string) int {
 	if apiErr, ok := err.(*apiclient.APIError); ok {
 		// The gateway answers {"error":{"code","message"}}; apiclient keeps
 		// the raw body, so show the message rather than the JSON.
@@ -158,7 +163,7 @@ func reportError(stderr io.Writer, err error) int {
 			msg = env.Error.Message
 		}
 		if apiErr.StatusCode == 403 {
-			msg = "the model catalog is for global admins only"
+			msg = forbidden
 		}
 		fmt.Fprintf(stderr, "%s %s\n", platform.Icon("❌", "[X]"), msg)
 		return apiclient.ExitCodeForStatus(apiErr.StatusCode)
