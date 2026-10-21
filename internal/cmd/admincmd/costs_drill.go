@@ -207,7 +207,7 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 		}
 	})
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Every breakdown adds up to the total above. Ops: what Dibbla pays for itself (Dibbla Care). ≈: partly estimated at today's catalog price.")
+	fmt.Fprintln(stdout, "Every breakdown adds up to the total above. Ops: what Dibbla pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
 }
 
 func costCell(u costUsage) string {

@@ -73,7 +73,7 @@ var costsCmd = &cobra.Command{
 	Long: `What every organization's AI calls cost Dibbla in one calendar month (UTC):
 calls, tokens, the purchase price (USD), what the customer pays (EUR) and the
 margin, each organization split into ops (what Dibbla runs for it and pays
-for itself under Dibbla Care) and its own traffic.
+for itself under the Maintenance Agent) and its own traffic.
 
 The same figures as the AI console's Customer costs page. Calls without a
 recorded cost are estimated at today's catalog price ("estimated"); calls
@@ -263,7 +263,7 @@ func printCosts(stdout io.Writer, rep costReport) {
 	} else {
 		fmt.Fprintln(stdout, "No EUR rate is stored, so there is no margin.")
 	}
-	fmt.Fprintln(stdout, "Ops: what Dibbla runs for the organization and pays for itself (Dibbla Care). ≈: partly estimated at today's catalog price.")
+	fmt.Fprintln(stdout, "Ops: what Dibbla runs for the organization and pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
 }
 
 // notes are the marks the console shows beside a figure.
