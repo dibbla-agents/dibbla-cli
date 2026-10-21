@@ -25,6 +25,7 @@ type appCostLine struct {
 	ActiveUsers        int64    `json:"active_users"`
 	CostPerUserEUR     *float64 `json:"cost_per_user_eur"`
 	PricePerUserEUR    *float64 `json:"price_per_user_eur"`
+	hostingTotals
 }
 
 type costDrill struct {
@@ -32,7 +33,9 @@ type costDrill struct {
 	FX    struct {
 		USDPerEUR *float64 `json:"usd_per_eur"`
 	} `json:"fx"`
-	Org         orgCosts      `json:"org"`
+	Org     orgCosts        `json:"org"`
+	Hosting *hostingSummary `json:"hosting_summary"`
+	hostingTotals
 	Total       costUsage     `json:"total"`
 	ActiveUsers int64         `json:"active_users"`
 	Apps        []appCostLine `json:"apps"`
@@ -90,7 +93,7 @@ func runCostDrill(c catalogClient, report []byte, month, org, app string, stdout
 		}
 	}
 	if id == "" {
-		fmt.Fprintf(stderr, "%s no organization %q has AI calls in %s (give its slug or id)\n", platform.Icon("❌", "[X]"), org, month)
+		fmt.Fprintf(stderr, "%s no organization %q has AI calls or hosting in %s (give its slug or id)\n", platform.Icon("❌", "[X]"), org, month)
 		return 4
 	}
 	q := url.Values{"month": {month}}
@@ -124,7 +127,8 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 		name += " · " + app
 	}
 	fmt.Fprintf(stdout, "What %s cost Dibbla, %s (UTC)\n\n", name, d.Month)
-	if d.Total.Requests == 0 {
+	hosting := d.Hosting.divided()
+	if d.Total.Requests == 0 && !(hosting && d.hostingTotals.Hosting != nil) {
 		fmt.Fprintf(stdout, "No AI calls in %s.\n", d.Month)
 		return
 	}
@@ -134,6 +138,10 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 	}
 	fmt.Fprintf(stdout, "Cost %s · customer pays %s · margin %s · %s calls · %d active users · cost per user %s\n",
 		costCell(d.Total), money(d.Total.PriceEUR, "€"), marginCell(d.Total), count(d.Total.Requests), d.ActiveUsers, perUser)
+	if hosting {
+		fmt.Fprintf(stdout, "Hosting %s · total cost %s · margin against AI + hosting %s\n",
+			hostingCell(d.hostingTotals.Hosting), totalCell(d.hostingTotals), totalMarginCell(d.hostingTotals))
+	}
 
 	section := func(title, head string, rows func(w *tabwriter.Writer)) {
 		fmt.Fprintf(stdout, "\n%s\n", title)
@@ -152,7 +160,11 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 	}
 
 	if app == "" {
-		section("BY APP", "APP"+cols+"\tUSERS\tCOST/USER\tPAYS/USER\tNOTES", func(w *tabwriter.Writer) {
+		head := "APP" + cols + "\tUSERS\tCOST/USER\tPAYS/USER\tNOTES"
+		if hosting {
+			head = "APP" + cols + "\tHOSTING ≈ (EUR)\tTOTAL COST (EUR)\tMARGIN WITH HOSTING (EUR)\tUSERS\tCOST/USER\tPAYS/USER\tNOTES"
+		}
+		section("BY APP", head, func(w *tabwriter.Writer) {
 			for _, a := range d.Apps {
 				n := notes(a.costUsage)
 				if a.ViaDeploymentCalls > 0 {
@@ -168,7 +180,11 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 				if a.PricePerUserEUR != nil {
 					ppu = money(*a.PricePerUserEUR, "€")
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", appName(a.App, a.DeploymentID), cells(a.costUsage, false), users, cpu, ppu, n)
+				hc := ""
+				if hosting {
+					hc = fmt.Sprintf("%s\t%s\t%s\t", hostingCell(a.Hosting), totalCell(a.hostingTotals), totalMarginCell(a.hostingTotals))
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s%s\t%s\t%s\t%s\n", appName(a.App, a.DeploymentID), cells(a.costUsage, false), hc, users, cpu, ppu, n)
 			}
 		})
 	}
@@ -208,6 +224,12 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 	})
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "Every breakdown adds up to the total above. Ops: what Dibbla pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
+	if hosting {
+		fmt.Fprintln(stdout, "Hosting ≈ is an estimate: the cluster's monthly cost divided by what each app reserved in a daily snapshot. It is per app only, not per user, purpose, model or day.")
+	}
+	if n := d.Hosting.notice(); n != "" {
+		fmt.Fprintln(stdout, n)
+	}
 }
 
 func costCell(u costUsage) string {

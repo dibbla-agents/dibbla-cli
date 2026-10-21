@@ -23,5 +23,6 @@ func Register(root *cobra.Command) {
 	adminCmd.AddCommand(reconcileCmd)
 	adminCmd.AddCommand(modelsCmd)
 	adminCmd.AddCommand(costsCmd)
+	adminCmd.AddCommand(hostingCostCmd)
 	root.AddCommand(adminCmd)
 }
