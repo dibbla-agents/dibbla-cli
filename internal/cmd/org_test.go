@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
+	"github.com/dibbla-agents/dibbla-cli/internal/orgs"
 )
 
 // Setting DIBBLA_API_TOKEN keeps resolveOrgWithSource on its env-only branch,
@@ -117,5 +118,22 @@ func TestOrgFlag_IsPersistentAndBoundToConfig(t *testing.T) {
 	}
 	if config.FlagOrgID != "org-from-flag" {
 		t.Errorf("config.FlagOrgID = %q, want org-from-flag", config.FlagOrgID)
+	}
+}
+
+// DIB-1519: the PLAN column says Hobby / Business / Enterprise, never the
+// stored "standard" or the legacy "trial"; no plan stays blank.
+func TestOrgListRow_NamesThePlanAsTheConsoleDoes(t *testing.T) {
+	for stored, want := range map[string]string{
+		"standard":   "Business",
+		"hobby":      "Hobby",
+		"trial":      "Hobby",
+		"enterprise": "Enterprise",
+		"":           "",
+	} {
+		row := orgListRow(orgs.Org{ID: "o1", Name: "Acme", Plan: stored}, "")
+		if got := row[4]; got != want {
+			t.Errorf("plan %q: PLAN column = %q, want %q", stored, got, want)
+		}
 	}
 }
