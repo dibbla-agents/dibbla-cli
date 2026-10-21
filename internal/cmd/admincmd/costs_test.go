@@ -51,7 +51,9 @@ const october = `{
      "total": {"requests": 8, "prompt_tokens": 701000, "completion_tokens": 70100, "cost_usd": 2.61, "costed_calls": 3, "estimated_calls": 1, "uncosted_calls": 1, "own_key_calls": 1, "price_eur": 0.91, "priced_calls": 3, "unpriced_calls": 1, "margin_eur": -1.178}}
 }`
 
-func resetCostsFlags() { costsFlags.month, costsFlags.json, costsFlags.sort = "", false, "cost" }
+func resetCostsFlags() {
+	costsFlags.month, costsFlags.json, costsFlags.sort, costsFlags.org, costsFlags.app = "", false, "cost", "", ""
+}
 
 func TestCostsPrintsTheMonthPerOrgWithItsSplit(t *testing.T) {
 	defer resetCostsFlags()

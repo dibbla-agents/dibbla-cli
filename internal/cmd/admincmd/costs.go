@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,8 @@ var costsFlags struct {
 	month string
 	json  bool
 	sort  string
+	org   string
+	app   string
 }
 
 var costsCmd = &cobra.Command{
@@ -77,11 +80,23 @@ recorded cost are estimated at today's catalog price ("estimated"); calls
 that cannot be costed are counted ("N without cost"), never as zero; calls
 on the customer's own provider key cost Dibbla nothing ("own key").
 
+With --org, one organization's month drilled down: per app (machine calls
+resolved to their app by deployment), with each app's active users and cost
+per user, per user, per purpose (customer traffic, application checks, the
+maintenance agent and any other recorded), per model and per day. Every
+breakdown adds up to the organization's row. --app narrows the breakdowns to
+one app ("deployment:<id>" for a deployment no call names an app for).
+
+The cost view exists only where the installation turns it on (Dibbla's own);
+elsewhere the command says so.
+
 Requires a global admin login ('dibbla login').`,
 	Example: `  dibbla admin costs
   dibbla admin costs --month 2026-10
   dibbla admin costs --month 2026-10 --sort margin
-  dibbla admin costs --month 2026-10 --json`,
+  dibbla admin costs --month 2026-10 --json
+  dibbla admin costs --org acme
+  dibbla admin costs --org acme --app shop --month 2026-10`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		os.Exit(runCosts(newCatalogClient, os.Stdout, os.Stderr))
@@ -93,6 +108,20 @@ func init() {
 	f.StringVar(&costsFlags.month, "month", "", "Calendar month, YYYY-MM (default: the current month)")
 	f.BoolVar(&costsFlags.json, "json", false, "Emit the gateway's JSON answer")
 	f.StringVar(&costsFlags.sort, "sort", "cost", "Order: cost, price, margin, calls, tokens or org")
+	f.StringVar(&costsFlags.org, "org", "", "Drill one organization down (its slug or id)")
+	f.StringVar(&costsFlags.app, "app", "", "With --org: only this app (alias, or deployment:<id>)")
+}
+
+// notInstalled is what a 404 from the cost routes means: the installation
+// does not run the cost view (ADMIN_COSTS_ENABLED off in the gateway).
+const notInstalled = "the cost view is not available in this installation (it is turned on only in Dibbla's own installations)"
+
+func reportCostsError(stderr io.Writer, err error) int {
+	if apiErr, ok := err.(*apiclient.APIError); ok && apiErr.StatusCode == 404 {
+		fmt.Fprintf(stderr, "%s %s\n", platform.Icon("❌", "[X]"), notInstalled)
+		return apiclient.ExitCodeForStatus(404)
+	}
+	return reportErrorFor(stderr, err, "customer costs are for global admins only")
 }
 
 var monthPattern = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
@@ -111,13 +140,20 @@ func runCosts(newClient func(io.Writer) (catalogClient, bool), stdout, stderr io
 		fmt.Fprintf(stderr, "%s --sort must be cost, price, margin, calls, tokens or org\n", platform.Icon("❌", "[X]"))
 		return 1
 	}
+	if costsFlags.app != "" && strings.TrimSpace(costsFlags.org) == "" {
+		fmt.Fprintf(stderr, "%s --app needs --org\n", platform.Icon("❌", "[X]"))
+		return 1
+	}
 	c, ok := newClient(stderr)
 	if !ok {
 		return 3
 	}
 	resp, err := c.Get(costsPath + "?month=" + url.QueryEscape(month))
 	if err != nil {
-		return reportErrorFor(stderr, err, "customer costs are for global admins only")
+		return reportCostsError(stderr, err)
+	}
+	if org := strings.TrimSpace(costsFlags.org); org != "" {
+		return runCostDrill(c, resp.Body, month, org, strings.TrimSpace(costsFlags.app), stdout, stderr)
 	}
 	if costsFlags.json {
 		_, _ = stdout.Write(resp.Body)
