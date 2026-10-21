@@ -137,11 +137,7 @@ func runOrgList(cmd *cobra.Command, args []string) {
 
 	rows := make([][]string, 0, len(list))
 	for _, o := range list {
-		marker := ""
-		if strings.EqualFold(o.ID, cfg.OrgID) {
-			marker = platform.Icon("→", "*")
-		}
-		rows = append(rows, []string{marker, o.Name, o.Slug, o.Role, o.Plan, o.ID})
+		rows = append(rows, orgListRow(o, cfg.OrgID))
 	}
 	output.PrintTable([]string{"", "NAME", "SLUG", "ROLE", "PLAN", "ID"}, rows)
 
@@ -274,4 +270,15 @@ func storeOrgPin(cfg *config.Config, orgID, orgName string) (where string, err e
 	// sending the organization that was just changed.
 	config.SyncLegacyMirror()
 	return fmt.Sprintf("context %s (%s)", cfg.Context, contextcfg.Path()), nil
+}
+
+// orgListRow is one row of `dibbla org list`: the active marker, then the
+// org with its plan named as the console names it (DIB-1519) — Hobby,
+// Business, Enterprise. --json keeps the stored plan name.
+func orgListRow(o orgs.Org, activeID string) []string {
+	marker := ""
+	if strings.EqualFold(o.ID, activeID) {
+		marker = platform.Icon("→", "*")
+	}
+	return []string{marker, o.Name, o.Slug, o.Role, planLabel(o.Plan), o.ID}
 }
