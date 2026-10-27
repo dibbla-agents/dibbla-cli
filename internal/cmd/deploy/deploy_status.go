@@ -237,17 +237,19 @@ var operationMCPAddress = mcp.ServerAddress
 // renderer prints them through the same Notices() and with the same words.
 func operationDeployResult(res *apps.OperationResult) *render.DeployResult {
 	out := &render.DeployResult{
-		Status:        "success",
-		Deployment:    render.ResultDeployment{ID: res.DeploymentID, Alias: res.Alias, URL: res.URL, Status: res.Status},
-		VCSCommit:     res.CommitSHA,
-		SupportNotice: res.SupportNotice,
-		ChecksNotice:  res.ChecksNotice,
-		VCSError:      res.VCSError,
-		VCSFiltered:   res.VCSFiltered,
-		EnvWarnings:   res.EnvWarnings,
-		MCPPublished:  res.MCPPublished,
-		MCPNotice:     res.MCPNotice,
-		MCPWithdrawn:  res.MCPWithdrawn,
+		Status:          "success",
+		Deployment:      render.ResultDeployment{ID: res.DeploymentID, Alias: res.Alias, URL: res.URL, Status: res.Status},
+		VCSCommit:       res.CommitSHA,
+		SupportNotice:   res.SupportNotice,
+		ChecksNotice:    res.ChecksNotice,
+		VCSError:        res.VCSError,
+		VCSFiltered:     res.VCSFiltered,
+		EnvWarnings:     res.EnvWarnings,
+		MCPPublished:    res.MCPPublished,
+		MCPNotice:       res.MCPNotice,
+		MCPWithdrawn:    res.MCPWithdrawn,
+		RemovedServices: res.RemovedServices,
+		ServicesNotice:  res.ServicesNotice,
 	}
 	if len(out.MCPPublished) > 0 && operationMCPAddress != nil {
 		out.MCPAddresses = map[string]string{}

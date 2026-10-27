@@ -53,6 +53,12 @@ func (j *JSONRenderer) OnDone() int {
 		if j.result.ChecksNotice != "" {
 			out["checks_notice"] = j.result.ChecksNotice
 		}
+		if j.result.ServicesNotice != "" {
+			out["services_notice"] = j.result.ServicesNotice
+		}
+		if len(j.result.RemovedServices) > 0 {
+			out["removed_services"] = j.result.RemovedServices
+		}
 		if j.result.VCSError != "" {
 			out["vcs_error"] = j.result.VCSError
 		}

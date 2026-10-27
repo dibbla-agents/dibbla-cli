@@ -57,6 +57,9 @@ type OperationResult struct {
 	MCPPublished  []string `json:"mcp_published,omitempty"`
 	MCPNotice     string   `json:"mcp_notice,omitempty"`
 	MCPWithdrawn  []string `json:"mcp_withdrawn,omitempty"`
+	// Services that left dibbla.yaml and were stopped (DIB-1617).
+	RemovedServices []string `json:"removed_services,omitempty"`
+	ServicesNotice  string   `json:"services_notice,omitempty"`
 }
 
 // OperationEvent is one lifecycle line of an operation.

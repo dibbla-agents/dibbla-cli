@@ -50,6 +50,11 @@ type DeployResult struct {
 	// could not be promoted onto the new revision (SLC-0129). The server
 	// used to report this as a failed deploy; it is a notice on a success.
 	ChecksNotice string `json:"checks_notice,omitempty"`
+	// RemovedServices names the services this deploy stopped because they
+	// are no longer in dibbla.yaml; ServicesNotice is the server's sentence
+	// for it, including the volumes it kept (DIB-1617).
+	RemovedServices []string `json:"removed_services,omitempty"`
+	ServicesNotice  string   `json:"services_notice,omitempty"`
 	// VCSError and VCSFiltered have been on the server's success response
 	// since P-0021, but had no field here — so the CLI silently dropped a
 	// failed version-control commit and the list of paths excluded from it.
@@ -212,6 +217,7 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 	}
 	add("support", r.SupportNotice)
 	add("checks", r.ChecksNotice)
+	add("services", r.ServicesNotice)
 	add("mcp", r.MCPNotice)
 	add("vcs", r.VCSError)
 	if len(r.VCSFiltered) > 0 {
