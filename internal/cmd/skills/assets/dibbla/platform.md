@@ -78,7 +78,7 @@ User-app environment variables come from three places:
 
 - **Secrets** — entered by the person, never typed by an agent: `dibbla secrets request <name> -d <alias>` prints a link where they type the value in the browser (the agent's way; omit `-d` for org-global; works before the app's first deploy), or `dibbla secrets set <name> [-d <alias>]` in their own terminal, value at a hidden prompt. A plain env var that should have been a secret becomes one with `dibbla env promote <name> -d <alias>` — a new value, the env var removed, the app restarted. Injected as env vars at runtime. A secret is write-only: Dibbla never hands its value out — not to the CLI, not to an API, not to an AI assistant; only the running app gets it. Secret name regex: `^[a-zA-Z][a-zA-Z0-9_]{0,127}$`. To load many at once from a `.env` file without a redeploy, use `dibbla secrets import <file> [-d <alias>]` (validates every key against that regex first; never prints values).
 - **`--env KEY=VAL`** on `dibbla deploy` and `dibbla apps update`. An env var is not sensitive: stored as-is, its value may be read and used freely — anything sensitive is a secret. Persist across redeploys — set once, they stick. To seed them in bulk from a file, `--env-file <path>` reads a `.env`-style file as the base layer and `-e` overrides individual keys (file < `-e`). Every env write, `dibbla.yaml` `environment:` included, is checked: a name that is one of the app's secrets is refused (`ENV_SHADOWS_SECRET`), and a name or value that looks like a secret is refused (`ENV_LOOKS_LIKE_SECRET`) unless a person passes `--allow-secret-env` because it is not one — an agent never does.
-- **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable. The URL connects through the Dibbla database proxy with a managed per-database proxy secret (not the raw Postgres password) — use it as-is (§7).
+- **Auto-injected database URL.** `dibbla db create <name>` creates a secret named `DATABASE_URL_<UPPERCASED_UNDERSCORED_NAME>` (e.g. `db create my-db` → `DATABASE_URL_MY_DB`). **There is no plain `DATABASE_URL`** unless you set one explicitly. App code must read the suffixed variable. Depending on the instance the URL points at the Dibbla database proxy or straight at the cluster-internal Postgres — use it as-is, plus one parameter for Node `pg` (§7).
 
 Use these channels — never hardcode secrets in the image, in source files committed to VCS, or in `.env` files in the deploy directory (§8 strips them anyway).
 
@@ -107,17 +107,21 @@ Pattern (1) — inlining public values — is the right answer for the Lovable /
 
 ---
 
-## 7. Managed Postgres — TLS via the database proxy
+## 7. Managed Postgres — TLS for the injected URL
 
-App database connections go **through the Dibbla database proxy** at `db.<base-domain>`, which presents a **publicly-valid TLS certificate**. The injected `DATABASE_URL_<NAME>` already carries `sslmode=require`. Use it **as-is**:
+The injected `DATABASE_URL_<NAME>` is one of two shapes, depending on the instance — **dibbla.com uses the second**:
 
-- **Use the injected URL unchanged.** The cert verifies normally, so standard clients connect with no special SSL config.
-- **Do not disable verification.** No `ssl: { rejectUnauthorized: false }`, no `sslmode=no-verify` — those were workarounds for an old self-signed cert and now only weaken security.
+- **The Dibbla database proxy** (`db.<base-domain>` or a `dbproxy` Service) with a managed per-database proxy secret. Publicly valid certificate, or plain in-cluster.
+- **The Postgres cluster directly**, `…-db-rw.<namespace>.svc.cluster.local:5432?sslmode=require`. The certificate comes from the **cluster's own private CA**: encrypted, but there is no public chain to verify.
+
+Rules that hold on both:
+
+- **Use the injected URL; don't hardcode its shape.**
+- **Node `pg` needs one parameter.** node-postgres 8.x reads `sslmode=require` as verify-full and crashes on the cluster-internal URL (`self-signed certificate in certificate chain`). Add `uselibpqcompat=true` when the host ends in `.svc.cluster.local` — the helper in `reference.md` → "TLS for application database clients". Same for `@prisma/adapter-pg` and ORMs on `pg`. Go, Python, postgres.js and the Prisma CLI work as-is.
+- **Do not disable verification wholesale.** No `ssl: { rejectUnauthorized: false }`, no `sslmode=no-verify`, no `ssl` option next to the URL — they also switch it off for the public proxy hostname.
 - **Never `sslmode=disable`.** That drops encryption.
 
-The proxy uses standard Postgres TLS negotiation, so any driver works without PostgreSQL 17 "direct TLS". The injected credential is a managed per-database proxy secret (not your Postgres role password) and only works through the proxy. Working snippets for `pg`, psycopg2, and Prisma live in `reference.md` → "TLS for application database clients".
-
-Not every Dibbla instance injects the proxy URL yet: on some, `DATABASE_URL_<NAME>` is the database's cluster-internal address. Inside the app the rule is the same — use it as-is. The value never leaves Dibbla (it is a secret, and secrets are write-only): from your own machine, connect with `dibbla db connect <name> -q` (always the proxy) (see §5).
+Any driver works without PostgreSQL 17 "direct TLS". The value never leaves Dibbla (it is a secret, and secrets are write-only): from your own machine, connect with `dibbla db connect <name> -q` (always the proxy) (see §5).
 
 ---
 
@@ -618,7 +622,7 @@ The rest are application-side concerns. For the security review before deploy, r
 - [ ] App binds to `0.0.0.0`, not `127.0.0.1`.
 - [ ] `USER` directive sets a non-root user in the runtime stage.
 - [ ] All secrets come from `dibbla secrets request` / `dibbla secrets set` / `dibbla secrets import` (the value entered by the person) or the console — never `--env`, never hardcoded or baked into the image. A plain env var that holds one is promoted: `dibbla env promote NAME -d <alias>`.
-- [ ] Postgres client uses the injected `DATABASE_URL` as-is (`sslmode=require`, valid cert via the proxy — see §7); does **not** disable cert verification or use `sslmode=disable`.
+- [ ] Postgres client uses the injected `DATABASE_URL_<NAME>` (see §7); Node `pg` (incl. `@prisma/adapter-pg`) adds `uselibpqcompat=true` for a `.svc.cluster.local` host; no `rejectUnauthorized: false`, no `ssl` option next to the URL, no `sslmode=disable`.
 - [ ] For Vite/Next.js/CRA frontends, public values are inlined or fetched via a runtime config endpoint — not passed via `--env` (see §6).
 - [ ] If `--require-login`, app reads `X-User-*` headers (see §10) and does not attempt JWT verification.
 - [ ] No `.env`, `*.pem`, `*.key`, SSH keys, or `service-account.json` in the deploy directory.
