@@ -1201,16 +1201,26 @@ dibbla logs expense-reporter --service worker -f     # narrow to one service aft
 
 ### TLS for application database clients
 
-The injected connection string (`DATABASE_URL_<NAME>`) reaches Postgres **through the Dibbla database proxy** at a public hostname (`db.<base-domain>`) that presents a **publicly-valid TLS certificate**. The URL already carries `sslmode=require`. **Use the injected value as-is** — the certificate verifies normally, so standard clients connect with no special SSL configuration.
+The injected `DATABASE_URL_<NAME>` has one of two shapes, depending on the Dibbla instance. **dibbla.com (Dibbla Cloud) uses the second one.**
 
-On instances that do not inject the proxy URL yet, `DATABASE_URL_<NAME>` is the database's cluster-internal address instead. Inside the app nothing changes — use it as-is. From your own machine it does not resolve; use `dibbla db connect <name> -q` (see env pull → "Database from your machine").
+| Host in the URL | What it is | Certificate |
+|---|---|---|
+| `db.<base-domain>` or a `dbproxy` Service | the Dibbla database proxy, with a managed per-database proxy secret | publicly valid, or plain in-cluster (`sslmode=disable`) |
+| `…-db-rw.<namespace>.svc.cluster.local:5432?sslmode=require` | the Postgres cluster itself, reached only inside the cluster | issued by the **cluster's own private CA** — encrypted, but no public chain to verify against |
+
+**Use the injected value as-is** and do not hardcode either shape — the code below works on both. What differs is how drivers read `sslmode=require` against a private-CA certificate:
+
+| Driver | `sslmode=require` means | Against the cluster-internal URL |
+|---|---|---|
+| Go (`pgx`, `lib/pq`), Python (`psycopg2`, `psycopg`), `postgres` (postgres.js), Prisma CLI (`migrate`, `db push`) | encrypt, don't verify the chain (libpq) | works as-is |
+| Node `pg` (node-postgres) 8.x — also `@prisma/adapter-pg`, Drizzle/Kysely/Knex on `pg` | **verify-full** | **crashes at the first query:** `self-signed certificate in certificate chain` |
+
+For Node `pg`, add `uselibpqcompat=true` when the host is cluster-internal. That switches `pg` to the libpq meaning of `require` — what every other driver already does — and leaves full verification on for the public proxy hostname.
 
 Do **not**:
-- strip `sslmode` from the URL,
-- set `ssl: { rejectUnauthorized: false }` or `sslmode=no-verify`,
-- set `sslmode=disable`.
-
-Those were workarounds for an older self-signed-cert setup. They are no longer needed and only weaken security — the cert is valid and should be verified.
+- strip `sslmode` from the URL, or set `sslmode=disable` — that drops encryption,
+- set `ssl: { rejectUnauthorized: false }` or `sslmode=no-verify` — that also turns verification off for the public proxy hostname, where the certificate is valid,
+- pass an `ssl` option to `pg` next to the URL — it overrides the URL's `sslmode`, and `ssl: true` is verify-full again.
 
 The proxy speaks standard Postgres TLS negotiation (in-band SSL upgrade), so **every** driver works — you do **not** need PostgreSQL 17 "direct TLS" (`sslnegotiation=direct`).
 
@@ -1219,12 +1229,33 @@ The proxy speaks standard Postgres TLS negotiation (in-band SSL upgrade), so **e
 ```js
 import { Pool } from "pg";
 
+// Cluster-internal Postgres presents a certificate from the cluster's own CA:
+// encrypt without verifying the chain (libpq semantics). Public proxy
+// hostnames keep pg's full verification.
+export function pgConnectionString(raw) {
+  const url = new URL(raw);
+  if (url.hostname.endsWith(".svc.cluster.local")) {
+    url.searchParams.set("uselibpqcompat", "true");
+  }
+  return url.toString();
+}
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL_MY_DB,
+  connectionString: pgConnectionString(process.env.DATABASE_URL_MY_DB),
 });
 ```
 
-If your `pg` version doesn't enable TLS from the URL's `sslmode`, add `ssl: true` (full verification — the cert is valid, so no `rejectUnauthorized: false` needed).
+No `ssl:` key in the config. The same `pgConnectionString(...)` goes into `new PrismaPg({ connectionString })`, Drizzle's `drizzle(pool)` and any other library that builds a `pg` pool.
+
+#### Node.js — `postgres` (postgres.js)
+
+```js
+import postgres from "postgres";
+
+export const sql = postgres(process.env.DATABASE_URL_MY_DB);
+```
+
+postgres.js reads `sslmode=require` the libpq way — no extra parameter.
 
 #### Python — `psycopg2` / `psycopg`
 
@@ -1239,13 +1270,15 @@ The `sslmode=require` in the URL is honoured directly; `psycopg` v3 is the same.
 
 #### Prisma
 
-Use the injected value unchanged — no `?sslmode=no-verify`, no driver adapter:
+The Prisma CLI (`prisma migrate deploy`, `prisma db push`) takes the injected value unchanged — no `?sslmode=no-verify`:
 
 ```env
 DATABASE_URL="${DATABASE_URL_MY_DB}"
 ```
 
-> The injected credential is a **Dibbla-managed per-database proxy secret**, not your Postgres role password, and only works **through the proxy** — don't try to use it to connect to a database host directly.
+At runtime, Prisma 7's `@prisma/adapter-pg` is Node `pg`: give it `pgConnectionString(process.env.DATABASE_URL_MY_DB)` from the `pg` section above.
+
+> Through the proxy, the injected credential is a **Dibbla-managed per-database proxy secret**, not your Postgres role password, and only works through the proxy. Either way the URL is a secret only the running app sees — from your own machine, use `dibbla db connect <name> -q` (always the proxy, publicly valid certificate).
 
 ---
 
