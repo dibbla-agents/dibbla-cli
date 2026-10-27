@@ -10,7 +10,14 @@ package render
 const (
 	ExitBuildFailed         = 2
 	ExitPlatformUnavailable = 20
+	// ExitConnectionLost: the stream ended before the deploy did, so its
+	// outcome is unknown (DIB-1616) — neither a success nor a failure.
+	ExitConnectionLost = 21
 )
+
+// CodeConnectionLost is the error code the CLI gives a deploy whose stream
+// ended before it did; the server has no such code.
+const CodeConnectionLost = "CONNECTION_LOST"
 
 // IsPlatformUnavailable reports whether the failure is the platform's own
 // infrastructure rather than anything in the deployed source.
@@ -34,6 +41,8 @@ func exitCodeFor(e *DeployError) int {
 		return 0
 	case IsPlatformUnavailable(e):
 		return ExitPlatformUnavailable
+	case e.APIError != nil && e.APIError.Code == CodeConnectionLost:
+		return ExitConnectionLost
 	case e.FailedStep != "":
 		return ExitBuildFailed
 	}

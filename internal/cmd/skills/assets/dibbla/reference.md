@@ -563,7 +563,9 @@ For the manifest schema, env-aware fields, profiles, service discovery, NetworkP
 | `BUILD_FAILED` | A build step failed | Check the deploy event log; if it's a missing build secret, request it — `dibbla secrets request <NAME> -d <alias> --title "…"`, the person enters it on the linked page, `--status <id> --wait` — then deploy again |
 | `REGISTRY_UNAVAILABLE` | Dibbla's container registry answered 5xx, ran out of disk or did not answer while the image was pushed (HTTP 503, exit `20`) | Platform fault: change nothing, the running app was not touched. Retry in a few minutes; escalate to Dibbla support if it persists |
 | `BUILD_SERVICE_UNAVAILABLE` | Dibbla's build service (BuildKit) could not be reached (HTTP 503, exit `20`) | Same as `REGISTRY_UNAVAILABLE` |
-| `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias | Wait or `dibbla apps cancel <alias>` |
+| `DEPLOY_IN_PROGRESS` | Another deploy is in-flight for this alias — often one whose connection dropped and that still runs on the server | `dibbla deploy cancel <alias>`, then deploy again (`--force` cancels it for you) |
+| `CONNECTION_LOST` | The CLI lost the deploy's stream before it finished (exit `21`). **Not a failed deploy**: it may still be running on the server and holds the app until it ends | `dibbla apps get <alias>` to see where it stands; `dibbla deploy cancel <alias>` to stop it |
+| `ROLLOUT_STALLED` | A Deployment passed its progress deadline, or a stateful service's pod of the previous version is not ready and could not be replaced | Read the message; the deploy normally replaces such a pod itself (`rollout · replaced pod …`) |
 | `PATCH_AMBIGUOUS` | `dibbla apps update --replicas N` against a multi-service deploy | Edit `dibbla.yaml` and redeploy with `--update` |
 | `ALIAS_HOSTNAME_COLLISION` | Multi-public deploy would produce a hostname `<alias>-<service>.<base>` that another existing alias in the org owns | Rename either deploy |
 | `ALIAS_EXISTS` | Alias is already in use; pass `--update` (rolling) or `--force` (recreate) | Pick the right mode |
@@ -1953,6 +1955,7 @@ An admin exposes a managed data source to agents (Console → MCP, with a min ro
 | Feedback | `dibbla feedback list` | List feedback |
 | Feedback | `dibbla feedback delete <id>` | Delete feedback |
 | Deploy | `dibbla deploy [path]` | Deploy app from directory |
+| Deploy | `dibbla deploy cancel <alias>` | Stop the deploy in progress for an app and free it for the next deploy (the one a dropped connection left running) |
 | Deploy | `dibbla deploy status <operation-id> [--follow] [--json]` | Show or follow a deploy the platform started from an accepted `git push` to `main` (the push prints the id as `operation: deployment:…`); `--follow` streams build log + rollout and exits with the deploy's code |
 | Clone | `dibbla clone <app> [--ref <sha>] [--into <dir>]` | Clone the deploy history of an app (changes go back via `deploy --update`, never `git push`) |
 | Apps | `dibbla apps list` | List deployments |
