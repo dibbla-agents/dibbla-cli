@@ -28,12 +28,13 @@ func pushNotices() map[string]any {
 	return map[string]any{
 		"result": "deployed", "alias": "shop", "url": "https://shop.example", "deployment_id": "dep_1",
 		"status": "running", "commit_sha": strings.Repeat("a", 40),
-		"env_warnings":   []string{"API_TOKEN has the name of a secret — consider making it a secret (dibbla.yaml environment is readable by anyone who can read the app's source)"},
-		"vcs_filtered":   []string{".env", "node_modules/"},
-		"support_notice": "dibbla.yaml's support: block overrides the console setting",
-		"checks_notice":  "Application Checks could not be promoted onto this revision",
-		"mcp_published":  []string{"shop-tools"},
-		"trial_warning":  map[string]any{"days_left": 3, "ends_at": "2026-10-10T00:00:00Z", "message": legacyHeadsUp},
+		"env_warnings":    []string{"API_TOKEN has the name of a secret — consider making it a secret (dibbla.yaml environment is readable by anyone who can read the app's source)"},
+		"vcs_filtered":    []string{".env", "node_modules/"},
+		"support_notice":  "dibbla.yaml's support: block overrides the console setting",
+		"checks_notice":   "Application Checks could not be promoted onto this revision",
+		"mcp_published":   []string{"shop-tools"},
+		"services_notice": "Stopped web: no longer in dibbla.yaml; removed from the cluster after 24h.",
+		"trial_warning":   map[string]any{"days_left": 3, "ends_at": "2026-10-10T00:00:00Z", "message": legacyHeadsUp},
 	}
 }
 
@@ -42,13 +43,14 @@ func pushNotices() map[string]any {
 func directResult(t *testing.T) *render.DeployResult {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{
-		"status":         "success",
-		"deployment":     map[string]any{"id": "dep_1", "alias": "shop", "url": "https://shop.example", "status": "running"},
-		"env_warnings":   pushNotices()["env_warnings"],
-		"vcs_filtered":   pushNotices()["vcs_filtered"],
-		"support_notice": pushNotices()["support_notice"],
-		"checks_notice":  pushNotices()["checks_notice"],
-		"mcp_published":  pushNotices()["mcp_published"],
+		"status":          "success",
+		"deployment":      map[string]any{"id": "dep_1", "alias": "shop", "url": "https://shop.example", "status": "running"},
+		"env_warnings":    pushNotices()["env_warnings"],
+		"vcs_filtered":    pushNotices()["vcs_filtered"],
+		"support_notice":  pushNotices()["support_notice"],
+		"checks_notice":   pushNotices()["checks_notice"],
+		"mcp_published":   pushNotices()["mcp_published"],
+		"services_notice": pushNotices()["services_notice"],
 	})
 	var res render.DeployResult
 	if err := json.Unmarshal(raw, &res); err != nil {

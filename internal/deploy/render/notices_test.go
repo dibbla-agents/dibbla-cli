@@ -18,9 +18,11 @@ func successWithNotices() DeployEvent {
 			Deployment: ResultDeployment{
 				ID: "dep_1", Alias: "shop", URL: "https://shop.dibbla.com", Status: "running",
 			},
-			ChecksNotice: "APPLICATION_CHECKS_UNAVAILABLE: Application Checks persistence is unavailable, so this revision's checks were not promoted. The deploy succeeded and the new revision is live; only Application Checks were not updated.",
-			VCSError:     "git: could not write commit",
-			VCSFiltered:  []string{".env", "node_modules/"},
+			ChecksNotice:    "APPLICATION_CHECKS_UNAVAILABLE: Application Checks persistence is unavailable, so this revision's checks were not promoted. The deploy succeeded and the new revision is live; only Application Checks were not updated.",
+			VCSError:        "git: could not write commit",
+			VCSFiltered:     []string{".env", "node_modules/"},
+			RemovedServices: []string{"web"},
+			ServicesNotice:  "Stopped web: no longer in dibbla.yaml; removed from the cluster after 24h. Volumes kept with their data: vol-0-shop-web-0.",
 		},
 	}
 }
@@ -71,7 +73,7 @@ func TestRenderersSurfaceSuccessNotices(t *testing.T) {
 				t.Fatalf("exit %d — the deploy succeeded; a post-deploy notice must never change the exit code", code)
 			}
 			combined := out.String() + errW.String()
-			for _, want := range []string{"APPLICATION_CHECKS_UNAVAILABLE", "could not write commit"} {
+			for _, want := range []string{"APPLICATION_CHECKS_UNAVAILABLE", "could not write commit", "Stopped web", "vol-0-shop-web-0"} {
 				if !strings.Contains(combined, want) {
 					t.Errorf("output never mentions %q — silence is the other half of this defect:\n%s", want, combined)
 				}
@@ -104,6 +106,12 @@ func TestJSONRendererNoticeKeys(t *testing.T) {
 	}
 	if s, _ := got["vcs_error"].(string); s == "" {
 		t.Errorf("vcs_error missing: %v", got)
+	}
+	if s, _ := got["services_notice"].(string); !strings.Contains(s, "Stopped web") {
+		t.Errorf("services_notice = %v", got["services_notice"])
+	}
+	if rs, _ := got["removed_services"].([]any); len(rs) != 1 || rs[0] != "web" {
+		t.Errorf("removed_services = %v", got["removed_services"])
 	}
 	if _, ok := got["vcs_filtered"]; !ok {
 		t.Errorf("vcs_filtered missing: %v", got)
