@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -223,7 +224,15 @@ func runDeploy(cmd *cobra.Command, args []string) {
 func runWithRenderer(opts deploypkg.Options, r render.Renderer) int {
 	tr := &terminalTracking{Renderer: r}
 	_, err := deploypkg.Run(opts, tr)
-	if err != nil && !tr.sawTerminal {
+	var lost *deploypkg.StreamLostError
+	if errors.As(err, &lost) && !tr.sawTerminal {
+		tr.OnEvent(render.DeployEvent{
+			Type: "error",
+			Error: &render.DeployError{
+				APIError: &render.APIError{Code: render.CodeConnectionLost, Message: lost.Message()},
+			},
+		})
+	} else if err != nil && !tr.sawTerminal {
 		tr.OnEvent(render.DeployEvent{
 			Type: "error",
 			Error: &render.DeployError{

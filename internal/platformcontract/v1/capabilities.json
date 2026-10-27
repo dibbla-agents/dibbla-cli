@@ -924,10 +924,13 @@
         "platform:operations:cancel"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten.",
+      "note": "Shipped by DIB-539 (P-0035 Part B3) as platform_operation_cancel and extended by DIB-540 to database-operation IDs: idempotent, valid only while cancellable, CONFLICT once finished; a terminal state is never rewritten. DIB-1616: `dibbla deploy cancel <alias>` is the same capability for a deploy the CLI started — it stops the deploy holding the app (POST /deployments/{alias}/cancel) and frees its lock; over /platform that deploy is an operation and this tool cancels it.",
       "production": "live",
       "mcp_toolset": "/platform",
-      "mcp_tool": "platform_operation_cancel"
+      "mcp_tool": "platform_operation_cancel",
+      "cli_commands": [
+        "deploy cancel"
+      ]
     },
     {
       "id": "cli.deploy.archive",

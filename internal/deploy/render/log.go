@@ -150,7 +150,11 @@ func (l *Log) handleError(e *DeployError) {
 
 func (l *Log) OnDone() int {
 	if l.errEv != nil {
-		printlnTo(l.out, fmt.Sprintf("deploy failed  ·  %s  ·  %s", failedSummary(l.errEv), l.elapsed()))
+		verdict := "deploy failed"
+		if exitCodeFor(l.errEv) == ExitConnectionLost {
+			verdict = "deploy connection lost"
+		}
+		printlnTo(l.out, fmt.Sprintf("%s  ·  %s  ·  %s", verdict, failedSummary(l.errEv), l.elapsed()))
 		return exitCodeFor(l.errEv)
 	}
 	if l.result != nil {

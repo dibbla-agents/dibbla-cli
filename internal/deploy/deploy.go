@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -667,7 +668,12 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 	defer resp.Body.Close()
 
 	if r != nil && strings.Contains(resp.Header.Get("Content-Type"), "application/x-ndjson") {
-		return readStream(resp.Body, r, complete)
+		out, err := readStream(resp.Body, r, complete)
+		var lost *StreamLostError
+		if errors.As(err, &lost) {
+			lost.Alias = appName
+		}
+		return out, err
 	}
 
 	// Legacy single-JSON path. Used when r == nil (old callers), when the
@@ -752,8 +758,9 @@ func readStream(body io.Reader, r render.Renderer, complete func(*render.DeployR
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
 	var (
-		finalResult *render.DeployResult
-		finalErr    *render.DeployError
+		finalResult  *render.DeployResult
+		finalErr     *render.DeployError
+		deploymentID string
 	)
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -768,6 +775,9 @@ func readStream(body io.Reader, r render.Renderer, complete func(*render.DeployR
 			r.OnEvent(render.DeployEvent{Type: "build", State: "log", Log: "warning: malformed event line: " + err.Error()})
 			continue
 		}
+		if ev.Type == "deploy" && ev.State == "started" {
+			deploymentID = strings.TrimPrefix(ev.Source, "deployment_id=")
+		}
 		if ev.Type == "result" && ev.Result != nil && complete != nil {
 			complete(ev.Result)
 		}
@@ -778,8 +788,8 @@ func readStream(body io.Reader, r render.Renderer, complete func(*render.DeployR
 			finalErr = ev.Error
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read stream: %w", err)
+	if err := scanner.Err(); err != nil && finalErr == nil && finalResult == nil {
+		return nil, &StreamLostError{DeploymentID: deploymentID, Err: err}
 	}
 
 	if finalErr != nil {
@@ -803,7 +813,38 @@ func readStream(body io.Reader, r render.Renderer, complete func(*render.DeployR
 			},
 		}, nil
 	}
-	return nil, fmt.Errorf("stream ended without a terminal event")
+	return nil, &StreamLostError{DeploymentID: deploymentID, Err: errors.New("stream ended without a terminal event")}
+}
+
+// StreamLostError is a deploy stream that ended before the deploy did
+// (DIB-1616): the connection dropped, or the client's own timeout cut it.
+// It is not a failed deploy — the server carries on, holding the app's deploy
+// lock until the deploy ends — so it must never be reported as one.
+type StreamLostError struct {
+	DeploymentID string
+	Alias        string
+	Err          error
+}
+
+func (e *StreamLostError) Error() string {
+	return "lost the connection to the deploy: " + e.Err.Error()
+}
+
+func (e *StreamLostError) Unwrap() error { return e.Err }
+
+// Message is what a person reads: what is known, and the two commands that
+// tell them more or end it.
+func (e *StreamLostError) Message() string {
+	who := "The deploy"
+	if e.DeploymentID != "" {
+		who = "Deploy " + e.DeploymentID
+	}
+	msg := "The connection to the deploy was lost before it finished (" + e.Err.Error() + "). " +
+		who + " may still be running on the server; this is not a deploy failure."
+	if e.Alias != "" {
+		msg += " See where it stands with `dibbla apps get " + e.Alias + "`, or stop it with `dibbla deploy cancel " + e.Alias + "`."
+	}
+	return msg
 }
 
 // formatAPIError creates a user-friendly error message from the API error response
