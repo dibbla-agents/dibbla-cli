@@ -1,12 +1,12 @@
 package deploy
 
 import (
-	"errors"
 	"archive/tar"
 	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
