@@ -49,9 +49,10 @@ var appsRestartCmd = &cobra.Command{
 	Short: "Trigger a rolling restart of a single service",
 	Long: `Restart one service in a multi-service deployment.
 
-Triggers a K8s rolling restart of the named service Deployment. Idempotent —
-calling twice in a row produces two pod rollouts. The deployment alias plus
---service together identify exactly one Deployment object.
+Triggers a K8s rolling restart of the named service — its Deployment, or for a
+stateful: true service its StatefulSet, whose pods that are not ready are
+replaced too. Idempotent — calling twice in a row produces two pod rollouts.
+The deployment alias plus --service together identify exactly one workload.
 
 For single-service / legacy deployments, the conventional service name is
 'app'. For manifest-based deployments, use the service name as it appears in
