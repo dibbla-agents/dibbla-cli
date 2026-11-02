@@ -223,6 +223,15 @@ Trigger a K8s rolling restart of one service in a multi-service deployment. Idem
 -   **Errors:** 404 (service not found) prints a hint to run `dibbla apps list`. Bad service-name regex is caught locally before the HTTP call.
 -   **Example:** `dibbla apps restart myapp --service worker` — **Quiet:** `dibbla apps restart myapp -s web -q`
 
+#### `apps top`
+
+What each pod of an app uses of CPU and memory right now, next to its request (reserved) and limit (maximum), with usage as a percentage of each. Size `cpu`/`memory` on these numbers: `%REQ` far below 100 on a steady pod means it reserves more than it uses; memory `%LIM` near 100 risks out-of-memory kills. A pod marked `START-UP` (container started under 5 minutes ago) still includes its boot cost and is not steady state. One reading, no history.
+
+-   **Usage:** `dibbla apps top <alias>`
+-   **Flags:** `--json`: print the raw API document.
+-   **Errors:** 404 `NOT_FOUND` when the alias does not exist in your organization.
+-   **Example:** `dibbla apps top myapp`
+
 #### `apps releases`
 
 List the releases the platform still holds for an app: one immutable image per successful deploy (`dep_…` id), newest first, with digest, deploy time, author, and which one is running. A release marked `gone` was swept by registry retention and cannot be rolled back to; `+config` means the platform remembers its port/env/resources (what recreating a missing deployment needs).

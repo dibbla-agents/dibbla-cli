@@ -764,6 +764,33 @@ dibbla apps releases myapp
 dibbla apps releases myapp --json | jq '.previous_deployment_id'
 ```
 
+### apps top
+
+What each pod of an app uses of CPU and memory **right now**, next to its request (what is reserved for it) and limit (the most it may use). The numbers to size `cpu` and `memory` on, instead of guessing or copying someone else's values.
+
+| Item | Details |
+|------|---------|
+| **Usage** | `dibbla apps top <alias> [--json]` |
+| **Arguments** | `alias` (required) — deployment alias |
+| **Flags** | `--json` — print the raw API document verbatim |
+| **Output** | One row per pod: `SERVICE`, `POD`, `AGE`, then CPU (`CPU` used, `REQ`, `LIM`, `%REQ`) and memory (`MEM` used, `REQ`, `LIM`, `%REQ`, `%LIM`). CPU in millicores (`1000m` = one core). `-` = not set (no limit). `?` = no usage reading. `START-UP` marks a pod whose container started under 5 minutes ago. |
+| **Errors** | `404 NOT_FOUND` — no such app in your organization |
+| **Exit codes** | `0` ok · `4` not found · `5` bad alias (no request made) · `3` auth · `1` other |
+
+**How to read it:**
+
+- **`%REQ` far below 100 on a steady pod** — the service reserves capacity it does not use (e.g. `11m` used of `1000m` = `1.1%`). Lower `cpu` / `memory`; the reservation counts against the plan and against what the cluster can schedule, the usage does not.
+- **`%REQ` above 100** — it uses more than it reserves (allowed up to the limit).
+- **Memory `%LIM` near 100** — risk of out-of-memory kills. Raise `memory`.
+- **`START-UP`** — the reading still includes the boot cost and is **not** steady state. A service can use several times its steady CPU while it starts. Read again after 5 minutes before sizing on it.
+- It is one reading (the cluster's average over its last ~15–30 s), **no history**: a peak that happened an hour ago is not visible. If the cluster's metrics are unavailable the command still prints requests and limits and says usage is unavailable.
+
+**Examples:**
+```bash
+dibbla apps top myapp
+dibbla apps top myapp --json | jq '.pods[] | {service, cpu: .cpu.usage, req: .cpu.request}'
+```
+
 ### apps rollback
 
 Switch the app to an earlier release's image **without a build**: a rolling update to an image that is already in the registry. Works while BuildKit or registry writes are broken. Env, resources and login gate are inherited from the running app; secrets are untouched. With the deployment missing (a `--force` deploy removed it and the build failed) the deployment is recreated from the release's image with the saved configuration.

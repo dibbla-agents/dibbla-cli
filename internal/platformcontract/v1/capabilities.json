@@ -1170,6 +1170,21 @@
       ]
     },
     {
+      "id": "platform.apps.usage",
+      "title": "Read what an application's pods use of CPU and memory right now",
+      "state": "remote-read",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps",
+      "note": "DIB-1645, on deploy-api's /deployments/{alias}/usage. `dibbla apps top` is platform_apps with view=usage: per pod, CPU and memory used now (metrics-server's average over its last scrape window) next to the request and the limit, as a percentage of each, and a start-up flag for a pod whose container started within the last five minutes, whose reading still carries the boot cost. Without metrics-server the answer still carries requests and limits and says usage is unavailable. One reading, no history (DIB-817). Usage is a property of an application, so it is a view of the apps read tool; the surface grew by zero tools.",
+      "cli_commands": [
+        "apps top"
+      ]
+    },
+    {
       "id": "platform.apps.maintenance.settings",
       "title": "Enable or disable an app’s scheduled maintenance",
       "state": "remote-write",
