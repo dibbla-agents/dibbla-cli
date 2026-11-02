@@ -110,6 +110,8 @@ above remains for deep links.
 | `replicas` | int \| env-map | no | yes | `1` | Number of pods; capped by org quota (§ 19) |
 | `cpu` | string \| env-map | no | yes | platform default | K8s CPU spec (`500m`, `1`, `2`); resource quota applies |
 | `memory` | string \| env-map | no | yes | platform default | K8s memory spec (`256Mi`, `1Gi`) |
+
+Size `cpu` and `memory` on what the service actually uses: `dibbla apps top <alias>` shows each pod's usage next to its request and limit. A steady pod at a few percent of its `cpu` reserves capacity it never uses.
 | `environment` | string-map \| env-map-of-string-maps | no | yes | empty | Env vars; supports `${VAR}` substitution (§ 8) |
 | `command` | list-of-strings | no | no | image default | Overrides the container `CMD` |
 | `entrypoint` | list-of-strings | no | no | image default | Overrides the container `ENTRYPOINT` |

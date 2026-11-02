@@ -683,7 +683,7 @@ the step.
 |---|---|---|
 | Know who and where you are, and which organizations you belong to | `platform_whoami` | — |
 | See what you can build with: templates, workflow functions, providers | `platform_catalog` | `kind` |
-| List apps, read one, read its maintenance settings and runs, list or verify its custom domains | `platform_apps` | omit `alias` to list; `view: maintenance` \| `domains` (+ `hostname` to verify one) |
+| List apps, read one, read its maintenance settings and runs, list or verify its custom domains, see what its pods use of CPU and memory (`apps top`) | `platform_apps` | omit `alias` to list; `view: maintenance` \| `domains` (+ `hostname` to verify one) \| `usage` |
 | Read an app's logs | `platform_app_logs` | — |
 | See an app's checks, or what they found | `platform_app_checks` | `view: definitions` \| `history` |
 | Run checks now, or one maintenance run | `platform_app_run` | `kind: checks` \| `maintenance` |
