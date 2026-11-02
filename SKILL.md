@@ -658,6 +658,37 @@ services:
       access_policy: { prod: invite_only }
 ```
 
+**`cpu:` and `memory:` — leave them out unless you must.** Both are a **single
+value applied as BOTH the request and the limit**. `cpu: 1` does not mean "may
+use up to a core" — it *reserves* a core on a node permanently, whether the
+service uses it or not. Omit them and you get the platform default, which is
+already burstable:
+
+| | request (reserved for you) | limit (your ceiling) |
+| --- | --- | --- |
+| `cpu` | 50m | 1000m (a full core) |
+| `memory` | 64Mi | 512Mi |
+
+- **Almost never set `cpu`.** Omitting already gives you a full core to burst
+  into, and reserves only 50m. Setting it reserves your *peak* forever, which
+  is the usual cause of a deploy failing with `UNSCHEDULABLE` — "no node can
+  take its pods". A rolling update needs a second copy's worth of the reservation
+  at the same time, so a service that reserves 1 CPU needs 2 free somewhere for
+  a moment, and that is often what fails rather than the steady state.
+- **Set `memory` only if the service needs more than 512Mi.** The limit is a
+  hard ceiling and crossing it is an **OOM kill**, not a slowdown. ⚠️ Setting it
+  also reserves that much permanently; there is currently no way to say "reserve
+  600Mi but allow 2Gi" for one service.
+- ⚠️ **CPU and memory do not fail the same way.** Over your CPU limit you are
+  *throttled* — slower, still alive. Over your memory limit you are *killed*.
+  That asymmetry is why over-reserving CPU is almost always waste, while a
+  memory limit needs real headroom above your peak.
+
+If you do not know what a service uses, **start with no `cpu:` and no `memory:`**
+and watch `dibbla logs <alias> -s <service>` and `dibbla apps list` after real
+traffic. A container killed for memory restarts and says so; a throttled one just
+runs slower. Raise `memory` when you see the former — and leave `cpu` alone.
+
 **Shell variable substitution.** `${VAR}` and `${VAR:-default}` in `dibbla.yaml` are resolved from your shell env at `dibbla deploy` time (compose-style). `DIBBLA_*` is reserved for the server's discovery contract — those pass through to the server unchanged regardless of your shell.
 
 **Stateful services + TCP routes (F19).** A service with `stateful: true` renders as a Kubernetes StatefulSet plus a headless Service so each pod gets stable per-replica DNS, and each replica owns its own PVC via `volumeClaimTemplates`. Combined with a per-service `routes:` list this lets you expose databases and message brokers over real TLS to your laptop:
