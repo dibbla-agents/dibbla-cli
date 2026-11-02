@@ -4,6 +4,29 @@ This file captures non-obvious project conventions an agent should know
 before editing code here. Code-level patterns live in the code itself —
 this is for cross-cutting rules.
 
+## Product glossary — check it before naming anything a customer sees
+
+Dibbla's product glossary is `docs/glossary/glossary.yaml` in
+**app-hosting-service** (clone: `../app-hosting-service/docs/glossary/glossary.yaml`;
+GitHub: https://github.com/dibbla-agents/app-hosting-service/blob/master/docs/glossary/glossary.yaml).
+It is the single source for each concept's customer name (`customer_name`), code
+name (`code_name`) and API/CLI names, and for what it is and is not.
+
+Before you name anything here that a customer sees — command help and flag
+descriptions, output and error messages, the `dibbla init` wizard, and above all
+the skill files — look the concept up and use its `customer_name`. If it is
+missing, add the term to the glossary in an app-hosting-service PR alongside
+this change and link the two PRs (`docs/glossary/README.md` there says how). A
+term with `status: open` has no decided name yet: keep the current one, do not
+invent another.
+
+**The public-skill rule below still wins.** The skill is published to the open
+internet, so it may only use a term's `customer_name` (and the public `api_cli`
+names — `dibbla …` commands). A glossary `code_name`, an internal endpoint, an
+internal-only term, or the glossary's internal site must **never** appear in
+`.claude/skills/dibbla/` or the root `SKILL.md`. The glossary tells you what the
+customer calls a thing; it is not material to copy into the skill.
+
 ## Skill files: two copies, one source of truth
 
 The dibbla skill markdown is duplicated by design:
@@ -86,6 +109,9 @@ Concretely, when editing skill files:
 - **Don't document internal transport details** — DIB-188 removed a line stating
   that an internal DB proxy runs with `sslmode=disable`.
 - **No personal email addresses.**
+- **No internal code names.** Name things by the product glossary's
+  `customer_name` (see the top of this file); never its `code_name` or internal
+  endpoints.
 
 DIB-188 scrubbed all of the above; keep it clean rather than re-running a scrub.
 
