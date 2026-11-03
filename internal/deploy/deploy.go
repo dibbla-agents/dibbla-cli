@@ -21,6 +21,7 @@ import (
 
 // DeployResponse represents a successful deployment response
 type DeployResponse struct {
+	Warnings   []string   `json:"warnings,omitempty"`
 	Status     string     `json:"status"`
 	Deployment Deployment `json:"deployment"`
 	// The MCP answer of a deploy (DIB-1225), on the legacy single-JSON path
@@ -124,7 +125,12 @@ type Options struct {
 	// server flags by their look (DIB-1339). It never covers a name that is
 	// one of the app's secrets, and the server ignores it from an agent.
 	AllowSecretEnv bool
+	Service        string
 	CPU            string // e.g. 500m
+	CPURequest     string
+	CPULimit       string
+	MemoryRequest  string
+	MemoryLimit    string
 	Memory         string // e.g. 512Mi
 	Port           string // e.g. 3000
 	FaviconURL     string // e.g. https://example.com/favicon.ico
@@ -609,7 +615,13 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 			_ = writeField("allow_secret_shaped_env", "true")
 		}
 	}
+	_ = writeField("service", opts.Service)
 	_ = writeField("cpu", opts.CPU)
+	_ = writeField("cpu_request", opts.CPURequest)
+	_ = writeField("cpu_limit", opts.CPULimit)
+	_ = writeField("memory_request", opts.MemoryRequest)
+	_ = writeField("memory_limit", opts.MemoryLimit)
+
 	_ = writeField("memory", opts.Memory)
 	_ = writeField("port", opts.Port)
 	_ = writeField("favicon_url", opts.FaviconURL)
@@ -706,6 +718,7 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 				MCPNotice:    deployResp.MCPNotice,
 				MCPWithdrawn: deployResp.MCPWithdrawn,
 				EnvWarnings:  deployResp.EnvWarnings,
+				Warnings:     deployResp.Warnings,
 			}
 			complete(res)
 			r.OnEvent(render.DeployEvent{Type: "result", Result: res})

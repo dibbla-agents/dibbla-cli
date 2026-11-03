@@ -375,3 +375,26 @@ Full model — the decision table against the other schedule-shaped surfaces, th
 - **User handbook (end-user docs):** see [user-docs.md](user-docs.md) for the `docs/` folder convention, `_nav.yaml` sidebar ordering, the single-file `APP.md` fallback, audience and tone rules, cross-linking syntax, paste-ready templates (Welcome / Getting Started / FAQ / Features), and the list of things that must **never** appear in user docs (dev stack, env vars, deploy commands, infra). Read this whenever you scaffold a new project, when you're about to call `dibbla deploy`, or when the user asks "how do I document this for end users".
 
 When suggesting or generating `dibbla` commands, use the reference for exact syntax and the examples for typical workflows. For "is my app ready for Dibbla?" questions, start in `platform.md`. For "build / iterate / debug a workflow" questions, start in `workflows.md`. For "implement a Go function/job for the platform" questions, start in `sdk-go.md`.
+
+
+## CPU and memory: request and limit
+
+Use `cpu_request`, `cpu_limit`, `memory_request`, and `memory_limit` separately in each `dibbla.yaml` service or job. Example:
+
+```yaml
+services:
+  web:
+    image: nginx:alpine
+    port: 80
+    public: true
+    cpu_request: 100m
+    cpu_limit: '1'
+    memory_request: 1Gi
+    memory_limit: 2560Mi
+```
+
+The equivalent flags on `dibbla deploy` and `dibbla apps update <alias>` are `--cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi`. Use `--service web` for an app with multiple services; one service is selected automatically. Deploy resource flags also work with a manifest. Use `dibbla apps top <alias>` to inspect current consumption, request, and limit before sizing.
+
+For each value, explicit service settings win over organization resource defaults, which win over platform defaults (CPU request 50m / limit 1000m, memory request 64Mi / limit 512Mi, capped for your plan). When only request or only limit is supplied, the other half inherits these defaults; it does not keep the running app's previous value. Request must be no greater than limit. The shorthand `cpu` / `memory` (and `--cpu` / `--memory`) still sets both request and limit; combining a shorthand with either separate field for the same dimension is an error.
+
+A service is throttled above its CPU limit; exceeding the memory limit can cause an out-of-memory kill. A memory request below a quarter of its limit warns about eviction risk under node memory pressure but does not block the deploy. Keep requests realistic for steady use and leave limits enough room for peaks.

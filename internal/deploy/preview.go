@@ -15,6 +15,11 @@ import (
 // PreviewService mirrors deploy-api PreviewService so consumers can decode
 // a preview response without depending on the server package.
 type PreviewService struct {
+	CPURequest    string `json:"cpu_request,omitempty"`
+	CPULimit      string `json:"cpu_limit,omitempty"`
+	MemoryRequest string `json:"memory_request,omitempty"`
+	MemoryLimit   string `json:"memory_limit,omitempty"`
+
 	Name        string            `json:"name"`
 	IsBuilt     bool              `json:"is_built"`
 	IsPublic    bool              `json:"is_public"`

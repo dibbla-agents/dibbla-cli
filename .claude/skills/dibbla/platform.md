@@ -199,7 +199,7 @@ Every service container in a multi-service deploy receives a fixed env-var set:
 
 | Habit | What happens |
 |---|---|
-| `dibbla deploy --cpu 500m --memory 512Mi --port 3000` | These flags are **ignored** when a manifest is present. CPU/memory/port live in the manifest. |
+| `dibbla deploy --cpu 500m --memory 512Mi --port 3000` | CPU/memory flags set request and limit, including with a manifest; `--cpu-request/--cpu-limit/--memory-request/--memory-limit` set them separately. Select `--service` for multiple services. Set the port in the manifest. |
 | `dibbla apps update --replicas N` | Returns `PATCH_AMBIGUOUS` (which service?). Edit `dibbla.yaml` and redeploy with `--update` instead. |
 | `dibbla apps update --port N` | Same — port is per-service. Edit the manifest. |
 | Hard-coding cluster DNS (`http://myapp-redis:6379`) in app source | Brittle across alias renames + breaks if the service name changes. Use `${DIBBLA_SVC_REDIS_URL}` instead. |
