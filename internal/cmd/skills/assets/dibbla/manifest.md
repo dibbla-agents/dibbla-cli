@@ -108,8 +108,10 @@ above remains for deep links.
 | `port` | int | when `public: true` | no | — | 1–65535; container port the service listens on |
 | `public` | bool \| env-map | no | yes | `false` | Routes a public URL to this service; multiple `public: true` services per deploy supported (see § 13) |
 | `replicas` | int \| env-map | no | yes | `1` | Number of pods; capped by org quota (§ 19) |
-| `cpu` | string \| env-map | no | yes | platform default | K8s CPU spec (`500m`, `1`, `2`); resource quota applies |
-| `memory` | string \| env-map | no | yes | platform default | K8s memory spec (`256Mi`, `1Gi`) |
+| `cpu` | string \| env-map | no | yes | platform default | CPU request and limit together (`500m`, `1`, `2`); cannot mix with separate CPU fields |
+| `memory` | string \| env-map | no | yes | platform default | Memory request and limit together (`256Mi`, `1Gi`); cannot mix with separate memory fields |
+| `cpu_request`, `cpu_limit` | string \| env-map | no | yes | organization → platform defaults | Independent CPU reservation and ceiling; request ≤ limit |
+| `memory_request`, `memory_limit` | string \| env-map | no | yes | organization → platform defaults | Independent memory reservation and ceiling; request ≤ limit |
 
 Size `cpu` and `memory` on what the service actually uses: `dibbla apps top <alias>` shows each pod's usage next to its request and limit. A steady pod at a few percent of its `cpu` reserves capacity it never uses.
 | `environment` | string-map \| env-map-of-string-maps | no | yes | empty | Env vars; supports `${VAR}` substitution (§ 8) |
@@ -838,6 +840,7 @@ Rules:
 - `command:` overrides the image's `CMD`.
 - `environment:` is flat (no per-env form).
 - Job names follow service-name regex (`^[a-z][a-z0-9-]{0,29}$`) and share namespace with services — a job and a service can't have the same name.
+- Jobs accept `cpu_request`, `cpu_limit`, `memory_request`, and `memory_limit` too (plain strings, no env-map). A missing half inherits organization defaults then platform defaults. The shorthand `cpu`/`memory` sets both and cannot be mixed with separate fields for the same dimension.
 - History limits default to K8s defaults (`3` successful, `1` failed). Override per-job for noisy crons.
 - A cron-only deploy (no `services:`) is allowed if `--no-public` is passed; otherwise the validator rejects it (`PUBLIC_SERVICE_MISSING`).
 - **Nothing notifies anyone when a cron job fails.** A `jobs:` entry is a plain K8s CronJob: no run history beyond the pod's, no alert, no recovery notice. If the user wants "a nightly job that tells me when it breaks", that is a **pipeline**, not this — see [pipelines.md](pipelines.md).
@@ -988,8 +991,8 @@ Default org quotas (the platform operator can override):
 | Max services per deploy | 8 | service count after profile filter |
 | Max replicas per service | 10 | per-service `replicas` |
 | Max replicas total | 20 | sum of `replicas` across services |
-| Max CPU total | 8 | sum of `cpu` across services (cores) |
-| Max memory total | 16Gi | sum of `memory` across services |
+| Max CPU total | 8 | sum of CPU requests × replicas across services (cores) |
+| Max memory total | 16Gi | sum of memory requests × replicas across services |
 | Max PVC size per service | 10Gi | sum of `volumes[].size` per service |
 | Max PVC size total | 50Gi | sum across services |
 | Max manifest size | 64KB | the `dibbla.yaml` file itself |

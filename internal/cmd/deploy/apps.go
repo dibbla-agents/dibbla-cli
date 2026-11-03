@@ -15,6 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	updateService string
+
+	updateCPURequest    string
+	updateCPULimit      string
+	updateMemoryRequest string
+	updateMemoryLimit   string
+)
+
 var appsCmd = &cobra.Command{
 	Use:   "apps",
 	Short: "Manage Dibbla applications",
@@ -39,9 +48,19 @@ var appsDeleteCmd = &cobra.Command{
 var appsUpdateCmd = &cobra.Command{
 	Use:   "update <alias>",
 	Short: "Update a deployment",
-	Long:  `Updates an existing deployment (env vars, replicas, cpu, memory, port).`,
-	Args:  cobra.ExactArgs(1),
-	Run:   runAppsUpdate,
+	Long: `Updates an existing app (env vars, replicas, CPU, memory, port).
+
+CPU and memory can be set as separate requests and limits:
+  dibbla apps update myapp --service web --cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi
+
+One service is selected automatically. With multiple services --service is required;
+an unknown or missing selection lists the valid names and changes nothing.
+Resource changes preserve other settings. A missing half inherits organization
+resource defaults then platform defaults. Request must not exceed limit.
+--cpu/--memory set request and limit together and cannot be mixed with separate
+fields for the same dimension. Low memory requests warn about eviction risk.`,
+	Args: cobra.ExactArgs(1),
+	Run:  runAppsUpdate,
 }
 
 var appsRestartCmd = &cobra.Command{
@@ -107,8 +126,17 @@ func init() {
 	appsUpdateCmd.Flags().StringVar(&updateEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
 	appsUpdateCmd.Flags().BoolVar(&updateAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
 	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
-	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request/limit (e.g. 500m, 1)")
-	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request/limit (e.g. 256Mi, 512Mi)")
+	appsUpdateCmd.Flags().StringVar(&updateService, "service", "", "Select the service for resource or replica changes; required for apps with multiple services")
+	appsUpdateCmd.Flags().StringVar(&updateCPU, "cpu", "", "CPU request and limit (e.g. 500m, 1)")
+	appsUpdateCmd.Flags().StringVar(&updateMemory, "memory", "", "Memory request and limit (e.g. 256Mi, 512Mi)")
+	appsUpdateCmd.Flags().StringVar(&updateCPURequest, "cpu-request", "", "cpu request; missing counterpart inherits organization/platform defaults")
+	appsUpdateCmd.Flags().StringVar(&updateCPULimit, "cpu-limit", "", "cpu limit; missing counterpart inherits organization/platform defaults")
+	appsUpdateCmd.Flags().StringVar(&updateMemoryRequest, "memory-request", "", "memory request; missing counterpart inherits organization/platform defaults")
+	appsUpdateCmd.Flags().StringVar(&updateMemoryLimit, "memory-limit", "", "memory limit; missing counterpart inherits organization/platform defaults")
+	appsUpdateCmd.MarkFlagsMutuallyExclusive("cpu", "cpu-request")
+	appsUpdateCmd.MarkFlagsMutuallyExclusive("cpu", "cpu-limit")
+	appsUpdateCmd.MarkFlagsMutuallyExclusive("memory", "memory-request")
+	appsUpdateCmd.MarkFlagsMutuallyExclusive("memory", "memory-limit")
 	appsUpdateCmd.Flags().IntVar(&updatePort, "port", -1, "Container port (1-65535)")
 	appsUpdateCmd.Flags().StringVar(&updateFavicon, "favicon", "", "Favicon URL (use \"\" to clear)")
 	appsUpdateCmd.Flags().StringVar(&updateRequireLogin, "require-login", "", "Require login: true or false")
@@ -233,9 +261,9 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		microsoftScopes = updateMicrosoftScopes
 	}
 
-	hasUpdate := len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
+	hasUpdate := updateCPURequest != "" || updateCPULimit != "" || updateMemoryRequest != "" || updateMemoryLimit != "" || len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
 	if !hasUpdate {
-		fmt.Printf("%s Error: specify at least one of --env (-e), --env-file, --replicas, --cpu, --memory, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: specify at least one of --env (-e), --env-file, --replicas, --cpu, --cpu-request, --cpu-limit, --memory, --memory-request, --memory-limit, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  dibbla apps update myapp -e NODE_ENV=production")
@@ -253,7 +281,12 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 	req := apps.UpdateDeploymentRequest{
 		EnvironmentVariables: envMap,
 		Replicas:             replicas,
+		Service:              updateService,
 		CPU:                  updateCPU,
+		CPURequest:           updateCPURequest,
+		CPULimit:             updateCPULimit,
+		MemoryRequest:        updateMemoryRequest,
+		MemoryLimit:          updateMemoryLimit,
 		Memory:               updateMemory,
 		Port:                 port,
 		FaviconURL:           faviconURL,
@@ -275,6 +308,9 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("%s Deployment updated successfully.\n", platform.Icon("✅", "[OK]"))
 	fmt.Println()
+	for _, w := range dep.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
 	fmt.Printf("   Alias:  %s\n", dep.Alias)
 	fmt.Printf("   URL:    %s\n", dep.URL)
 	fmt.Printf("   Status: %s\n", dep.Status)

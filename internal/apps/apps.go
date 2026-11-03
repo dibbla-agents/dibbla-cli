@@ -19,6 +19,7 @@ type DeploymentsListResponse struct {
 
 // Deployment represents a single application deployment.
 type Deployment struct {
+	Warnings        []string         `json:"warnings,omitempty"`
 	ID              string           `json:"id"`
 	Alias           string           `json:"alias"`
 	URL             string           `json:"url"`
@@ -243,6 +244,12 @@ func quoteList(names []string) string {
 
 // UpdateDeploymentRequest is the request body for PUT /deployments/{alias}.
 type UpdateDeploymentRequest struct {
+	Service       string `json:"service,omitempty"`
+	CPURequest    string `json:"cpu_request,omitempty"`
+	CPULimit      string `json:"cpu_limit,omitempty"`
+	MemoryRequest string `json:"memory_request,omitempty"`
+	MemoryLimit   string `json:"memory_limit,omitempty"`
+
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
 	Replicas             *int32            `json:"replicas,omitempty"`
 	CPU                  string            `json:"cpu,omitempty"`

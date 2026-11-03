@@ -47,7 +47,7 @@ type gitDeployInput struct {
 // when the deploy is a push: the server builds the pushed commit with the
 // app's stored configuration. Naming them beats ignoring them.
 var gitFlagsNotInGitMode = []string{
-	"env", "env-file", "cpu", "memory", "port", "favicon", "require-login",
+	"service", "env", "env-file", "cpu", "memory", "cpu-request", "cpu-limit", "memory-request", "memory-limit", "port", "favicon", "require-login",
 	"access-policy", "google-scopes", "microsoft-scopes", "target-env",
 	"profile", "no-public",
 }

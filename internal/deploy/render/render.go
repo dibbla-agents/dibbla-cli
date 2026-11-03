@@ -39,6 +39,7 @@ type DeployEvent struct {
 // renderers actually use — extra fields the server may add are ignored on
 // decode (json.Unmarshal default).
 type DeployResult struct {
+	Warnings   []string         `json:"warnings,omitempty"`
 	Status     string           `json:"status"`
 	Deployment ResultDeployment `json:"deployment"`
 	VCSCommit  string           `json:"vcs_commit,omitempty"`
@@ -223,6 +224,9 @@ func (r *DeployResult) Notices() []struct{ Label, Text string } {
 	if len(r.VCSFiltered) > 0 {
 		add("vcs", fmt.Sprintf("%d path(s) excluded from version control: %s",
 			len(r.VCSFiltered), strings.Join(r.VCSFiltered, ", ")))
+	}
+	for _, w := range r.Warnings {
+		add("resources", w)
 	}
 	for _, w := range r.EnvWarnings {
 		add("env", w)

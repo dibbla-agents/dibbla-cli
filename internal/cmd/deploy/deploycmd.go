@@ -18,13 +18,19 @@ import (
 )
 
 var (
-	deployForce           bool
-	deployUpdate          bool
-	deployAlias           string
-	deployEnv             []string
-	deployEnvFile         string
-	deployAllowSecretEnv  bool
-	deployCPU             string
+	deployForce          bool
+	deployUpdate         bool
+	deployAlias          string
+	deployEnv            []string
+	deployEnvFile        string
+	deployAllowSecretEnv bool
+	deployService        string
+	deployCPU            string
+	deployCPURequest     string
+	deployCPULimit       string
+	deployMemoryRequest  string
+	deployMemoryLimit    string
+
 	deployMemory          string
 	deployPort            string
 	deployFavicon         string
@@ -85,12 +91,21 @@ Examples:
   dibbla deploy --update     # Rolling update (zero downtime)
   dibbla deploy --force      # Recreate existing alias after a successful build (brief restart)
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
+  dibbla deploy --service web --cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
   dibbla deploy --env-file ../secrets/.env.prod              # Bulk-load env vars from a file
   dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # File as base, -e overrides one key
   dibbla deploy --favicon https://example.com/favicon.ico
   dibbla deploy --quiet      # Single-line success/failure (script-friendly)
   dibbla deploy --json       # Structured JSON output for jq / agents
+
+Resource flags:
+  One service is selected automatically. Apps with multiple services require
+  --service; a missing or unknown selection lists valid service names and changes
+  nothing. Resource flags also work with dibbla.yaml. A missing request or limit
+  inherits organization defaults then platform defaults; request must not exceed
+  limit. --cpu/--memory set both and cannot be mixed with separate fields for the
+  same dimension. Low memory requests warn about eviction risk.
 
 Linked folders:
   In a folder connected to its app (dibbla clone / dibbla link) a deploy is
@@ -113,8 +128,13 @@ func init() {
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
 	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
 	deployCmd.Flags().BoolVar(&deployAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
-	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request (e.g. 500m)")
-	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request (e.g. 512Mi)")
+	deployCmd.Flags().StringVar(&deployService, "service", "", "Select the service for resource flags; required for apps with multiple services")
+	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request and limit (e.g. 500m)")
+	deployCmd.Flags().StringVar(&deployMemory, "memory", "", "Memory request and limit (e.g. 512Mi)")
+	deployCmd.Flags().StringVar(&deployCPURequest, "cpu-request", "", "cpu request per service; missing counterpart inherits organization/platform defaults")
+	deployCmd.Flags().StringVar(&deployCPULimit, "cpu-limit", "", "cpu limit per service; missing counterpart inherits organization/platform defaults")
+	deployCmd.Flags().StringVar(&deployMemoryRequest, "memory-request", "", "memory request per service; missing counterpart inherits organization/platform defaults")
+	deployCmd.Flags().StringVar(&deployMemoryLimit, "memory-limit", "", "memory limit per service; missing counterpart inherits organization/platform defaults")
 	deployCmd.Flags().StringVar(&deployPort, "port", "", "Container port (e.g. 3000)")
 	deployCmd.Flags().StringVar(&deployFavicon, "favicon", "", "Favicon URL (e.g. https://example.com/favicon.ico)")
 	deployCmd.Flags().BoolVar(&deployRequireLogin, "require-login", false, "Require authentication to access the app")
@@ -131,6 +151,11 @@ func init() {
 	deployCmd.Flags().BoolVar(&deploySkipReview, "skip-review", false, "Skip the REVIEW.md + handbook pre-deploy gate (use sparingly)")
 	deployCmd.MarkFlagsMutuallyExclusive("force", "update")
 	deployCmd.MarkFlagsMutuallyExclusive("quiet", "json")
+	deployCmd.MarkFlagsMutuallyExclusive("cpu", "cpu-request")
+	deployCmd.MarkFlagsMutuallyExclusive("cpu", "cpu-limit")
+	deployCmd.MarkFlagsMutuallyExclusive("memory", "memory-request")
+	deployCmd.MarkFlagsMutuallyExclusive("memory", "memory-limit")
+
 }
 
 func runDeploy(cmd *cobra.Command, args []string) {
@@ -196,7 +221,12 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Env:             deployEnv,
 		EnvFile:         deployEnvFile,
 		AllowSecretEnv:  deployAllowSecretEnv,
+		Service:         deployService,
 		CPU:             deployCPU,
+		CPURequest:      deployCPURequest,
+		CPULimit:        deployCPULimit,
+		MemoryRequest:   deployMemoryRequest,
+		MemoryLimit:     deployMemoryLimit,
 		Memory:          deployMemory,
 		Port:            deployPort,
 		FaviconURL:      deployFavicon,

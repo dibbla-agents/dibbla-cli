@@ -611,8 +611,8 @@ The `deploy` command deploys a project to the Dibbla platform. **Detection is by
     -   `--update`, `-u`: Rolling update of existing deployment (zero downtime). Mutually exclusive with `--force`.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style). Values that are not secret only: a name that is one of the app's secrets (`ENV_SHADOWS_SECRET`) or a name or value that looks like a secret (`ENV_LOOKS_LIKE_SECRET`) is refused. On a first deploy, the person sets the app's secrets first with `dibbla secrets set NAME -d <alias>` — that works before the alias exists.
     -   `--allow-secret-env`: For a **person** whose env var looks like a secret but is not one. An agent never passes it.
-    -   `--cpu <value>`: CPU request (e.g. `500m`). **Ignored under multi-service** — set CPU per service in `dibbla.yaml`.
-    -   `--memory <value>`: Memory request (e.g. `512Mi`). **Ignored under multi-service.**
+    -   `--cpu <value>`: CPU request and limit (e.g. `500m`); select `--service` for multiple services.
+    -   `--memory <value>`: Memory request and limit (e.g. `512Mi`); select `--service` for multiple services.
     -   `--port <value>`: Container port (e.g. `3000`). **Ignored under multi-service.**
     -   `--favicon <url>`: Favicon URL (e.g. `https://example.com/favicon.ico`).
     -   `--target-env <name>`: Manifest env block to resolve (defaults to `prod` server-side). Multi-service only.
@@ -876,3 +876,26 @@ Present a checklist report to the user. If any BLOCKER is found, offer to fix it
 - When scripting, use flags like `--yes` to avoid interactive prompts.
 - Pay attention to the output for success messages, error details, and status information.
 - The CLI performs update checks in the background for interactive TTY sessions. If the network is unavailable, failed checks are cached for 24 hours to avoid repeated request timeouts on every command invocation.
+
+
+## CPU and memory: request and limit
+
+Use `cpu_request`, `cpu_limit`, `memory_request`, and `memory_limit` separately in each `dibbla.yaml` service or job. Example:
+
+```yaml
+services:
+  web:
+    image: nginx:alpine
+    port: 80
+    public: true
+    cpu_request: 100m
+    cpu_limit: '1'
+    memory_request: 1Gi
+    memory_limit: 2560Mi
+```
+
+The equivalent flags on `dibbla deploy` and `dibbla apps update <alias>` are `--cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi`. Use `--service web` for an app with multiple services; one service is selected automatically. Deploy resource flags also work with a manifest. Use `dibbla apps top <alias>` to inspect current consumption, request, and limit before sizing.
+
+For each value, explicit service settings win over organization resource defaults, which win over platform defaults (CPU request 50m / limit 1000m, memory request 64Mi / limit 512Mi, capped for your plan). When only request or only limit is supplied, the other half inherits these defaults; it does not keep the running app's previous value. Request must be no greater than limit. The shorthand `cpu` / `memory` (and `--cpu` / `--memory`) still sets both request and limit; combining a shorthand with either separate field for the same dimension is an error.
+
+A service is throttled above its CPU limit; exceeding the memory limit can cause an out-of-memory kill. A memory request below a quarter of its limit warns about eviction risk under node memory pressure but does not block the deploy. Keep requests realistic for steady use and leave limits enough room for peaks.

@@ -74,22 +74,26 @@ type Support struct {
 // Service holds the per-service fields the CLI cares about for local
 // validation. The server's manifest module has the complete shape.
 type Service struct {
-	Build       any      `yaml:"build,omitempty"` // string or object
-	Image       any      `yaml:"image,omitempty"` // string or env-aware map
-	Port        *int     `yaml:"port,omitempty"`
-	Public      any      `yaml:"public,omitempty"`
-	Replicas    any      `yaml:"replicas,omitempty"`
-	CPU         any      `yaml:"cpu,omitempty"`
-	Memory      any      `yaml:"memory,omitempty"`
-	Environment any      `yaml:"environment,omitempty"`
-	Command     []string `yaml:"command,omitempty"`
-	Entrypoint  []string `yaml:"entrypoint,omitempty"`
-	Volumes     []Volume `yaml:"volumes,omitempty"`
-	Profiles    []string `yaml:"profiles,omitempty"`
-	DependsOn   []string `yaml:"depends_on,omitempty"`
-	ExposeTo    []string `yaml:"expose_to,omitempty"`
-	Stateful    *bool    `yaml:"stateful,omitempty"`
-	Routes      []Route  `yaml:"routes,omitempty"`
+	CPURequest    any      `yaml:"cpu_request,omitempty"`
+	CPULimit      any      `yaml:"cpu_limit,omitempty"`
+	MemoryRequest any      `yaml:"memory_request,omitempty"`
+	MemoryLimit   any      `yaml:"memory_limit,omitempty"`
+	Build         any      `yaml:"build,omitempty"` // string or object
+	Image         any      `yaml:"image,omitempty"` // string or env-aware map
+	Port          *int     `yaml:"port,omitempty"`
+	Public        any      `yaml:"public,omitempty"`
+	Replicas      any      `yaml:"replicas,omitempty"`
+	CPU           any      `yaml:"cpu,omitempty"`
+	Memory        any      `yaml:"memory,omitempty"`
+	Environment   any      `yaml:"environment,omitempty"`
+	Command       []string `yaml:"command,omitempty"`
+	Entrypoint    []string `yaml:"entrypoint,omitempty"`
+	Volumes       []Volume `yaml:"volumes,omitempty"`
+	Profiles      []string `yaml:"profiles,omitempty"`
+	DependsOn     []string `yaml:"depends_on,omitempty"`
+	ExposeTo      []string `yaml:"expose_to,omitempty"`
+	Stateful      *bool    `yaml:"stateful,omitempty"`
+	Routes        []Route  `yaml:"routes,omitempty"`
 	// MCP is the tool server name this service publishes as an MCP of its
 	// own (DIB-1222). The server validates it; the CLI reads it so the
 	// deploy output can never stay silent about it (DIB-1225).
@@ -255,6 +259,13 @@ func validateServiceName(name string) error {
 }
 
 func validateService(name string, s *Service) error {
+	if s.CPU != nil && (s.CPURequest != nil || s.CPULimit != nil) {
+		return &Error{Code: ErrCodeManifestInvalid, Path: "services." + name, Detail: "use either cpu (request and limit) or cpu_request/cpu_limit, not both"}
+	}
+	if s.Memory != nil && (s.MemoryRequest != nil || s.MemoryLimit != nil) {
+		return &Error{Code: ErrCodeManifestInvalid, Path: "services." + name, Detail: "use either memory (request and limit) or memory_request/memory_limit, not both"}
+	}
+
 	hasBuild := s.Build != nil
 	hasImage := s.Image != nil
 	switch {
