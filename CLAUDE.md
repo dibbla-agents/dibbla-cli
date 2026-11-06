@@ -307,3 +307,11 @@ exactly this reason.
 in-process calls. The reason: when `update` self-replaces, the next
 subprocess automatically picks up the new binary on disk. See
 `internal/cmd/initcmd/`.
+
+## Complete Security scan reads (DIB-1683)
+
+`apps findings` reads the common paginated findings endpoint; `--all` buffers
+pages before output, checking scan identity, offsets and totals. Keep errors,
+status and running-revision metadata alongside every finding. A rematch yields
+`SCAN_CHANGED` rather than mixing pages; no scan is started by this command.
+Update the source skill reference and run `go generate ./...` when changing it.

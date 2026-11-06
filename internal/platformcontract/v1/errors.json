@@ -52,6 +52,7 @@
     { "code": "CONFIRMATION_USED", "class": "caller", "http": 409, "retryable": false, "summary": "The confirmation was already consumed and this request cannot receive its bound terminal replay." },
     { "code": "IN_PROGRESS", "class": "caller", "http": 409, "retryable": true, "summary": "The approved destructive request is executing; retry reads its durable terminal result and never starts another side effect." },
     { "code": "NOT_FOUND", "class": "absence", "http": 404, "retryable": false, "summary": "No such object within this principal's visibility. An object in another tenant is NOT_FOUND, never FORBIDDEN — the distinction would itself be a cross-tenant disclosure." },
+    { "code": "SCAN_CHANGED", "class": "caller", "http": 409, "retryable": false, "summary": "The Security scan report changed or disappeared while paging. Discard all collected pages and restart without a cursor; never merge report versions." },
     { "code": "CONFLICT", "class": "caller", "http": 409, "retryable": false, "summary": "The object's current state does not permit this transition." },
     { "code": "RATE_LIMITED", "class": "caller", "http": 429, "retryable": true, "summary": "Too many requests. Retry after the indicated interval." },
     { "code": "UPSTREAM_FAILED", "class": "upstream", "http": 502, "retryable": true, "summary": "A dependency failed in a way that may not repeat." },
