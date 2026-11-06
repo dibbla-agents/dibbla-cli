@@ -709,6 +709,13 @@ scripts reach users when the `mirror` job (on a release tag) or
 `installer-site` app. See CLAUDE.md.
 
 Read all existing Security scan findings with `dibbla apps findings myapp --all --json`.
+
+The Dibbla MCP connector can perform the same temporary source scan,
+comparison and end workflow through `platform_files action=security_scan`.
+Use the connector's skill for that surface; archive bytes travel through its
+authenticated upload client, never tool arguments. CLI commands below keep
+their complete JSON responses and require no local scanning tools. Neither
+surface changes the running revision or promotes test results into a deploy.
 For individual pages, use `--limit` and pass `next_cursor` as `--cursor` until
 `has_more=false`. Filters: `--min-severity`, `--fixable-only`, `--kind`, `--service`,
 `--deployment-id`. See `dibbla apps findings --help` for semantics. Always inspect
