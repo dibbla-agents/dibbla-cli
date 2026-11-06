@@ -91,3 +91,39 @@ func TestScanCLIFailureGoneAndCompleteText(t *testing.T) {
 		})
 	}
 }
+
+func TestScanCLIDependencyReport(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	full := fmt.Sprintf(`{"scan_id":%q,"status":"completed","coverage":"secrets_and_dependencies","archive_sha256":"%s","gitleaks":"8.30.1","findings":[],
+"dependencies":{"status":"partial","packages":2,"syft":"1.52.0","grype":"0.119.0","vuln_db_built_at":"2026-11-06T06:21:59Z",
+"files":[{"path":"web/package-lock.json","service":"web","status":"scanned","packages":2},{"path":"worker/bun.lockb","service":"worker","status":"UNSUPPORTED_FORMAT","packages":0}],
+"gaps":[{"code":"UNSUPPORTED_FORMAT","path":"worker/bun.lockb","service":"worker","message":"This lock file format is not supported; its dependencies were not checked."}],
+"vulnerabilities":[{"id":"GHSA-35jh-r3h4-6jhm","severity":"high","package":"lodash","version":"4.17.20","fixed_in":"4.17.21","file":"web/package-lock.json","service":"web"}],
+"not_covered_without_build":["image_and_os_packages"]}}`, id, strings.Repeat("c", 64))
+	for _, tc := range []struct {
+		name, body string
+		want       int
+		contains   []string
+	}{
+		{"full", full, 0, []string{"Coverage: secrets and dependencies", "Dependencies: partial — 2 packages from 2 files (Syft 1.52.0, Grype 0.119.0, database 2026-11-06T06:21Z)",
+			"high GHSA-35jh-r3h4-6jhm lodash@4.17.20 (fixed in 4.17.21) web/package-lock.json [web]", "Not checked (1 gaps):", "worker/bun.lockb [worker]: UNSUPPORTED_FORMAT", "Never covered without a build", "(Gitleaks 8.30.1)"}},
+		{"missing part", fmt.Sprintf(`{"scan_id":%q,"status":"completed","coverage":"secrets_and_dependencies","findings":[]}`, id), 1, nil},
+		{"unknown coverage", fmt.Sprintf(`{"scan_id":%q,"status":"completed","coverage":"everything","findings":[]}`, id), 1, nil},
+		{"old server", fmt.Sprintf(`{"scan_id":%q,"status":"completed","coverage":"secrets_only","findings":[]}`, id), 0, []string{"Coverage: secrets only", "Dependencies: not checked by this server"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, tc.body) }))
+			defer s.Close()
+			var out, errout bytes.Buffer
+			code := runAppsScanCore(&out, &errout, s.URL, "token", "result", "alpha", id, "", "", false)
+			if code != tc.want {
+				t.Fatalf("exit %d, want %d: %s %s", code, tc.want, &out, &errout)
+			}
+			for _, c := range tc.contains {
+				if !strings.Contains(out.String(), c) {
+					t.Errorf("missing %q in:\n%s", c, &out)
+				}
+			}
+		})
+	}
+}

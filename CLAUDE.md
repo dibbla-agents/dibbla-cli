@@ -316,8 +316,10 @@ status and running-revision metadata alongside every finding. A rematch yields
 `SCAN_CHANGED` rather than mixing pages; no scan is started by this command.
 Update the source skill reference and run `go generate ./...` when changing it.
 
-`apps scan start/status/result/end` is the separate temporary secrets-only
-source workflow (DIB-1684). Start streams an existing tar.gz without making a
+`apps scan start/status/result/end` is the separate temporary source workflow
+(DIB-1684 secrets; DIB-1685 lock-file dependencies, `coverage:
+secrets_and_dependencies`, also accepts an older server's `secrets_only` and
+refuses any other value or a report missing its `dependencies` part). Start streams an existing tar.gz without making a
 local copy. Preserve the timestamped request ID and archive digest on transport
 retries; never turn an expired/failed result into empty findings. The source
 skill documents ending runs and the distinction from deployed findings. This
