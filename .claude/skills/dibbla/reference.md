@@ -826,7 +826,7 @@ Show one deployment's record — the app's card, as the console and the connecto
 | **Flags** | `--json` — print the raw API document verbatim. `--review` — print the REVIEW.md the running app was deployed with, and nothing else (exit 1 when there is none) |
 | **Output** | Default: URL, status, deployed/updated times, the commit the app runs (`Commit:`), replicas, size, health, login policy, then a **Security** section: `Review:` the guardrails status (OK / warnings / blockers found / none) with **the version it was written for** and when, plus a warning when the running version is newer than the review; `Scan:` the build-time scan's findings (leaked secrets, then critical/high/medium/low) with when the finding set last changed; `Agent:` whether the maintenance agent is on and whether anything has changed since it last looked, its last run, and proposals waiting for a decision. For multi-service apps a per-service breakdown with ready/replica counts and a `stateful` marker. When the app's `main` is ahead of the running commit (a `git push` whose deploy failed or is still building), a `Main: <sha> — NOT running` block follows with the failure (`BUILD_FAILED — …`) and the `dibbla deploy status <id>` to read; the fix is a new commit, never a rewind |
 | **Errors** | `404` exit 4 with a hint to `apps list`; `401/403` exit 3 |
-| **Notes** | The Security section is absent on a server that predates it (it is not "no review"). "Nothing has changed since the agent last looked" means neither the running version nor the scan's finding set is newer than the last maintenance run. Findings **per severity and per package** are in `--json` under `security.scan` only as a tally; the list itself is the API's `GET /deployments/{alias}/security-scan` |
+| **Notes** | The Security section is absent on a server that predates it (it is not "no review"). "Nothing has changed since the agent last looked" means neither the running version nor the scan's finding set is newer than the last maintenance run. Findings **per severity and per package** are in `--json` under `security.scan` only as a tally; read the complete list with `dibbla apps findings <alias> --all --json` |
 
 **Examples:**
 ```bash
@@ -2066,3 +2066,24 @@ An admin exposes a managed data source to agents (Console → MCP, with a min ro
 | Functions | `dibbla functions invoke <server> <name> [--input <json> \| -f <file>]` | Call an exposed function directly (source `cli`) |
 | Data sources | `dibbla datasource list` | Data sources you can query, with their filterable columns |
 | Data sources | `dibbla datasource query <id> "<question>" [--filter col=value] [--top-k N]` | Semantic search in an exposed data source (source `cli`) |
+
+### Complete Security scan findings
+
+`dibbla apps findings <alias> --all --json` reads every finding from the existing
+Security scan. It does not start a scan or change anything. Report `status`,
+`errors`, revision, timestamps and `running` with the findings. A missing,
+unavailable, running, partial or failed scan is never clean, and an older report
+with `running=false` says nothing definitive about the running revision.
+
+For manual pagination use `--limit 1..200` (default 50), then pass `next_cursor`
+as `--cursor` until `has_more=false`. Keep the filters unchanged. `--min-severity`
+keeps that severity and above including secrets; `--fixable-only` keeps fixable
+vulnerabilities plus secrets. `--kind vulnerability|secret`, `--service <name>`
+(excludes source secrets) and `--deployment-id <revision>` narrow the request.
+The JSON contains all package/version/service/severity/advisory/fix facts and
+safe secret locations. Never infer completeness from the first page's count.
+
+`SCAN_CHANGED` (exit 6) requires discarding all pages and starting again.
+`--all` buffers pages and emits nothing if one fails; it cannot be combined with
+`--cursor`. Exit 0 means successful reading, not a clean scan. No local scanning
+software, build or deployment is needed for this read.

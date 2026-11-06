@@ -1185,6 +1185,21 @@
       ]
     },
     {
+      "id": "platform.apps.security_scan",
+      "title": "Read complete Security scan findings and report status",
+      "state": "remote-read",
+      "scopes": [
+        "platform:apps:read"
+      ],
+      "auth": "oauth",
+      "mcp_toolset": "/platform",
+      "mcp_tool": "platform_apps",
+      "note": "DIB-1683: platform_apps view=security_scan and apps findings read GET /deployments/{alias}/security-scan/findings. Full vulnerability facts and safe secret locations, explicit status/errors/scanned and running revisions/timestamps, filters and version-bound cursor pagination. Follow next_cursor until has_more=false; SCAN_CHANGED requires discarding collected pages and restarting. CLI --all buffers every page before output. Existing developer role and app visibility apply. No scanning, finding mutation or notifications. No additional tool.",
+      "cli_commands": [
+        "apps findings"
+      ]
+    },
+    {
       "id": "platform.apps.maintenance.settings",
       "title": "Enable or disable an app’s scheduled maintenance",
       "state": "remote-write",

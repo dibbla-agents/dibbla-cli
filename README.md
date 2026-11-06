@@ -707,3 +707,11 @@ dibbla-cli/
 scripts reach users when the `mirror` job (on a release tag) or
 `mirror-redeploy.yml` (on a push to `main` touching them) copies them into the
 `installer-site` app. See CLAUDE.md.
+
+Read all existing Security scan findings with `dibbla apps findings myapp --all --json`.
+For individual pages, use `--limit` and pass `next_cursor` as `--cursor` until
+`has_more=false`. Filters: `--min-severity`, `--fixable-only`, `--kind`, `--service`,
+`--deployment-id`. See `dibbla apps findings --help` for semantics. Always inspect
+status/errors and whether the report applies to the running revision; a read
+succeeding does not mean a scan is clean. Changed reports fail with `SCAN_CHANGED`
+(exit 6); discard previous pages and restart. This command never starts scans.

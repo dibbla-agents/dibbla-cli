@@ -220,9 +220,9 @@ func TestVerifyFallsOnEveryDirectionOfDrift(t *testing.T) {
 func TestCanonicalDigestMatchesTheCheckedInConstants(t *testing.T) {
 	const (
 		scopesDigest       = "sha256:29a5947f9197c52612c953cb48341c1d911e5262bfdafcd00b67de480c39f553"
-		errorsDigest       = "sha256:30b6ce9eb00c2a6ac9a29ce2ec5c8f07cc9fbbe8c7cc3cbe31e976ac7c59b82d"
-		capabilitiesDigest = "sha256:a25f7fa37da9dd887838c0dc65c2f4c4ba7896b824e66e2467b6e6c44089b418"
-		contractDigest     = "sha256:03cdbaffb337c568956396f07d317822199d6acce43b2a268550d390079bc042"
+		errorsDigest       = "sha256:dda04d954e2b881844c838b587e1f5ba58c8b9e2b36c19eaab594cae07985bfe"
+		capabilitiesDigest = "sha256:88f8b370cd8fb79f977c3360797e6a34b64782c3659b783d9244a4845b325029"
+		contractDigest     = "sha256:e777ca2f4c298f1358f139a11ea4281ede183b4729552df5798a728ae905793b"
 	)
 	want := map[string]string{
 		"v1/scopes.json":       scopesDigest,
