@@ -2087,3 +2087,36 @@ safe secret locations. Never infer completeness from the first page's count.
 `--all` buffers pages and emits nothing if one fails; it cannot be combined with
 `--cursor`. Exit 0 means successful reading, not a clean scan. No local scanning
 software, build or deployment is needed for this read.
+
+### Temporary Security scan of source
+
+For an existing app, test an archive without deployment:
+
+```sh
+dibbla apps scan start myapp --archive source.tar.gz --json
+dibbla apps scan status myapp <scan-id> --json
+dibbla apps scan result myapp <scan-id> --json
+dibbla apps scan end myapp <scan-id> --json
+```
+
+Create a tar.gz of the code to inspect, containing regular files/directories
+only. Do not install packages or execute project scripts to prepare it. Keep the
+request ID printed on stderr: after a lost response, repeat `start` with the
+same archive and `--request-id <request-id>`. Changed code needs a new ID.
+An interrupted or failed scan is not clean; read `status` and `error_code` and
+use a new request ID if another scan is needed. `--json` includes API errors.
+
+Coverage is secrets only: report file, line and rule, never the secret value.
+Dependencies, image/OS vulnerabilities, nested archives, encoded secrets and
+git history are not checked. Do not call existing deployed findings resolved
+because they are absent here. This does not build or deploy and does not change
+the running app's report, finding status or notifications. Ordinary deployment
+still produces the deployed revision's full Security scan.
+
+Read the report as often as needed, then **always run `end`**. End removes all
+server copies. The default absolute TTL is 60 minutes from creation; polling
+and retries do not extend it. Gone/expired reports are errors, never empty
+findings. There is no permanent test history. Limits: 50 MiB compressed,
+200 MiB expanded including headers, 10,000 entries, two minutes for upload and
+scan, two simultaneous scans globally, four unclosed runs per organization.
+A successful command is not a guarantee that no secrets were found.
