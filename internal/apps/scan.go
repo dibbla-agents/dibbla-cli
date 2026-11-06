@@ -127,10 +127,63 @@ func scanRequest(method, endpoint, token, contentType string, body io.ReadSeeker
 		if err = json.Unmarshal(raw, &run); err != nil {
 			return nil, nil, fmt.Errorf("decode Security scan response: %w", err)
 		}
-		if run.ID == "" || run.State == "" || run.Coverage != "secrets_only" {
+		if run.ID == "" || run.State == "" || !KnownScanCoverage(run.Coverage) {
 			return nil, nil, fmt.Errorf("incomplete Security scan response")
 		}
 		return &run, raw, nil
 	}
 	panic("unreachable")
+}
+
+// Coverage values. A server that predates dependency scanning (DIB-1684)
+// still answers secrets_only; an unknown value is refused, never guessed.
+const (
+	CoverageSecretsOnly            = "secrets_only"
+	CoverageSecretsAndDependencies = "secrets_and_dependencies"
+)
+
+func KnownScanCoverage(c string) bool {
+	return c == CoverageSecretsOnly || c == CoverageSecretsAndDependencies
+}
+
+// TestScanReport is the part of a temporary report the text output prints.
+// --json prints the server's document unchanged.
+type TestScanReport struct {
+	ArchiveSHA256 string `json:"archive_sha256"`
+	Coverage      string `json:"coverage"`
+	Gitleaks      string `json:"gitleaks"`
+	Findings      []struct {
+		File string `json:"file"`
+		Line int    `json:"line"`
+		Rule string `json:"rule"`
+	} `json:"findings"`
+	Dependencies *struct {
+		Status string `json:"status"`
+		Files  []struct {
+			Path     string `json:"path"`
+			Service  string `json:"service"`
+			Status   string `json:"status"`
+			Packages int    `json:"packages"`
+		} `json:"files"`
+		Gaps []struct {
+			Code    string `json:"code"`
+			Path    string `json:"path"`
+			Service string `json:"service"`
+			Message string `json:"message"`
+		} `json:"gaps"`
+		Packages        int `json:"packages"`
+		Vulnerabilities []struct {
+			ID       string `json:"id"`
+			Severity string `json:"severity"`
+			Package  string `json:"package"`
+			Version  string `json:"version"`
+			FixedIn  string `json:"fixed_in"`
+			File     string `json:"file"`
+			Service  string `json:"service"`
+		} `json:"vulnerabilities"`
+		NotCovered    []string   `json:"not_covered_without_build"`
+		Syft          string     `json:"syft"`
+		Grype         string     `json:"grype"`
+		VulnDBBuiltAt *time.Time `json:"vuln_db_built_at"`
+	} `json:"dependencies"`
 }

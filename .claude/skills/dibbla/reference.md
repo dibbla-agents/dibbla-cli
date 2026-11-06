@@ -2106,10 +2106,20 @@ same archive and `--request-id <request-id>`. Changed code needs a new ID.
 An interrupted or failed scan is not clean; read `status` and `error_code` and
 use a new request ID if another scan is needed. `--json` includes API errors.
 
-Coverage is secrets only: report file, line and rule, never the secret value.
-Dependencies, image/OS vulnerabilities, nested archives, encoded secrets and
-git history are not checked. Do not call existing deployed findings resolved
-because they are absent here. This does not build or deploy and does not change
+Coverage is secrets and lock-file dependencies. Secrets report file, line and
+rule, never the value. Dependencies are read from the archive's lock files
+without installing anything; each vulnerability names `package`, `version`,
+`fixed_in`, the `file` it was declared in and the `service`. Verified with real
+files: `package-lock.json`, `pnpm-lock.yaml`, `bun.lock`, `go.mod`, `uv.lock`,
+and `requirements*.txt` with exact `==` pins. Read `dependencies.status` and
+`dependencies.gaps` before concluding anything: `partial`, `failed` or
+`no_dependency_files` means some files were not checked (for example
+`bun.lockb`, a `package.json` without a lock file, unpinned requirements). To
+check a fix, update the lock file (not only the manifest), make a new archive,
+start a new scan, and compare the advisory IDs. Image/OS packages, the language
+runtime and dependencies resolved during a build, nested archives, encoded
+secrets and git history are not checked. Do not call existing deployed findings
+resolved because they are absent here. This does not build or deploy and does not change
 the running app's report, finding status or notifications. Ordinary deployment
 still produces the deployed revision's full Security scan.
 

@@ -716,7 +716,7 @@ status/errors and whether the report applies to the running revision; a read
 succeeding does not mean a scan is clean. Changed reports fail with `SCAN_CHANGED`
 (exit 6); discard previous pages and restart. This command never starts scans.
 
-Test submitted source for secrets without building or deploying:
+Test submitted source for secrets and vulnerable dependencies without building or deploying:
 
 ```sh
 dibbla apps scan start myapp --archive source.tar.gz --json
@@ -732,8 +732,16 @@ a second scan. A changed archive needs a new ID. Read results repeatedly until
 server copies; expired/deleted results fail explicitly. A failed scan exits 1
 and never returns an empty success report. Exit 0 does not mean no findings.
 
-Coverage is **secrets only**. No dependencies, image/OS vulnerabilities, git
-history, nested archives or encoded secrets are checked. The deployed revision,
-its Security scan and notifications stay unchanged. Tar.gz must contain only
+Coverage is **secrets and lock-file dependencies** (`coverage:
+secrets_and_dependencies`). Dependency versions are read from lock files, never
+installed: `package-lock.json`, `pnpm-lock.yaml`, `bun.lock`, `go.mod`, `uv.lock`
+and `requirements*.txt` with exact `==` pins are verified with real files.
+Everything else is listed per file and service under `dependencies.gaps`
+(`bun.lockb`, a `package.json` without a lock file, unpinned requirements,
+unverified formats, scanner or database failures). Only `dependencies.status:
+complete` covers every examined file. Image/OS packages, the language runtime
+and anything resolved during a build are never checked here, nor are git
+history, nested archives or encoded secrets. The deployed revision, its
+Security scan and notifications stay unchanged. Tar.gz must contain only
 regular files/directories: up to 50 MiB compressed, 200 MiB expanded and 10,000
 entries. See `dibbla apps scan start --help` for limits and retry semantics.
