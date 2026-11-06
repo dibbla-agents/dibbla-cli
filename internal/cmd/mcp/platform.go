@@ -22,12 +22,15 @@ import (
 )
 
 var (
-	platformClient string
-	platformLogin  bool
-	platformCheck  bool
-	platformLogout bool
-	platformUpload string
-	platformScope  string
+	platformClient        string
+	platformLogin         bool
+	platformCheck         bool
+	platformLogout        bool
+	platformUpload        string
+	platformScope         string
+	platformTestScan      string
+	platformScanAlias     string
+	platformScanRequestID string
 )
 
 var platformCmd = &cobra.Command{
@@ -38,6 +41,9 @@ var platformCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := cmd.OutOrStdout()
+		if cmd.Flags().Changed("request-id") && platformTestScan == "" {
+			return fmt.Errorf("--request-id requires --testscan")
+		}
 		switch {
 		case platformLogout:
 			return runPlatformLogout(w)
@@ -45,6 +51,8 @@ var platformCmd = &cobra.Command{
 			return runPlatformLogin(w)
 		case platformCheck:
 			return runPlatformCheck(w)
+		case platformTestScan != "":
+			return runPlatformTestScan(w, platformTestScan, platformScanAlias, platformScanRequestID)
 		case platformUpload != "":
 			return runPlatformUpload(w, platformUpload)
 		default:
@@ -67,7 +75,11 @@ func init() {
 		"upload a file to the platform over the connector and print its file id")
 	platformCmd.Flags().StringVar(&platformScope, "scope", "",
 		"with --login: the scopes to ask consent for (default: the read scopes)")
-	platformCmd.MarkFlagsMutuallyExclusive("login", "check", "logout", "upload")
+	platformCmd.Flags().StringVar(&platformTestScan, "testscan", "", "upload a source archive through MCP for temporary Security scan; print scan_id")
+	platformCmd.Flags().StringVar(&platformScanAlias, "alias", "", "with --testscan: the existing application")
+	platformCmd.Flags().StringVar(&platformScanRequestID, "request-id", "", "with --testscan: reuse the printed request identity to resume the same archive")
+	platformCmd.MarkFlagsRequiredTogether("testscan", "alias")
+	platformCmd.MarkFlagsMutuallyExclusive("login", "check", "logout", "upload", "testscan")
 }
 
 // platformLong renders the help text. The capability boundary at the end —
@@ -96,6 +108,9 @@ grant.
   dibbla mcp platform --upload FILE      prepare an upload intent and move the
                                          bytes from this process, resuming from
                                          the committed offset if the link drops
+  dibbla mcp platform --testscan FILE --alias APP
+                                         start/resume a temporary Security scan
+                                         through MCP, using this client's OAuth
   dibbla mcp platform --login \
     --scope "..."                        ask consent for more than the read
                                          scopes; a write scope is never granted
@@ -108,6 +123,14 @@ token this machine already holds. It needs a grant with platform:files:write.
 A client without a filesystem uses the same intent and hands its console link
 to the human who has the file instead.
 
+--testscan uses the same authenticated byte transport for a temporary Security
+scan. It prints a request_id before contacting the server; reuse that value
+with --request-id after an interruption. It needs platform:apps:read and
+platform:files:write. The printed scan_id can be read, compared and ended by
+platform_files action=security_scan in your assistant, in the same organization.
+The CLI's OAuth login is separate from the assistant's connection; never copy
+tokens between them. Always end the temporary scans when finished.
+
 A write scope is never a consent default: --login without --scope stores a
 read-only grant, and the consent page shows each write scope as a box you tick.
 
@@ -115,7 +138,7 @@ The grant --login stores belongs to the active context (see dibbla context)
 and is never written to a config file. --check refreshes an expired access
 token automatically; a revoked grant is reported as such with the fix.
 
-THE SHAPE OF THE TOOLSET. A full write grant lists 32 tools for everything the
+THE SHAPE OF THE TOOLSET. A full write grant lists 33 tools for everything the
 platform can do, so there is no tool per command. A tool is a flow, and the
 step is a parameter: platform_apps lists your applications when you omit the
 alias and reads one when you name it, platform_operation takes a view of
