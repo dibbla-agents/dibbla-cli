@@ -93,13 +93,16 @@ type uploadPlan struct {
 }
 
 type transferView struct {
-	TransferID   string      `json:"transfer_id"`
-	Status       string      `json:"status"`
-	Offset       int64       `json:"offset"`
-	SourceFileID string      `json:"source_file_id"`
-	FailureCode  string      `json:"failure_code"`
-	FallbackURL  string      `json:"fallback_url"`
-	Upload       *uploadPlan `json:"upload"`
+	ScanID        string      `json:"scan_id,omitempty"`
+	ErrorCode     string      `json:"error_code,omitempty"`
+	ContentLength int64       `json:"content_length,omitempty"`
+	TransferID    string      `json:"transfer_id"`
+	Status        string      `json:"status"`
+	Offset        int64       `json:"offset"`
+	SourceFileID  string      `json:"source_file_id"`
+	FailureCode   string      `json:"failure_code"`
+	FallbackURL   string      `json:"fallback_url"`
+	Upload        *uploadPlan `json:"upload"`
 }
 
 func runPlatformUpload(w io.Writer, path string) error {
@@ -187,8 +190,9 @@ func prepareUpload(endpoint, token, name, contentType string, size int64, sum st
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	call := map[string]any{"name": "platform_file_upload_prepare", "arguments": map[string]any{
-		"name": name, "content_type": contentType, "content_length": size,
+	call := map[string]any{"name": "platform_files", "arguments": map[string]any{
+		"action": "prepare_upload",
+		"name":   name, "content_type": contentType, "content_length": size,
 		"content_sha256": sum, "idempotency_key": newIdempotencyKey(),
 	}}
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -200,10 +204,10 @@ func prepareUpload(endpoint, token, name, contentType string, size int64, sum st
 		text = resp.Result.Content[0].Text
 	}
 	if resp.Error != nil {
-		return nil, fmt.Errorf("platform_file_upload_prepare failed: %s", resp.Error.Message)
+		return nil, fmt.Errorf("platform_files prepare_upload failed: %s", resp.Error.Message)
 	}
 	if resp.Result.IsError {
-		return nil, fmt.Errorf("platform_file_upload_prepare refused the intent: %s", strings.TrimSpace(text))
+		return nil, fmt.Errorf("platform_files prepare_upload refused the intent: %s", strings.TrimSpace(text))
 	}
 	var view transferView
 	if err := json.Unmarshal(resp.Result.StructuredContent, &view); err != nil {

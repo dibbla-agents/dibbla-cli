@@ -330,3 +330,10 @@ local copy. Preserve the timestamped request ID and archive digest on transport
 retries; never turn an expired/failed result into empty findings. The source
 skill documents ending runs and the distinction from deployed findings. This
 is not a deploy command and must not invoke deploy/operation code.
+
+`mcp platform --testscan FILE --alias APP` is the shell client's MCP upload
+adapter. It reuses the authenticated chunk transport with scan start/status
+control, a printed retry identity, strict same-origin/path validation and no
+credential redirects. The scan_id is consumed by the assistant's existing MCP
+result/compare/end flow. Never confuse its OAuth grant with a native assistant
+grant or use the regular file broker for temporary scan bytes.
