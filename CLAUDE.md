@@ -310,6 +310,12 @@ subprocess automatically picks up the new binary on disk. See
 
 ## Complete Security scan reads (DIB-1683)
 
+DIB-1687 aligns the capability contract with MCP's temporary Security scan
+lifecycle. CLI full responses stay unchanged; server result/compare pagination
+is opt-in for MCP. Keep CLI and connector procedures separate, and never send
+archive bytes in MCP arguments. The common lifecycle still requires ending both
+runs after comparison and never promotes a source report into deployment history.
+
 `apps findings` reads the common paginated findings endpoint; `--all` buffers
 pages before output, checking scan identity, offsets and totals. Keep errors,
 status and running-revision metadata alongside every finding. A rematch yields

@@ -34,7 +34,13 @@ including the temporary SBOM and scanner output. A failed, interrupted or
 expired scan, or a dependency status other than complete, is never a clean report.
 
 compare puts two reports of the same app side by side, so an agent can tell
-what its change fixed from what changed in the scanning itself.`}
+what its change fixed from what changed in the scanning itself.
+
+Agent loop: read all deployed findings, test the unchanged source, make the
+authorized change, test again, compare, then end both runs. A later deployment
+creates a fresh image and secret report; it never promotes a temporary report.
+The Dibbla MCP connector offers the same lifecycle through its own file upload
+client. Use the connector skill for that surface; no local scanners are needed.`}
 	for _, action := range []string{"start", "status", "result", "end"} {
 		var jsonOut bool
 		var archive, requestID string

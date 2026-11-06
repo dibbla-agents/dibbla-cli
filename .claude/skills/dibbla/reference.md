@@ -2090,6 +2090,16 @@ software, build or deployment is needed for this read.
 
 ### Temporary Security scan of source
 
+For the complete correction loop, first read all deployed findings with
+`dibbla apps findings myapp --all --json`, then scan the unchanged local source
+as a baseline. Make only the change the user authorized, scan the changed
+source, compare the two still-available reports and end both runs. Keep coverage,
+database changes and what needs a build in the explanation. No local scanner
+installation is needed. The MCP connector has the same lifecycle for clients
+with file access; use its own connector skill for the upload procedure.
+An ordinary deployment remains a separate action and creates a fresh image and
+secret report, rather than promoting either test result.
+
 For an existing app, test an archive without deployment:
 
 ```sh
