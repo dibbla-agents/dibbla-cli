@@ -715,3 +715,25 @@ For individual pages, use `--limit` and pass `next_cursor` as `--cursor` until
 status/errors and whether the report applies to the running revision; a read
 succeeding does not mean a scan is clean. Changed reports fail with `SCAN_CHANGED`
 (exit 6); discard previous pages and restart. This command never starts scans.
+
+Test submitted source for secrets without building or deploying:
+
+```sh
+dibbla apps scan start myapp --archive source.tar.gz --json
+dibbla apps scan status myapp <scan-id> --json
+dibbla apps scan result myapp <scan-id> --json
+dibbla apps scan end myapp <scan-id> --json
+```
+
+Keep the request ID printed on stderr; retry `start` with the same archive and
+`--request-id <request-id>` after a lost response. The same request never starts
+a second scan. A changed archive needs a new ID. Read results repeatedly until
+`end` or the absolute TTL (default 60 minutes from creation). End deletes all
+server copies; expired/deleted results fail explicitly. A failed scan exits 1
+and never returns an empty success report. Exit 0 does not mean no findings.
+
+Coverage is **secrets only**. No dependencies, image/OS vulnerabilities, git
+history, nested archives or encoded secrets are checked. The deployed revision,
+its Security scan and notifications stay unchanged. Tar.gz must contain only
+regular files/directories: up to 50 MiB compressed, 200 MiB expanded and 10,000
+entries. See `dibbla apps scan start --help` for limits and retry semantics.

@@ -1200,6 +1200,23 @@
       ]
     },
     {
+      "id": "platform.apps.security_test",
+      "title": "Test source with temporary Security scan",
+      "state": "not-yet-available",
+      "scopes": [],
+      "auth": "oauth",
+      "eventual_state": "remote-async",
+      "owner": "DIB-1682",
+      "tracked_by": "DIB-1687",
+      "note": "DIB-1684 delivers CLI start/status/result/end for an existing app: direct source archive upload, secrets-only Gitleaks, safe locations, request-bound retries, repeatable reads, explicit deletion and absolute configurable TTL (default 60 minutes from creation). No build, project execution, deployment, live finding mutation, notification or permanent report history. MCP lifecycle is deliberately not yet available; DIB-1687 supplies it after dependency coverage and comparisons. This row grants no scope and promises no current MCP tool.",
+      "cli_commands": [
+        "apps scan start",
+        "apps scan status",
+        "apps scan result",
+        "apps scan end"
+      ]
+    },
+    {
       "id": "platform.apps.maintenance.settings",
       "title": "Enable or disable an app’s scheduled maintenance",
       "state": "remote-write",
