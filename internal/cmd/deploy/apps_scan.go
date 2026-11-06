@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
@@ -30,7 +31,10 @@ the Security scan of a deployment checks those.
 Reports can be read repeatedly until end or the absolute TTL (default 60 minutes
 from creation). Reads and retries never extend it. End deletes all server copies,
 including the temporary SBOM and scanner output. A failed, interrupted or
-expired scan, or a dependency status other than complete, is never a clean report.`}
+expired scan, or a dependency status other than complete, is never a clean report.
+
+compare puts two reports of the same app side by side, so an agent can tell
+what its change fixed from what changed in the scanning itself.`}
 	for _, action := range []string{"start", "status", "result", "end"} {
 		var jsonOut bool
 		var archive, requestID string
@@ -75,7 +79,198 @@ Example: dibbla apps scan start myapp --archive source.tar.gz --json`
 		}
 		root.AddCommand(cmd)
 	}
+	root.AddCommand(newAppsScanCompareCmd())
 	return root
+}
+
+func newAppsScanCompareCmd() *cobra.Command {
+	var jsonOut, image bool
+	cmd := &cobra.Command{Use: "compare <alias> <base-scan-id> <head-scan-id>", Short: "Compare two temporary Security scans of the same app", Args: cobra.ExactArgs(3),
+		Long: `Compare two temporary Security scans of the same app: base is the report
+before your change, head the one after. Both runs must still exist and be
+completed; nothing is stored, so compare before you end them, then end both.
+
+Every finding is one of:
+  new            in head, not in base, where both reports fully read the file
+  persisting     in both (a dependency is matched by service, package and
+                 advisory, so a version bump that still carries the advisory
+                 is persisting and shows both versions)
+  not_detected   in base, gone from head, where head fully read the file
+  unverifiable   in base, but head could not check it (file removed, a gap
+                 such as INCOMPLETE_VERSIONS, or a failed dependency part):
+                 absence proves nothing
+  newly_covered  in head from a file base did not fully read: not caused by
+                 your change
+
+attribution says what explains a new or not_detected finding:
+submitted_code when both reports used the same vulnerability database and
+scanners, otherwise submitted_code_or_database / submitted_code_or_scanner.
+limitations lists every reason the comparison is not clean code evidence.
+
+A not_detected secret may still be valid and in git history: rotate it.
+
+--image also re-matches the running app's stored image SBOM against today's
+vulnerability database and shows those findings separately, with the
+revision and database they come from. Image and OS findings are never
+resolved by a source report: only a deployment and its Security scan shows
+that. Without a stored SBOM the image section says so. Nothing is built or
+deployed, and the app's Security scan, findings and notifications stay as
+they are.
+
+A missing, expired, ended or unfinished report is an error naming base or
+head, never an empty comparison.
+
+Example: dibbla apps scan compare myapp <base-id> <head-id> --image --json`,
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg := config.Load()
+			requireToken(cfg)
+			os.Exit(runAppsScanCompare(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, args[0], args[1], args[2], image, jsonOut))
+		}}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print complete machine-readable JSON, including API errors")
+	cmd.Flags().BoolVar(&image, "image", false, "Also re-match the running app's stored image SBOM, shown separately")
+	return cmd
+}
+
+func runAppsScanCompare(stdout, stderr io.Writer, apiURL, token, alias, base, head string, image, jsonOut bool) int {
+	if !apps.AliasRe.MatchString(alias) {
+		return invalidAlias(stderr, alias)
+	}
+	if !scanIDRE.MatchString(base) || !scanIDRE.MatchString(head) {
+		fmt.Fprintln(stderr, "invalid scan ID")
+		return 5
+	}
+	if base == head {
+		fmt.Fprintln(stderr, "base and head must be two different scans")
+		return 5
+	}
+	cmp, raw, err := apps.CompareTestScans(apiURL, token, alias, base, head, image)
+	if err != nil {
+		if jsonOut {
+			var statusErr *apps.StatusError
+			if errors.As(err, &statusErr) && json.Valid([]byte(statusErr.Body)) {
+				fmt.Fprintln(stdout, statusErr.Body)
+			}
+		}
+		return reportAppError(stderr, "scan compare", alias, err)
+	}
+	if jsonOut {
+		fmt.Fprintln(stdout, string(raw))
+		return 0
+	}
+	printComparison(stdout, cmp)
+	return 0
+}
+
+var changeTitles = []struct{ change, title string }{
+	{"new", "New"},
+	{"persisting", "Persisting"},
+	{"unverifiable", "Unverifiable (head could not check them; absence proves nothing)"},
+	{"newly_covered", "Newly covered (base did not read the file; not caused by the change)"},
+	{"not_detected", "Not detected in head"},
+}
+
+func printComparison(w io.Writer, c *apps.TestScanComparison) {
+	fmt.Fprintf(w, "Security scan comparison for %s\nBase: %s\nHead: %s\n", c.Alias, c.Base.ScanID, c.Head.ScanID)
+	db := c.Comparable.Database
+	if db == "same" && c.Head.VulnDBBuiltAt != nil {
+		db += " (" + c.Head.VulnDBBuiltAt.UTC().Format("2006-01-02T15:04Z") + ")"
+	}
+	fmt.Fprintf(w, "Vulnerability database: %s · dependency coverage: %s · secret scanner: %s\n", db, c.Comparable.Coverage, c.Comparable.SecretScanner)
+	s := c.Summary
+	fmt.Fprintf(w, "%d new, %d persisting, %d not detected, %d unverifiable, %d newly covered\n", s.New, s.Persisting, s.NotDetected, s.Unverifiable, s.NewlyCovered)
+	for _, group := range changeTitles {
+		first := true
+		for _, f := range c.Findings {
+			if f.Change != group.change {
+				continue
+			}
+			if first {
+				fmt.Fprintf(w, "%s:\n", group.title)
+				first = false
+			}
+			fmt.Fprintln(w, "  "+comparedLine(f))
+		}
+	}
+	if len(c.Limitations) > 0 {
+		fmt.Fprintln(w, "Limitations:")
+		for _, l := range c.Limitations {
+			where := ""
+			if l.Path != "" {
+				where = " " + l.Path + scanServiceLabel(l.Service)
+			}
+			fmt.Fprintf(w, "  %s%s: %s\n", l.Code, where, l.Message)
+		}
+	}
+	img := c.Image
+	fmt.Fprintf(w, "Image background: %s\n", img.Status)
+	if img.Origin != nil && img.Origin.DeploymentID != "" {
+		fmt.Fprintf(w, "  From running revision %s", img.Origin.DeploymentID)
+		if img.Origin.CommitSHA != "" {
+			fmt.Fprintf(w, " (commit %s)", img.Origin.CommitSHA)
+		}
+		if img.VulnDBBuiltAt != nil {
+			fmt.Fprintf(w, ", database %s", img.VulnDBBuiltAt.UTC().Format("2006-01-02T15:04Z"))
+		}
+		fmt.Fprintln(w)
+	}
+	for _, im := range img.Images {
+		fmt.Fprintf(w, "  %s [%s]", im.Image, im.Service)
+		if im.Error != "" {
+			fmt.Fprintf(w, ": %s", im.Error)
+		}
+		fmt.Fprintf(w, " — %d findings\n", len(im.Vulnerabilities))
+		for _, v := range im.Vulnerabilities {
+			fix := "no fix"
+			if v.FixedIn != "" {
+				fix = "fixed in " + v.FixedIn
+			}
+			fmt.Fprintf(w, "    %s %s %s@%s (%s) %s\n", v.Severity, v.ID, v.Package, v.Version, fix, imageSourceNote(v.InHeadSource))
+		}
+	}
+	fmt.Fprintln(w, "  "+img.Message)
+	fmt.Fprintln(w, c.Retention)
+}
+
+func imageSourceNote(s string) string {
+	switch s {
+	case "present":
+		return "— still in the head source report"
+	case "os_package":
+		return "— OS package"
+	default:
+		return "— not in the head source report; verify with a deployment"
+	}
+}
+
+func comparedLine(f apps.ComparedFinding) string {
+	var b strings.Builder
+	if f.Kind == "secret" {
+		fmt.Fprintf(&b, "secret %s %s", f.ID, f.File)
+		if f.BaseSecret != nil {
+			fmt.Fprintf(&b, " base lines %v", f.BaseSecret.Lines)
+		}
+		if f.HeadSecret != nil {
+			fmt.Fprintf(&b, " head lines %v", f.HeadSecret.Lines)
+		}
+	} else {
+		fmt.Fprintf(&b, "%s %s %s%s", f.Severity, f.ID, f.Package, scanServiceLabel(f.Service))
+		if f.BaseDep != nil {
+			fmt.Fprintf(&b, " base %s", strings.Join(f.BaseDep.Versions, ","))
+		}
+		if f.HeadDep != nil {
+			fmt.Fprintf(&b, " head %s", strings.Join(f.HeadDep.Versions, ","))
+		}
+		if f.FixedIn != "" {
+			fmt.Fprintf(&b, " (fixed in %s)", f.FixedIn)
+		}
+	}
+	if f.Attribution != "" {
+		fmt.Fprintf(&b, " — %s", strings.ReplaceAll(f.Attribution, "_", " "))
+	}
+	if f.Reason != "" {
+		fmt.Fprintf(&b, " — %s", f.Reason)
+	}
+	return b.String()
 }
 
 var scanIDRE = regexp.MustCompile(`^[a-f0-9]{64}$`)
