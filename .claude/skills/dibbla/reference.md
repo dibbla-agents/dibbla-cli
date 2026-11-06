@@ -2096,6 +2096,7 @@ For an existing app, test an archive without deployment:
 dibbla apps scan start myapp --archive source.tar.gz --json
 dibbla apps scan status myapp <scan-id> --json
 dibbla apps scan result myapp <scan-id> --json
+dibbla apps scan compare myapp <base-scan-id> <head-scan-id> [--image] --json
 dibbla apps scan end myapp <scan-id> --json
 ```
 
@@ -2116,12 +2117,50 @@ and `requirements*.txt` with exact `==` pins. Read `dependencies.status` and
 `no_dependency_files` means some files were not checked (for example
 `bun.lockb`, a `package.json` without a lock file, unpinned requirements). To
 check a fix, update the lock file (not only the manifest), make a new archive,
-start a new scan, and compare the advisory IDs. Image/OS packages, the language
+start a new scan, and run `compare` (below). Image/OS packages, the language
 runtime and dependencies resolved during a build, nested archives, encoded
 secrets and git history are not checked. Do not call existing deployed findings
 resolved because they are absent here. This does not build or deploy and does not change
 the running app's report, finding status or notifications. Ordinary deployment
 still produces the deployed revision's full Security scan.
+
+**Comparing two scans (the fix loop).** Scan before the change (base), change
+the code and lock files, scan again (head), then while both runs still exist:
+`dibbla apps scan compare myapp <base-id> <head-id> --json`. Each entry in
+`findings` has a `change`:
+
+- `new` / `persisting` / `not_detected` — only where both reports fully read the
+  file. A dependency is matched by service, package and advisory, not version:
+  a bump that still carries the advisory is `persisting` with
+  `base_dependency.versions` and `head_dependency.versions`; bump further to
+  `fixed_in`.
+- `unverifiable` — in base, but head could not check it (`reason`: the file is
+  gone, a gap code such as `INCOMPLETE_VERSIONS`, or a failed dependency part).
+  It is **not fixed**; restore coverage and scan again.
+- `newly_covered` — head found it in a file base did not fully read; it was not
+  introduced by your change.
+
+`attribution` on `new`/`not_detected` is `submitted_code` only when
+`comparable.database` is `same` (or not needed) and the scanners match;
+otherwise it is `submitted_code_or_database` / `submitted_code_or_scanner`, and
+`limitations` explains why. Report those as "not detected, possibly because the
+vulnerability database changed", never as fixed by you. A `not_detected` secret
+may still be valid and in git history: tell the owner to rotate it.
+
+`--image` adds `image`: the running app's stored image SBOM re-matched against
+today's database, with `origin.deployment_id`/`commit_sha` and the database
+date. These are the deployed images' findings, not your submitted code's.
+`in_head_source: present` means the head source report still shows the same
+advisory; `absent` or `os_package` means only a deployment and its Security
+scan can verify it. **Image/OS findings are never resolved by a source report.**
+`image.status: missing_sbom` says no SBOM is kept — then nothing about the
+images is known. Nothing is built or deployed, and the app's Security scan,
+findings and notifications are unchanged.
+
+The comparison is not stored. A missing, expired, ended or unfinished report
+fails with `SCAN_GONE` (410) or `SCAN_NOT_COMPLETED` (409) naming `base` or
+`head` — never an empty comparison; start a new scan. When you have the result,
+end both runs.
 
 Read the report as often as needed, then **always run `end`**. End removes all
 server copies. The default absolute TTL is 60 minutes from creation; polling

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -186,4 +187,147 @@ type TestScanReport struct {
 		Grype         string     `json:"grype"`
 		VulnDBBuiltAt *time.Time `json:"vuln_db_built_at"`
 	} `json:"dependencies"`
+}
+
+// TestScanComparison is the part of a comparison of two temporary reports
+// (DIB-1686) the text output prints. --json prints the server's document.
+type TestScanComparison struct {
+	Alias string `json:"alias"`
+	Base  struct {
+		ScanID        string     `json:"scan_id"`
+		VulnDBBuiltAt *time.Time `json:"vuln_db_built_at"`
+	} `json:"base"`
+	Head struct {
+		ScanID        string     `json:"scan_id"`
+		VulnDBBuiltAt *time.Time `json:"vuln_db_built_at"`
+	} `json:"head"`
+	Comparable *struct {
+		Database      string `json:"database"`
+		Coverage      string `json:"dependency_coverage"`
+		SecretScanner string `json:"secret_scanner"`
+	} `json:"comparable"`
+	Limitations []struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Service string `json:"service"`
+		Path    string `json:"path"`
+	} `json:"limitations"`
+	Summary *struct {
+		New          int `json:"new"`
+		Persisting   int `json:"persisting"`
+		NotDetected  int `json:"not_detected"`
+		Unverifiable int `json:"unverifiable"`
+		NewlyCovered int `json:"newly_covered"`
+	} `json:"summary"`
+	Findings []ComparedFinding `json:"findings"`
+	Image    *struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+		Origin  *struct {
+			DeploymentID string `json:"deployment_id"`
+			CommitSHA    string `json:"commit_sha"`
+		} `json:"origin"`
+		VulnDBBuiltAt *time.Time `json:"vuln_db_built_at"`
+		Images        []struct {
+			Service         string `json:"service"`
+			Image           string `json:"image"`
+			Error           string `json:"error"`
+			Vulnerabilities []struct {
+				ID           string `json:"id"`
+				Severity     string `json:"severity"`
+				Package      string `json:"package"`
+				Version      string `json:"version"`
+				Type         string `json:"type"`
+				FixedIn      string `json:"fixed_in"`
+				InHeadSource string `json:"in_head_source"`
+			} `json:"vulnerabilities"`
+		} `json:"images"`
+	} `json:"image"`
+	Retention string `json:"retention"`
+}
+
+// ComparedFinding is one entry of a comparison.
+type ComparedFinding struct {
+	Kind        string `json:"kind"`
+	Change      string `json:"change"`
+	Attribution string `json:"attribution"`
+	Reason      string `json:"reason"`
+	ID          string `json:"id"`
+	Severity    string `json:"severity"`
+	Package     string `json:"package"`
+	Service     string `json:"service"`
+	File        string `json:"file"`
+	FixedIn     string `json:"fixed_in"`
+	BaseDep     *struct {
+		Versions []string `json:"versions"`
+	} `json:"base_dependency"`
+	HeadDep *struct {
+		Versions []string `json:"versions"`
+	} `json:"head_dependency"`
+	BaseSecret *struct {
+		Lines []int `json:"lines"`
+	} `json:"base_secret"`
+	HeadSecret *struct {
+		Lines []int `json:"lines"`
+	} `json:"head_secret"`
+}
+
+// CompareTestScans asks the server to compare two temporary reports of the
+// same app. It is a read: retrying a lost response is safe. A response that
+// lacks any part is refused, never shown as an empty comparison.
+func CompareTestScans(apiURL, token, alias, base, head string, image bool) (*TestScanComparison, []byte, error) {
+	q := url.Values{"base": {base}, "head": {head}}
+	if image {
+		q.Set("image", "rematch")
+	}
+	endpoint := scanURL(apiURL, alias) + "/compare?" + q.Encode()
+	var raw []byte
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		raw, err = getJSON(endpoint, token)
+		if err == nil {
+			break
+		}
+		var statusErr *StatusError
+		if errors.As(err, &statusErr) {
+			return nil, nil, err
+		}
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var cmp TestScanComparison
+	if err = json.Unmarshal(raw, &cmp); err != nil {
+		return nil, nil, fmt.Errorf("decode Security scan comparison: %w", err)
+	}
+	if cmp.Base.ScanID != base || cmp.Head.ScanID != head || cmp.Comparable == nil || cmp.Summary == nil || cmp.Findings == nil || cmp.Image == nil || cmp.Limitations == nil {
+		return nil, nil, fmt.Errorf("incomplete Security scan comparison response")
+	}
+	return &cmp, raw, nil
+}
+
+func getJSON(endpoint, token string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 150 * time.Second}
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, (10<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 10<<20 {
+		return nil, fmt.Errorf("Security scan response exceeds limit")
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, statusError(response.StatusCode, raw)
+	}
+	return raw, nil
 }

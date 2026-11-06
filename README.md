@@ -722,8 +722,20 @@ Test submitted source for secrets and vulnerable dependencies without building o
 dibbla apps scan start myapp --archive source.tar.gz --json
 dibbla apps scan status myapp <scan-id> --json
 dibbla apps scan result myapp <scan-id> --json
+dibbla apps scan compare myapp <base-scan-id> <head-scan-id> [--image] --json
 dibbla apps scan end myapp <scan-id> --json
 ```
+
+`compare` puts a report before your change (base) next to one after it (head)
+and classifies every finding as `new`, `persisting`, `not_detected`,
+`unverifiable` (head could not check it: absence proves nothing) or
+`newly_covered` (base did not read that file). Dependencies are matched by
+service, package and advisory across version changes. A different
+vulnerability database or scanner version is listed under `limitations` and the
+change is not attributed to the code alone. `--image` re-matches the running
+app's stored image SBOM and shows it separately with its revision and database
+date; image/OS findings are never resolved by a source report. Nothing is
+stored: compare while both runs exist, then end both.
 
 Keep the request ID printed on stderr; retry `start` with the same archive and
 `--request-id <request-id>` after a lost response. The same request never starts

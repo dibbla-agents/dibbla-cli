@@ -1208,11 +1208,12 @@
       "eventual_state": "remote-async",
       "owner": "DIB-1682",
       "tracked_by": "DIB-1687",
-      "note": "DIB-1684 delivers CLI start/status/result/end for an existing app: direct source archive upload, Gitleaks secrets with safe locations; DIB-1685 adds lock-file dependency vulnerabilities (Syft/Grype, coverage secrets_and_dependencies) with per-file/service gaps, tool and database identity, request-bound retries, repeatable reads, explicit deletion and absolute configurable TTL (default 60 minutes from creation). No build, project execution, deployment, live finding mutation, notification or permanent report history. MCP lifecycle is deliberately not yet available; DIB-1687 supplies it after dependency coverage and comparisons. This row grants no scope and promises no current MCP tool.",
+      "note": "DIB-1684 delivers CLI start/status/result/end for an existing app: direct source archive upload, Gitleaks secrets with safe locations; DIB-1685 adds lock-file dependency vulnerabilities (Syft/Grype, coverage secrets_and_dependencies) with per-file/service gaps, tool and database identity, request-bound retries, repeatable reads, explicit deletion and absolute configurable TTL (default 60 minutes from creation). DIB-1686 adds compare of two still-available reports of the same app: findings new/persisting/not_detected only within comparable coverage, unverifiable/newly_covered otherwise, matched by service, package and advisory across version changes; database/scanner/coverage limitations, and an optional separate re-match of the running revision's stored image SBOM with its revision and database stamp (image/OS findings never resolved by a source report). The comparison and SBOM copies are temporary and never stored. No build, project execution, deployment, live finding mutation, notification or permanent report history. MCP lifecycle is deliberately not yet available; DIB-1687 supplies it after dependency coverage and comparisons. This row grants no scope and promises no current MCP tool.",
       "cli_commands": [
         "apps scan start",
         "apps scan status",
         "apps scan result",
+        "apps scan compare",
         "apps scan end"
       ]
     },
