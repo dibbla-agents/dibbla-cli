@@ -93,16 +93,13 @@ type uploadPlan struct {
 }
 
 type transferView struct {
-	ScanID        string      `json:"scan_id,omitempty"`
-	ErrorCode     string      `json:"error_code,omitempty"`
-	ContentLength int64       `json:"content_length,omitempty"`
-	TransferID    string      `json:"transfer_id"`
-	Status        string      `json:"status"`
-	Offset        int64       `json:"offset"`
-	SourceFileID  string      `json:"source_file_id"`
-	FailureCode   string      `json:"failure_code"`
-	FallbackURL   string      `json:"fallback_url"`
-	Upload        *uploadPlan `json:"upload"`
+	TransferID   string      `json:"transfer_id"`
+	Status       string      `json:"status"`
+	Offset       int64       `json:"offset"`
+	SourceFileID string      `json:"source_file_id"`
+	FailureCode  string      `json:"failure_code"`
+	FallbackURL  string      `json:"fallback_url"`
+	Upload       *uploadPlan `json:"upload"`
 }
 
 func runPlatformUpload(w io.Writer, path string) error {
