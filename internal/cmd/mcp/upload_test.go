@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -277,5 +278,22 @@ func TestUploadScopeRequestComesFromTheContract(t *testing.T) {
 		if !strings.Contains(got, name) {
 			t.Fatalf("scope request %q omits %q, which %s requires", got, name, uploadCapability)
 		}
+	}
+}
+
+func TestRegularUploadUsesCurrentMergedTool(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		p := b["params"].(map[string]any)
+		a := p["arguments"].(map[string]any)
+		if p["name"] != "platform_files" || a["action"] != "prepare_upload" {
+			t.Error("obsolete upload tool")
+		}
+		fmt.Fprint(w, `{"result":{"structuredContent":{"transfer_id":"t","status":"issued"}}}`)
+	}))
+	defer srv.Close()
+	if _, err := prepareUpload(srv.URL, "token", "source.tar.gz", "application/gzip", 10, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
 	}
 }

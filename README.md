@@ -710,13 +710,6 @@ scripts reach users when the `mirror` job (on a release tag) or
 
 Read all existing Security scan findings with `dibbla apps findings myapp --all --json`.
 
-A shell-enabled assistant can use `dibbla mcp platform --testscan source.tar.gz
---alias myapp` to prepare and upload through MCP with the CLI's stored OAuth
-grant. Reuse its printed `request_id` via `--request-id` after interruption.
-The grant needs `platform:apps:read` and `platform:files:write`; the CLI login
-is separate from the assistant's OAuth connection. Read, compare and end the
-returned `scan_id` through MCP in the same organization.
-
 The Dibbla MCP connector can perform the same temporary source scan,
 comparison and end workflow through `platform_files action=security_scan`.
 Use the connector's skill for that surface; archive bytes travel through its

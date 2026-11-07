@@ -2179,21 +2179,3 @@ findings. There is no permanent test history. Limits: 50 MiB compressed,
 200 MiB expanded including headers, 10,000 entries, two minutes for upload and
 scan, two simultaneous scans globally, four unclosed runs per organization.
 A successful command is not a guarantee that no secrets were found.
-
-
-### MCP archive upload for Security scan
-
-For an assistant with shell access, `dibbla mcp platform --testscan source.tar.gz
---alias example-app` prepares the temporary scan through MCP and uploads bytes
-using the CLI's own OAuth connection. It prints `request_id` before network I/O
-and `scan_id` when prepared. Reuse `--request-id <printed-id>` with the same
-archive after an interruption; do not start a second run just to retry.
-
-The CLI needs its own platform OAuth login with application read and file write
-permission in the same organization as the assistant. If absent, run
-`dibbla mcp platform --login --scope "platform:identity:read platform:apps:read platform:files:write"`
-and let the person grant consent in their browser. Never copy tokens from the
-assistant or ask the person to paste them. The command installs no scanners.
-Continue reading results, comparing and ending scans through the connector,
-using the returned scan_id; source bytes never enter those tool arguments.
-The CLI's ordinary `apps scan` commands remain the separate direct CLI route.
