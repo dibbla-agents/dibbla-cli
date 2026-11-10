@@ -1,0 +1,42 @@
+name: Dependency vulnerabilities
+
+# osv-scanner (OSV.dev data) on every PR. It replaces Snyk's PR check, which
+# reported its quota error instead of a scan.
+#
+# It fails only when the PR ADDS a known vulnerability to go.mod or a lockfile,
+# compared with the merge-base on the target branch; findings already on main
+# are a count in the log. Same script as the platform repos' Woodpecker gate:
+# .github/scripts/osv-diff.sh (run it locally the same way).
+#
+# The scanner runs in its pinned upstream image rather than as an installed
+# binary, so CI and a local `docker run` use the identical scanner.
+
+on:
+  pull_request:
+
+concurrency:
+  group: osv-scanner-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  osv-scanner:
+    name: New vulnerabilities vs merge-base
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the merge-base and its go.mod must be in the clone.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Scan HEAD against the merge-base
+        env:
+          TARGET: origin/${{ github.base_ref }}
+        run: |
+          docker run --rm -e TARGET -v "$PWD:/w" -w /w --entrypoint /bin/sh \
+            ghcr.io/google/osv-scanner:v2.7.0 -c '
+              apk add --no-cache jq >/dev/null &&
+              git config --global --add safe.directory /w &&
+              OSV_SCANNER=/osv-scanner sh .github/scripts/osv-diff.sh "$TARGET"'

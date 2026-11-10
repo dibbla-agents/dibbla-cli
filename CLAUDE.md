@@ -254,8 +254,12 @@ The floor is not a free choice — it is pinned by the dependency graph.
 declaring `go 1.25.0`, so 1.24 could not be held without shipping them.
 Expect the same pressure next time: check what the patched `x/*` modules
 require before assuming the floor can stay put. `govulncheck ./...` is the
-tool to confirm reachability — Snyk's PR check reports on presence alone, so
-the two will disagree and govulncheck is the one that reflects real exposure.
+tool to confirm reachability. The PR's dependency gate
+(`.github/workflows/osv-scanner.yml`, which replaced Snyk's PR check) reports on
+presence alone, so the two will disagree and govulncheck is the one that
+reflects real exposure. That gate fails only on vulnerabilities a PR adds
+relative to its merge-base; reproduce it with
+`.github/scripts/osv-diff.sh origin/main`.
 
 One trap: **`gofmt` is a standalone binary and ignores `GOTOOLCHAIN`**, so a
 system `gofmt` of a different vintage can disagree with the CI gate. Use
