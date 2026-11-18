@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "kind": "dibbla.platform.errors",
   "description": "The one error envelope every Dibbla platform surface returns. Its whole purpose is that a caller can tell five different failures apart without any of them leaking what the caller is not entitled to know.",
   "envelope": {
@@ -55,7 +55,7 @@
     { "code": "SCAN_CHANGED", "class": "caller", "http": 409, "retryable": false, "summary": "The Security scan report changed or disappeared while paging. Discard all collected pages and restart without a cursor; never merge report versions." },
     { "code": "CONFLICT", "class": "caller", "http": 409, "retryable": false, "summary": "The object's current state does not permit this transition." },
     { "code": "RATE_LIMITED", "class": "caller", "http": 429, "retryable": true, "summary": "Too many requests. Retry after the indicated interval." },
-    { "code": "UPSTREAM_FAILED", "class": "upstream", "http": 502, "retryable": true, "summary": "A dependency failed in a way that may not repeat." },
+    { "code": "UPSTREAM_FAILED", "class": "upstream", "http": 502, "retryable": true, "summary": "A dependency failed in a way that may not repeat. One exception to never forwarding upstream text (since 1.1.0): when an invoked function itself answers with an error, its own text may travel beside the envelope as function_error {text, truncated, invocation_id}, cleaned, bounded to about 1 KiB and with obvious credentials masked; message is still never copied from upstream." },
     { "code": "UPSTREAM_UNAVAILABLE", "class": "upstream", "http": 503, "retryable": true, "summary": "A dependency is unreachable." },
     { "code": "TIMEOUT", "class": "upstream", "http": 504, "retryable": true, "summary": "A dependency did not answer in time. A durable operation is returned instead wherever one exists." },
     { "code": "NOT_CONFIGURED", "class": "misconfiguration", "http": 503, "retryable": false, "summary": "This install has not been configured to serve the capability. Operator-facing, and never implies the caller lacks access." },
