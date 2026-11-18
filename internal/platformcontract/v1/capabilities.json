@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "kind": "dibbla.platform.capabilities",
   "description": "Every relevant Dibbla operation with exactly one state. A capability belongs in /platform only when a stable API backs it, it needs no caller filesystem, keyring, TTY or external binary, and it either finishes promptly or returns a durable pollable ID.",
   "states": [
