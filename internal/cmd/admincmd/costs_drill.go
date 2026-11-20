@@ -65,7 +65,7 @@ type costDrill struct {
 var purposeNames = map[string]string{
 	"user":              "customer traffic",
 	"application_check": "application checks",
-	"maintenance_agent": "maintenance agent",
+	"maintenance_agent": "AI Maintenance",
 }
 
 func appName(app, deployment string) string {
@@ -223,7 +223,7 @@ func printCostDrill(stdout io.Writer, d costDrill, app string) {
 		}
 	})
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Every breakdown adds up to the total above. Ops: what Dibbla pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
+	fmt.Fprintln(stdout, "Every breakdown adds up to the total above. Ops: what Dibbla pays for itself (AI Maintenance). ≈: partly estimated at today's catalog price.")
 	if hosting {
 		fmt.Fprintln(stdout, "Hosting ≈ is an estimate: the cluster's monthly cost divided by what each app reserved in a daily snapshot. It is per app only, not per user, purpose, model or day.")
 	}

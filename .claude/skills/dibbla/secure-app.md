@@ -23,7 +23,7 @@ from where the code runs.
 | Refuses to deploy without a written security review (`REVIEW.md`) | Run that review — your agent writes it |
 | Keeps your data in the EU (Hetzner, Germany and Finland) and never trains AI on it | Know which personal data you hold and be able to delete it |
 | Scans every build — a bill of materials per image, its known vulnerabilities, and secrets in the source | Decide what to do about a finding, and fix it |
-| Runs scheduled checks and an overnight maintenance agent that proposes changes you approve | Approve or reject those proposals |
+| Runs scheduled checks and AI Maintenance, an overnight agent that proposes changes you approve | Approve or reject those proposals |
 
 **Two things Dibbla deliberately does not do**, because they belong to the app and
 guessing on your behalf would break working apps: it does not filter your app's
@@ -233,7 +233,7 @@ matched against the known-vulnerability database with a severity, a fix version
 and an advisory link per finding, and a scan of the built source for leaked
 secrets. Services that run a pulled image — the `postgres:16` beside your app —
 are scanned too, so the list covers the whole revision. The scan does not block
-the deploy, and the overnight maintenance agent reads it when it decides what to
+the deploy, and AI Maintenance reads it when it decides what to
 propose. Nothing of yours leaves the platform to make it happen.
 
 What the scan cannot do is decide. It tells you a library has a published flaw
@@ -326,7 +326,7 @@ code changed, new library flaws were published, and the app has been quietly fai
 at 3am for a fortnight.
 
 **Dibbla does.** Once you switch them on, runs scheduled checks against your
-deployed app (`dibbla-checks.yaml`) and an overnight maintenance agent that reads
+deployed app (`dibbla-checks.yaml`) and AI Maintenance, an overnight agent that reads
 logs, source and check history and files a proposal with a diff. Both are off until
 enabled, for the app and for the organization. The agent never deploys on its own: you approve or deny, and the person
 whose agent wrote a proposal cannot be the one who approves it.
@@ -335,7 +335,7 @@ whose agent wrote a proposal cannot be the one who approves it.
 
 > "Add a dibbla-checks.yaml that signs in and loads the two pages my customers use
 > most, so a scheduled check tells me when they break. Then show me how to enable
-> the maintenance agent for this app and where its proposals appear."
+> AI Maintenance for this app and where its proposals appear."
 
 **How you know it's done.** `dibbla apps checks list <alias>` shows your checks and
 `dibbla apps checks history <alias>` shows them passing; `dibbla apps maintenance

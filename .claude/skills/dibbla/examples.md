@@ -587,7 +587,7 @@ dibbla apps checks disable myapp --yes              # turn it off, keep definiti
 
 The exit code **is** the product outcome (0/8/9/10/12/13), so a CI step fails exactly when the app fails its own assertions — no output scraping. Transport problems keep the CLI-wide codes (3 auth, 4 not found, 5 bad request, 6 conflict, 7 timeout, 1 other).
 
-### Operate the maintenance agent and review a proposal
+### Operate AI Maintenance and review a proposal
 
 ```bash
 dibbla apps maintenance status myapp --json
@@ -604,7 +604,7 @@ dibbla apps proposals deny myapp pr_0123456789abcdef0123 --yes
 ```
 
 A `404` with `MAINTENANCE_AGENT_NOT_FOUND` (exit 4) means the organization does
-not have the Maintenance Agent add-on (Business, added on the console's Plan
+not have the AI Maintenance add-on (Business, added on the console's Plan
 page) — not a missing alias. Reusing `--idempotency-key` follows the
 original execution; it does not start a second run. The CLI never computes who
 may approve: `show` prints the server `decision` object, and the author of a

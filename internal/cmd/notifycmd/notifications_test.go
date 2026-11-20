@@ -149,7 +149,7 @@ func TestRemoveAsksUnlessToldAndRefusesWithoutATerminal(t *testing.T) {
 
 func TestHistoryShowsEachDeliveryAndItsReason(t *testing.T) {
 	srv, got := server(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"scope":"personal","events":[{"id":"e1","type":"application.maintenance.finding.new","headline":"The maintenance agent found something to look at","app":"shop","severity":"attention","created_at":"2026-09-30T10:00:00Z","deliveries":[{"id":"d1","subscription_id":"`+subID+`","channel":"email","target":"dan@example.com","status":"failed","attempts":6,"reason":"The email provider did not accept the message; Dibbla stopped after 6 attempt(s)."}]}]}`)
+		fmt.Fprint(w, `{"scope":"personal","events":[{"id":"e1","type":"application.maintenance.finding.new","headline":"AI Maintenance found something to look at","app":"shop","severity":"attention","created_at":"2026-09-30T10:00:00Z","deliveries":[{"id":"d1","subscription_id":"`+subID+`","channel":"email","target":"dan@example.com","status":"failed","attempts":6,"reason":"The email provider did not accept the message; Dibbla stopped after 6 attempt(s)."}]}]}`)
 	})
 	var out, errb bytes.Buffer
 	if code := runHistory(&out, &errb, srv.URL, "tok", "shop", 5, false); code != 0 {
@@ -158,7 +158,7 @@ func TestHistoryShowsEachDeliveryAndItsReason(t *testing.T) {
 	if (*got)[0].path != "/api/notify/me/notification-history" || !strings.Contains((*got)[0].query, "app=shop") || !strings.Contains((*got)[0].query, "limit=5") {
 		t.Fatalf("request %+v", (*got)[0])
 	}
-	for _, want := range []string{"[attention] The maintenance agent found something to look at — shop", "email → dan@example.com: failed — The email provider", "You see your own deliveries"} {
+	for _, want := range []string{"[attention] AI Maintenance found something to look at — shop", "email → dan@example.com: failed — The email provider", "You see your own deliveries"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("history lacks %q:\n%s", want, out.String())
 		}

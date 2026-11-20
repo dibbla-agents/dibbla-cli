@@ -168,7 +168,7 @@ func TestRunAppsGetCore_SecuritySection(t *testing.T) {
 		"REVIEW.md: dibbla apps get myapp --review",
 		"Scan:    ❌ 1 leaked secret(s) · 1 critical · 4 high · 12 medium · 3 low",
 		"findings last changed 2026-09-19",
-		"Agent:   on — nothing has changed since it last looked",
+		"Agent:   AI Maintenance on — nothing has changed since it last looked",
 		"last run 2026-09-21",
 		"(NO_FINDING)",
 		"2 proposal(s) waiting for a decision: dibbla apps proposals list myapp",

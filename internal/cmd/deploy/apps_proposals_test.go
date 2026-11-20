@@ -14,7 +14,7 @@ func proposalReadDoc() map[string]any {
 	return map[string]any{
 		"id": testProposalID, "deployment_alias": "myapp", "title": "Fix health route",
 		"description": "The route returned 500", "status": "ready",
-		"author_id": "maintenance-agent:dep_1", "author_name": "Dibbla Maintenance Agent",
+		"author_id": "maintenance-agent:dep_1", "author_name": "AI Maintenance",
 		"governance_model": "admin_four_eyes", "governance_version": 4,
 		"base_sha": strings.Repeat("a", 40), "head_sha": strings.Repeat("b", 40),
 		"source_ref":   "refs/dibbla/proposals/" + testProposalID + "/head",
