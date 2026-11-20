@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -30,12 +31,78 @@ type EnvSecret struct {
 	Source string `json:"source"`
 }
 
-// EnvResponse is GET /deployments/{alias}/env (DIB-919, DIB-1337).
+// EnvEntry is one place a name of the app's environment is set (DIB-1837):
+// the read view apps get, env pull, secrets list -d and MCP all show.
+type EnvEntry struct {
+	Name string `json:"name"`
+	// Kind is variable or secret. A variable carries its value; a secret
+	// never does, and neither does a variable that shares a secret's name
+	// (ValueHidden).
+	Kind        string  `json:"kind"`
+	Value       *string `json:"value,omitempty"`
+	ValueHidden bool    `json:"value_hidden,omitempty"`
+	// Scope is global | app | service, or platform for an injected DIBBLA_*.
+	Scope string `json:"scope"`
+	// Origin is what set it, where known: deploy, console, platform.
+	Origin string `json:"origin,omitempty"`
+	// Effective is the one the running app gets for Name.
+	Effective bool `json:"effective"`
+	// Live is false when the value was saved after the app started: a
+	// restart applies it.
+	Live            bool `json:"live"`
+	LooksLikeSecret bool `json:"looks_like_secret,omitempty"`
+}
+
+// EnvWarning is a name set in more than one place, with which one the app
+// gets. Never a value.
+type EnvWarning struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Message string `json:"message"`
+}
+
+// EnvResponse is GET /deployments/{alias}/env (DIB-919, DIB-1337, DIB-1837).
 type EnvResponse struct {
-	DeploymentAlias string        `json:"deployment_alias"`
-	Service         string        `json:"service,omitempty"`
-	Variables       []EnvVariable `json:"variables"`
-	Secrets         []EnvSecret   `json:"secrets"`
+	DeploymentAlias string `json:"deployment_alias"`
+	Service         string `json:"service,omitempty"`
+	// Entries, Live and Warnings are the read view (DIB-1837); a server from
+	// before it sends only Variables and Secrets — see View.
+	Entries   []EnvEntry    `json:"entries"`
+	Live      *bool         `json:"live,omitempty"`
+	Warnings  []EnvWarning  `json:"warnings"`
+	Variables []EnvVariable `json:"variables"`
+	Secrets   []EnvSecret   `json:"secrets"`
+}
+
+// View is the read view's entries; for a server from before DIB-1837 they
+// are made from Variables and Secrets (each effective and live, as that
+// server could not tell otherwise).
+func (r *EnvResponse) View() []EnvEntry {
+	if r.Entries != nil {
+		return r.Entries
+	}
+	scope := map[string]string{"deployment": "app", "inline": "app"}
+	var out []EnvEntry
+	for _, v := range r.Variables {
+		value := v.Value
+		e := EnvEntry{Name: v.Name, Kind: "variable", Value: &value, Scope: v.Source, Origin: "deploy", Effective: true, Live: true, LooksLikeSecret: v.LooksLikeSecret}
+		if s, ok := scope[v.Source]; ok {
+			e.Scope = s
+		}
+		if v.Source == "platform" {
+			e.Origin = "platform"
+		}
+		out = append(out, e)
+	}
+	for _, s := range r.Secrets {
+		e := EnvEntry{Name: s.Name, Kind: "secret", Scope: s.Source, Effective: true, Live: true}
+		if sc, ok := scope[s.Source]; ok {
+			e.Scope = sc
+		}
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // GetEnv fetches the environment the app's container sees: the variables

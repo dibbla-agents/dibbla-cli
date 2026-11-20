@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/apps"
 	"github.com/dibbla-agents/dibbla-cli/internal/config"
 	deploypkg "github.com/dibbla-agents/dibbla-cli/internal/deploy"
 	"github.com/dibbla-agents/dibbla-cli/internal/platform"
@@ -38,8 +39,15 @@ way an AI assistant asks for one without ever seeing it.`,
 var secretsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List secrets",
-	Long:  `List secrets. Use --deployment <alias> for a single deployment; omit for global secrets only.`,
-	Run:   runSecretsList,
+	Long: `List secrets. Without --deployment: the organization's global secrets.
+
+With --deployment <alias>: every secret the app gets — its own, its services'
+(--service) and the global ones it inherits, marked "global (inherited)" — with
+where each is set, which one the app gets when a name is set in more than one
+place, and whether the running app has it ("live") or gets it at its next
+restart ("restart needed"). The same list as 'dibbla apps get' and
+'dibbla env pull'. Values are never shown.`,
+	Run: runSecretsList,
 }
 
 var secretsSetCmd = &cobra.Command{
@@ -160,11 +168,13 @@ func runSecretsList(cmd *cobra.Command, args []string) {
 	if !requireServiceWithDeployment(os.Stderr, secretsDeployment, secretsListService) {
 		os.Exit(1)
 	}
-	fmt.Printf("%s Retrieving secrets...\n", platform.Icon("🌱", "[>]"))
-	fmt.Println()
-
 	cfg := config.Load()
 	requireToken(cfg)
+	if secretsDeployment != "" {
+		os.Exit(runSecretsListAppCore(os.Stdout, os.Stderr, cfg.APIURL, cfg.APIToken, secretsDeployment, secretsListService))
+	}
+	fmt.Printf("%s Retrieving secrets...\n", platform.Icon("🌱", "[>]"))
+	fmt.Println()
 
 	list, err := secrets.ListSecrets(cfg.APIURL, cfg.APIToken, secretsDeployment, secretsListService)
 	if err != nil {
@@ -192,6 +202,34 @@ func runSecretsList(cmd *cobra.Command, args []string) {
 		}
 		fmt.Printf("%-25s %-20s %-12s %s\n", s.Name, dep, svc, s.UpdatedAt)
 	}
+}
+
+// runSecretsListAppCore is `secrets list -d`: the secrets of the app's read
+// view (DIB-1837), inherited global ones included. Returns the exit code.
+func runSecretsListAppCore(stdout, stderr io.Writer, apiURL, apiToken, alias, service string) int {
+	if !apps.AliasRe.MatchString(alias) {
+		return invalidAlias(stderr, alias)
+	}
+	doc, _, err := apps.GetEnv(apiURL, apiToken, alias, service)
+	if err != nil {
+		return reportAppError(stderr, "secrets list", alias, err)
+	}
+	var list []apps.EnvEntry
+	names := map[string]bool{}
+	for _, e := range doc.View() {
+		if e.Kind == "secret" {
+			list = append(list, e)
+			names[e.Name] = true
+		}
+	}
+	scope := "app " + alias + serviceSuffix(doc.Service)
+	if len(list) == 0 {
+		fmt.Fprintf(stdout, "No secrets (%s).\n", scope)
+		return 0
+	}
+	fmt.Fprintf(stdout, "%d secret(s) (%s):\n\n", len(names), scope)
+	printEnvTable(stdout, "", alias, doc, list, false)
+	return 0
 }
 
 // scopeLabel summarizes the deployment+service scope for human messages.
