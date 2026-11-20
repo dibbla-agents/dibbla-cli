@@ -1145,7 +1145,7 @@ does not travel, so the deployed app would start without it.
 ```bash
 dibbla env pull -d my-app --service worker   # the worker's view: its per-service secrets, its DIBBLA_SVC_*
 eval "$(dibbla env pull --stdout)"            # variables into the current shell; secrets only as comments, no file written
-dibbla env pull --json | jq '(.variables[], .secrets[]) | {name, source}'   # which layer each name came from
+dibbla env pull --json | jq '.entries[] | {name, kind, scope, origin, effective, live}'   # where each name is set, which one the app gets, and whether it is live
 ```
 
 A viewer (read role) is refused.

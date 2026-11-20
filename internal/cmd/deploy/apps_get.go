@@ -132,7 +132,37 @@ func runAppsGetCore(stdout, stderr io.Writer, apiURL, apiToken, alias string, js
 			fmt.Fprintln(stdout)
 		}
 	}
+	printAppEnv(stdout, apiURL, apiToken, alias)
 	return 0
+}
+
+// printAppEnv is the card's variables and secrets (DIB-1837): the read view
+// env pull and secrets list -d show too — variables with their values,
+// secrets by name. Reading it needs a deploy role; a viewer sees why it is
+// missing, and an error reading it does not fail the card.
+func printAppEnv(stdout io.Writer, apiURL, apiToken, alias string) {
+	doc, _, err := apps.GetEnv(apiURL, apiToken, alias, "")
+	fmt.Fprintln(stdout)
+	if err != nil {
+		var statusErr *apps.StatusError
+		if errors.As(err, &statusErr) && statusErr.Status == 403 {
+			fmt.Fprintln(stdout, "   Variables and secrets: reading them needs a deploy role (owner, admin, developer)")
+			return
+		}
+		fmt.Fprintf(stdout, "   Variables and secrets: could not be read (%v)\n", err)
+		return
+	}
+	entries := doc.View()
+	title := "Variables and secrets"
+	if doc.Service != "" {
+		title += " (service " + doc.Service + ")"
+	}
+	if len(entries) == 0 {
+		fmt.Fprintf(stdout, "   %s: none\n", title)
+		return
+	}
+	fmt.Fprintf(stdout, "   %s:\n", title)
+	printEnvTable(stdout, "     ", alias, doc, entries, true)
 }
 
 // printMainBehind says when main is not what runs (DIB-903): a push whose

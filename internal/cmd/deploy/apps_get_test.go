@@ -205,3 +205,56 @@ func TestRunAppsGetCore_NoSecuritySectionFromAnOlderServer(t *testing.T) {
 		t.Errorf("--review with no body: exit %d, stderr %q", code, stderr.String())
 	}
 }
+
+// TestRunAppsGetCore_ShowsTheEnvReadView: the card lists the same variables
+// and secrets as env pull (DIB-1837) — a variable's value, never a secret's,
+// what is not used or not live, and the warnings. A viewer sees why the
+// section is missing instead of an empty one.
+func TestRunAppsGetCore_ShowsTheEnvReadView(t *testing.T) {
+	envStatus := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/deploy/deployments/shop":
+			_, _ = w.Write([]byte(`{"id":"dep_1","alias":"shop","url":"https://shop.dibbla.com","status":"running"}`))
+		case "/api/deploy/deployments/shop/env":
+			w.WriteHeader(envStatus)
+			if envStatus == http.StatusOK {
+				_, _ = w.Write([]byte(envViewDoc))
+			} else {
+				_, _ = w.Write([]byte(`{"error":{"code":"ROLE_FORBIDDEN","message":"viewer"}}`))
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	if code := runAppsGetCore(&stdout, &stderr, srv.URL, "tok", "shop", false, false); code != 0 {
+		t.Fatalf("exit %d (stderr=%q)", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"Variables and secrets:",
+		"AGENT_URL   secret    app                 console   live            (secret — never shown)",
+		"API_KEY     secret    global (inherited)  -         not used",
+		"API_KEY     secret    app                 -         restart needed",
+		"LOG_LEVEL   variable  app                 deploy    live            info",
+		"STRIPE_KEY  variable  app                 deploy    live            (hidden: the name is also a secret's)",
+		"! STRIPE_KEY is set as secret (app), variable (app)",
+		"dibbla apps restart shop",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+
+	envStatus = http.StatusForbidden
+	stdout.Reset()
+	if code := runAppsGetCore(&stdout, &stderr, srv.URL, "tok", "shop", false, false); code != 0 {
+		t.Fatalf("a viewer still gets the card: exit %d", code)
+	}
+	if !strings.Contains(stdout.String(), "needs a deploy role") {
+		t.Errorf("viewer output:\n%s", stdout.String())
+	}
+}

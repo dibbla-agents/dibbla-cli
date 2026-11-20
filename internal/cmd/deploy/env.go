@@ -46,10 +46,17 @@ into one.`,
 var envPullCmd = &cobra.Command{
 	Use:   "pull",
 	Short: "Write the app's environment to .env.local for running it locally",
-	Long: `Fetch the app's environment, resolved exactly as the running app gets it
-(global, then per app, then per service with --service), and write it to
+	Long: `Fetch the app's variables and secrets — the same list 'dibbla apps get',
+'dibbla secrets list -d' and an AI assistant see — and write them to
 .env.local in the current folder: every variable with its value, and every
-secret by name.
+secret by name. The list is what is saved in Dibbla, resolved in the order the
+app gets it (global, then per app, then per service with --service).
+
+What is saved is not always what runs: a value saved after the app last
+started reaches it at its next restart. Such a value is marked
+"restart needed" ('dibbla apps restart <alias>' applies it); the others are
+"live".
+A name set in more than one place is reported with the one the app gets.
 
 Secrets are write-only. Dibbla never hands out a secret's value — not to this
 command, not to an API, not to an AI assistant — so a secret arrives in
@@ -80,7 +87,7 @@ Examples:
   dibbla env pull -d shop --service worker # one service's view of a multi-service app
   dibbla env pull --replace                # rewrite .env.local from scratch
   eval "$(dibbla env pull --stdout)"       # into the current shell instead of a file
-  dibbla env pull --json                   # names, values and which layer each came from`,
+  dibbla env pull --json                   # kind, scope, origin and live state of every name`,
 	Args: cobra.NoArgs,
 	Run:  runEnvPull,
 }
@@ -172,12 +179,27 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 	secretNames := doc.Secrets
 	sort.Slice(secretNames, func(i, j int) bool { return secretNames[i].Name < secretNames[j].Name })
 	if in.Stdout {
-		for _, v := range vars {
-			fmt.Fprintln(stdout, envfile.FormatLine(v.Name, v.Value))
+		// Every line is either KEY=value or a comment, so the output can be
+		// eval'ed. Each name says what the read view says about it (DIB-1837).
+		restart := false
+		for _, e := range doc.View() {
+			if !e.Effective {
+				continue
+			}
+			if !e.Live {
+				restart = true
+			}
+			switch {
+			case e.Kind == "secret":
+				fmt.Fprintf(stdout, "# %s is a secret (%s): Dibbla never hands out its value\n", e.Name, envDetail(e))
+			case e.ValueHidden || e.Value == nil:
+				fmt.Fprintf(stdout, "# %s is a variable with a secret's name (%s): its value is not handed out\n", e.Name, envDetail(e))
+			default:
+				fmt.Fprintf(stdout, "# %s: %s\n", e.Name, envLabel(e))
+				fmt.Fprintln(stdout, envfile.FormatLine(e.Name, *e.Value))
+			}
 		}
-		for _, sec := range secretNames {
-			fmt.Fprintf(stdout, "# %s is a secret: Dibbla never hands out its value\n", sec.Name)
-		}
+		printEnvNotes(stdout, "# ", alias, doc, doc.View(), restart)
 		return 0
 	}
 
@@ -214,6 +236,13 @@ func runEnvPullCore(stdout, stderr io.Writer, in envPullInput) int {
 	if kept > 0 {
 		fmt.Fprintf(stdout, "   kept %d local line(s) that Dibbla does not know about (--replace rewrites the file)\n", kept)
 	}
+	restart := false
+	for _, e := range doc.View() {
+		if e.Effective && !e.Live {
+			restart = true
+		}
+	}
+	printEnvNotes(stdout, "   ", alias, doc, doc.View(), restart)
 	if added {
 		fmt.Fprintf(stdout, "   added %s to .gitignore so git never sees it\n", envLocalFile)
 	}

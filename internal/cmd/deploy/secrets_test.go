@@ -324,3 +324,34 @@ func TestSecretsImportCore_EmptyFileRejected(t *testing.T) {
 		t.Errorf("nothing should have been sent, got: %v", rec.calls)
 	}
 }
+
+// TestSecretsListAppShowsInheritedGlobals: with -d the list is the read
+// view's secrets (DIB-1837) — the inherited global one marked, which one the
+// app gets, what waits for a restart — and no variable, no value.
+func TestSecretsListAppShowsInheritedGlobals(t *testing.T) {
+	srv, last := newEnvServer(t, 200, envViewDoc)
+	var stdout, stderr bytes.Buffer
+	if code := runSecretsListAppCore(&stdout, &stderr, srv.URL, "tok", "shop", "web"); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if last.Path != "/api/deploy/deployments/shop/env?service=web" {
+		t.Errorf("path %s", last.Path)
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"3 secret(s) (app shop):",
+		"AGENT_URL   secret    app                 console   live",
+		"API_KEY     secret    global (inherited)  -         not used",
+		"API_KEY     secret    app                 -         restart needed",
+		"STRIPE_KEY  secret    app                 -         not used",
+		"! API_KEY is set as",
+		"dibbla apps restart shop",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "LOG_LEVEL") || strings.Contains(out, "info") {
+		t.Errorf("a variable reached the secrets list:\n%s", out)
+	}
+}
