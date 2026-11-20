@@ -195,7 +195,10 @@ Updates an existing deployment (env vars, replicas, cpu, memory, port).
     -   `--memory`: Memory request/limit (e.g. 256Mi, 512Mi).
     -   `--port`: Container port (1-65535).
     -   `--favicon`: Favicon URL (use `""` to clear).
--   At least one of `--env`, `--replicas`, `--cpu`, `--memory`, `--port`, or `--favicon` is required.
+    -   `--unset NAME`: Remove a variable by name (repeatable).
+    -   `--replace-env`: Make `-e`/`--env-file` the app's whole set of variables; every other variable is removed. Secrets are not touched.
+-   Variables are changed by name: `-e` sets the ones it names and every other variable and secret stays.
+-   At least one of `--env`, `--unset`, `--replace-env`, `--replicas`, `--cpu`, `--memory`, `--port`, or `--favicon` is required.
 -   **Example:** `dibbla apps update myapp -e NODE_ENV=production` — **Replicas:** `dibbla apps update myapp --replicas 3` — **Resources:** `dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000`
 
 #### `apps delete`
@@ -243,7 +246,7 @@ List the releases the platform still holds for an app: one immutable image per s
 
 #### `apps rollback`
 
-Switch a running app to an earlier release's image **without a build** — the way back when a deploy went wrong or the build service/registry is down. A rolling update; the app answers with the earlier version within about a minute. Env, resources and the login gate are inherited from the running app (like `deploy --update` with no flags); secrets are untouched. If the deployment is missing (a `--force` deploy removed it and the build failed), rollback recreates it from the release's image with the configuration the platform saved.
+Switch a running app to an earlier release's image **without a build** — the way back when a deploy went wrong or the build service/registry is down. A rolling update; the app answers with the earlier version within about a minute. Resources and the login gate are inherited from the running app (like `deploy --update` with no flags); variables and secrets are the app's current ones, not the release's. If the deployment is missing (a `--force` deploy removed it and the build failed), rollback recreates it from the release's image with the configuration the platform saved.
 
 -   **Usage:** `dibbla apps rollback <alias> [--to <dep-id>]`
 -   **Flags:**
@@ -607,10 +610,11 @@ The `deploy` command deploys a project to the Dibbla platform. **Detection is by
 -   **Flags:**
     -   `--alias`, `-a`: Custom alias name (default: directory name).
     -   `--message`, `-m`: **Required for agents.** Deploy message used as the VCS commit subject in the app's Dibbla-managed git history (and on the GitHub mirror, if configured). Treat it like a git commit subject: present-tense imperative, under ~72 chars, covering what changed and why. Max 500 chars. Examples: `-m "fix: handle null org in /api/me"`, `-m "feat: add nightly db backup workflow"`, `-m "chore: bump node to 20.14"`. For retries/mechanical redeploys still say so: `-m "redeploy: retry after CF 524"`. Never omit `-m` — a blank deploy history is a bug, not a default.
-    -   `--force`, `-f`: Recreate the deployment after a successful build if the alias already exists (brief restart while the new pod starts). The existing app is replaced only once the new image is built and pushed; a failed build leaves it running untouched and returns `BUILD_FAILED`.
+    -   `--force`, `-f`: Recreate the deployment after a successful build if the alias already exists (brief restart while the new pod starts). The existing app is replaced only once the new image is built and pushed; a failed build leaves it running untouched and returns `BUILD_FAILED`. The app's variables and secrets are kept.
     -   `--update`, `-u`: Rolling update of existing deployment (zero downtime). Mutually exclusive with `--force`.
     -   `--env`, `-e`: Set environment variable KEY=value (repeatable, Docker-style). Values that are not secret only: a name that is one of the app's secrets (`ENV_SHADOWS_SECRET`) or a name or value that looks like a secret (`ENV_LOOKS_LIKE_SECRET`) is refused. On a first deploy, the person sets the app's secrets first with `dibbla secrets set NAME -d <alias>` — that works before the alias exists.
     -   `--allow-secret-env`: For a **person** whose env var looks like a secret but is not one. An agent never passes it.
+    -   `--replace-env`: Make this deploy's variables (`-e`, `--env-file`, `dibbla.yaml` `environment:`) the app's whole set; every other variable is removed. Secrets are not touched.
     -   `--cpu <value>`: CPU request and limit (e.g. `500m`); select `--service` for multiple services.
     -   `--memory <value>`: Memory request and limit (e.g. `512Mi`); select `--service` for multiple services.
     -   `--port <value>`: Container port (e.g. `3000`). **Ignored under multi-service.**
@@ -619,6 +623,7 @@ The `deploy` command deploys a project to the Dibbla platform. **Detection is by
     -   `--profile <name>`: Activate a manifest profile (repeatable). Multi-service only.
     -   `--no-public`: Allow a deploy with no `public: true` service (worker- or cron-only deploys). Multi-service only.
     -   `--skip-review`: Bypass the pre-deploy gate (`REVIEW.md` + handbook). **Humans only** for trivial fixes — agents must run the guardrails workflow and emit `REVIEW.md` instead.
+-   **Variables are kept by name.** Dibbla stores an app's variables. `-e`, `--env-file` and `dibbla.yaml` `environment:` set the names they give; every other variable — one set with `apps update -e` or in the console — stays, also on `--force`, a `dibbla.yaml` deploy and `apps rollback`. A name removed from `dibbla.yaml` stays too and is named in the deploy's warnings; `--replace-env` removes it.
 -   **Pre-deploy gate:** The CLI refuses to upload unless `REVIEW.md` and a user handbook (`docs/index.md` or `APP.md`) exist at the deploy root. Run the [pre-deploy guardrails](#pre-deploy-guardrails) checklist and write `REVIEW.md` before invoking `deploy`.
 -   **Example:** `dibbla deploy ./my-app -m "feat: initial deploy" --force` — **Rolling update:** `dibbla deploy -m "fix: resolve 500 on /search" --update` — **Multi-service:** `dibbla deploy --alias myapp --target-env prod -m "feat: ship multi-service" --profile observability`
 

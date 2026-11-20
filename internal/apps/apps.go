@@ -251,15 +251,21 @@ type UpdateDeploymentRequest struct {
 	MemoryLimit   string `json:"memory_limit,omitempty"`
 
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
-	Replicas             *int32            `json:"replicas,omitempty"`
-	CPU                  string            `json:"cpu,omitempty"`
-	Memory               string            `json:"memory,omitempty"`
-	Port                 *int              `json:"port,omitempty"`
-	FaviconURL           *string           `json:"favicon_url,omitempty"`
-	RequireLogin         *bool             `json:"require_login,omitempty"`
-	AppAccessPolicy      *string           `json:"app_access_policy,omitempty"`
-	GoogleScopes         []string          `json:"google_scopes,omitempty"`
-	MicrosoftScopes      []string          `json:"microsoft_scopes,omitempty"`
+	// EnvironmentUnset removes variables by name; ReplaceEnv makes
+	// EnvironmentVariables the app's whole set (DIB-1835). EnvOrigin is
+	// recorded as the variables' origin.
+	EnvironmentUnset []string `json:"environment_unset,omitempty"`
+	ReplaceEnv       bool     `json:"replace_env,omitempty"`
+	EnvOrigin        string   `json:"env_origin,omitempty"`
+	Replicas         *int32   `json:"replicas,omitempty"`
+	CPU              string   `json:"cpu,omitempty"`
+	Memory           string   `json:"memory,omitempty"`
+	Port             *int     `json:"port,omitempty"`
+	FaviconURL       *string  `json:"favicon_url,omitempty"`
+	RequireLogin     *bool    `json:"require_login,omitempty"`
+	AppAccessPolicy  *string  `json:"app_access_policy,omitempty"`
+	GoogleScopes     []string `json:"google_scopes,omitempty"`
+	MicrosoftScopes  []string `json:"microsoft_scopes,omitempty"`
 	// AllowSecretShapedEnv: see deploy.Options.AllowSecretEnv (DIB-1339).
 	AllowSecretShapedEnv bool `json:"allow_secret_shaped_env,omitempty"`
 }

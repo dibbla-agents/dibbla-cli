@@ -121,6 +121,9 @@ type Options struct {
 	// layer for env vars; Env entries override individual keys. See
 	// MergeEnvFileAndFlags for the precedence (identical to `dibbla run`).
 	EnvFile string
+	// ReplaceEnv makes this deploy's variables the app's whole set: the
+	// server removes every other stored variable (DIB-1835).
+	ReplaceEnv bool
 	// AllowSecretEnv is the person's "these are not secrets" for env vars the
 	// server flags by their look (DIB-1339). It never covers a name that is
 	// one of the app's secrets, and the server ignores it from an agent.
@@ -614,6 +617,9 @@ func upload(opts Options, archive []byte, appName string, r render.Renderer, com
 		if opts.AllowSecretEnv {
 			_ = writeField("allow_secret_shaped_env", "true")
 		}
+	}
+	if opts.ReplaceEnv {
+		_ = writeField("replace_env", "true")
 	}
 	_ = writeField("service", opts.Service)
 	_ = writeField("cpu", opts.CPU)

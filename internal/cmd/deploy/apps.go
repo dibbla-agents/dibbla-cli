@@ -50,6 +50,13 @@ var appsUpdateCmd = &cobra.Command{
 	Short: "Update a deployment",
 	Long: `Updates an existing app (env vars, replicas, CPU, memory, port).
 
+Variables are changed by name: -e and --env-file set the ones they name,
+--unset removes one, and every other variable and every secret stays as it
+is. --replace-env makes -e/--env-file the app's whole set of variables.
+  dibbla apps update myapp -e LOG_LEVEL=debug
+  dibbla apps update myapp --unset LOG_LEVEL
+  dibbla apps update myapp --env-file .env.prod --replace-env
+
 CPU and memory can be set as separate requests and limits:
   dibbla apps update myapp --service web --cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi
 
@@ -90,6 +97,8 @@ var (
 	updateEnv             []string
 	updateEnvFile         string
 	updateAllowSecretEnv  bool
+	updateUnset           []string
+	updateReplaceEnv      bool
 	updateReplicas        int
 	updateCPU             string
 	updateMemory          string
@@ -124,6 +133,8 @@ func init() {
 	appsRestartCmd.MarkFlagsMutuallyExclusive("quiet", "json")
 	appsUpdateCmd.Flags().StringArrayVarP(&updateEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
 	appsUpdateCmd.Flags().StringVar(&updateEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
+	appsUpdateCmd.Flags().StringArrayVar(&updateUnset, "unset", nil, "Remove a variable by name (repeatable)")
+	appsUpdateCmd.Flags().BoolVar(&updateReplaceEnv, "replace-env", false, "Make -e/--env-file the app's whole set of variables: every other variable is removed (secrets are not touched)")
 	appsUpdateCmd.Flags().BoolVar(&updateAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
 	appsUpdateCmd.Flags().IntVar(&updateReplicas, "replicas", -1, "Desired number of replicas")
 	appsUpdateCmd.Flags().StringVar(&updateService, "service", "", "Select the service for resource or replica changes; required for apps with multiple services")
@@ -261,13 +272,14 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		microsoftScopes = updateMicrosoftScopes
 	}
 
-	hasUpdate := updateCPURequest != "" || updateCPULimit != "" || updateMemoryRequest != "" || updateMemoryLimit != "" || len(envMap) > 0 || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
+	hasUpdate := updateCPURequest != "" || updateCPULimit != "" || updateMemoryRequest != "" || updateMemoryLimit != "" || len(envMap) > 0 || len(updateUnset) > 0 || updateReplaceEnv || replicas != nil || updateCPU != "" || updateMemory != "" || port != nil || faviconURL != nil || requireLogin != nil || accessPolicy != nil || googleScopes != nil || microsoftScopes != nil
 	if !hasUpdate {
-		fmt.Printf("%s Error: specify at least one of --env (-e), --env-file, --replicas, --cpu, --cpu-request, --cpu-limit, --memory, --memory-request, --memory-limit, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
+		fmt.Printf("%s Error: specify at least one of --env (-e), --env-file, --unset, --replace-env, --replicas, --cpu, --cpu-request, --cpu-limit, --memory, --memory-request, --memory-limit, --port, --favicon, --require-login, --access-policy, --google-scopes, or --microsoft-scopes\n", platform.Icon("❌", "[X]"))
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  dibbla apps update myapp -e NODE_ENV=production")
 		fmt.Println("  dibbla apps update myapp --env-file ../secrets/.env.prod")
+		fmt.Println("  dibbla apps update myapp --unset LOG_LEVEL")
 		fmt.Println("  dibbla apps update myapp --replicas 3")
 		fmt.Println("  dibbla apps update myapp --cpu 500m --memory 512Mi --port 3000")
 		fmt.Println("  dibbla apps update myapp --favicon https://example.com/favicon.ico")
@@ -280,6 +292,8 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 
 	req := apps.UpdateDeploymentRequest{
 		EnvironmentVariables: envMap,
+		EnvironmentUnset:     updateUnset,
+		ReplaceEnv:           updateReplaceEnv,
 		Replicas:             replicas,
 		Service:              updateService,
 		CPU:                  updateCPU,
@@ -295,6 +309,9 @@ func runAppsUpdate(cmd *cobra.Command, args []string) {
 		GoogleScopes:         googleScopes,
 		MicrosoftScopes:      microsoftScopes,
 		AllowSecretShapedEnv: updateAllowSecretEnv && len(envMap) > 0,
+	}
+	if len(envMap) > 0 || len(updateUnset) > 0 || updateReplaceEnv {
+		req.EnvOrigin = "cli"
 	}
 
 	fmt.Printf("%s Updating deployment '%s'...\n", platform.Icon("✏️", "[UPDATE]"), alias)

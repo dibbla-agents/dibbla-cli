@@ -58,6 +58,7 @@ var (
 	// archive; a linked folder deploys by git push, where nothing can
 	// carry it, and the pushed commit has to hold the artifacts itself.
 	deploySkipReview bool
+	deployReplaceEnv bool
 )
 
 var deployCmd = &cobra.Command{
@@ -89,15 +90,24 @@ Examples:
   dibbla deploy --alias my-api  # Deploy with custom alias name
   dibbla deploy -m "feat: add /healthz endpoint"   # Set VCS commit subject
   dibbla deploy --update     # Rolling update (zero downtime)
-  dibbla deploy --force      # Recreate existing alias after a successful build (brief restart)
+  dibbla deploy --force      # Recreate existing alias after a successful build (brief restart); variables and secrets are kept
   dibbla deploy --cpu 500m --memory 512Mi --port 3000
   dibbla deploy --service web --cpu-request 100m --cpu-limit 1 --memory-request 1Gi --memory-limit 2560Mi
   dibbla deploy -e NODE_ENV=production -e LOG_LEVEL=info
   dibbla deploy --env-file ../secrets/.env.prod              # Bulk-load env vars from a file
   dibbla deploy --env-file ../secrets/.env.prod -e LOG_LEVEL=debug  # File as base, -e overrides one key
+  dibbla deploy --env-file .env.prod --replace-env           # The file becomes the app's whole set of variables
   dibbla deploy --favicon https://example.com/favicon.ico
   dibbla deploy --quiet      # Single-line success/failure (script-friendly)
   dibbla deploy --json       # Structured JSON output for jq / agents
+
+Variables:
+  The app's variables are stored by Dibbla. -e, --env-file and dibbla.yaml
+  environment: set them by name; every other variable stays as it is, also
+  on --force, a dibbla.yaml deploy and a rollback. A name removed from
+  dibbla.yaml is kept and named in the warnings. --replace-env makes this
+  deploy's variables (-e, --env-file and dibbla.yaml environment:) the
+  app's whole set and removes the rest. Secrets are never touched.
 
 Resource flags:
   One service is selected automatically. Apps with multiple services require
@@ -127,6 +137,7 @@ func init() {
 	deployCmd.Flags().StringVarP(&deployAlias, "alias", "a", "", "Custom alias name (default: directory name)")
 	deployCmd.Flags().StringArrayVarP(&deployEnv, "env", "e", nil, "Set env var KEY=value (repeatable; overrides --env-file)")
 	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Load env vars from a .env-style file (base layer; -e overrides individual keys)")
+	deployCmd.Flags().BoolVar(&deployReplaceEnv, "replace-env", false, "Make this deploy's variables the app's whole set: every other variable is removed (secrets are not touched)")
 	deployCmd.Flags().BoolVar(&deployAllowSecretEnv, "allow-secret-env", false, "Send env vars that look like secrets anyway, because they are not (a secret belongs in 'dibbla secrets set')")
 	deployCmd.Flags().StringVar(&deployService, "service", "", "Select the service for resource flags; required for apps with multiple services")
 	deployCmd.Flags().StringVar(&deployCPU, "cpu", "", "CPU request and limit (e.g. 500m)")
@@ -220,6 +231,7 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		Alias:           deployAlias,
 		Env:             deployEnv,
 		EnvFile:         deployEnvFile,
+		ReplaceEnv:      deployReplaceEnv,
 		AllowSecretEnv:  deployAllowSecretEnv,
 		Service:         deployService,
 		CPU:             deployCPU,
