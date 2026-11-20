@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "kind": "dibbla.platform.capabilities",
   "description": "Every relevant Dibbla operation with exactly one state. A capability belongs in /platform only when a stable API backs it, it needs no caller filesystem, keyring, TTY or external binary, and it either finishes promptly or returns a durable pollable ID.",
   "states": [
@@ -246,7 +246,7 @@
         "platform:apps:read"
       ],
       "auth": "oauth",
-      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. DIB-704 merged this with the list into platform_apps; naming an alias is what asks for one application.",
+      "note": "Shipped by DIB-534 (P-0035 Part B) on mcp-server's OAuth-protected /platform toolset; listed in tools/list only for a grant holding the scope, and refused server-side otherwise. DIB-704 merged this with the list into platform_apps; naming an alias is what asks for one application. DIB-1837 adds view=env: the application's Variables and Secrets from the same read view as apps get, env pull and secrets list -d — kind, scope, origin, which entry wins, live — with values masked by kind (a secret's never, a secret-shaped variable's neither); the overview keeps environment values out.",
       "mcp_toolset": "/platform",
       "mcp_tool": "platform_apps",
       "production": "live",
@@ -1074,7 +1074,7 @@
       "state": "local-only",
       "scopes": [],
       "auth": "none",
-      "reason": "Writes .env.local in the caller’s working directory and a .env.local line into the caller’s .gitignore, merging into a file that may already be there: lines Dibbla does not know are kept, and a secret line the developer filled in is never overwritten. The app is read from the folder’s link (dibbla clone / dibbla link). The file, its merge and the .gitignore are on the calling machine. It reveals no secret value: variables arrive with their values, secrets by name only as empty NAME= lines (DIB-1337, DIB-1338), so it is not a credential reveal. Reading the same environment remotely is not a /platform capability: platform_apps keeps environment values out of every tool result.",
+      "reason": "Writes .env.local in the caller’s working directory and a .env.local line into the caller’s .gitignore, merging into a file that may already be there: lines Dibbla does not know are kept, and a secret line the developer filled in is never overwritten. The app is read from the folder’s link (dibbla clone / dibbla link). The file, its merge and the .gitignore are on the calling machine. It reveals no secret value: variables arrive with their values, secrets by name only as empty NAME= lines (DIB-1337, DIB-1338), so it is not a credential reveal. Reading the same list remotely is platform_apps view=env (DIB-1837): masking is by kind, so a variable comes with its value and a secret by name only, never its value; a variable whose name or value is shaped like a secret is masked there too, with a warning to make it a secret, because a tool result lands in the model's transcript.",
       "source": "dibbla-cli/internal/cmd/deploy/env.go:44 (envPullCmd), :130 (runEnvPullCore), :275 (writeEnvLocal); app-hosting-service/deploy-api/internal/handler/deployments/env.go:60 (HandleEnv: secrets as names, never in variables)",
       "cli_commands": [
         "env pull"
