@@ -149,7 +149,7 @@ var costsCmd = &cobra.Command{
 	Long: `What every organization's AI calls cost Dibbla in one calendar month (UTC):
 calls, tokens, the purchase price (USD), what the customer pays (EUR) and the
 margin, each organization split into ops (what Dibbla runs for it and pays
-for itself under the Maintenance Agent) and its own traffic.
+for itself under AI Maintenance) and its own traffic.
 
 The same figures as the AI console's Customer costs page. Calls without a
 recorded cost are estimated at today's catalog price ("estimated"); calls
@@ -159,7 +159,7 @@ on the customer's own provider key cost Dibbla nothing ("own key").
 With --org, one organization's month drilled down: per app (machine calls
 resolved to their app by deployment), with each app's active users and cost
 per user, per user, per purpose (customer traffic, application checks, the
-maintenance agent and any other recorded), per model and per day. Every
+AI Maintenance and any other recorded), per model and per day. Every
 breakdown adds up to the organization's row. --app narrows the breakdowns to
 one app ("deployment:<id>" for a deployment no call names an app for).
 
@@ -395,7 +395,7 @@ func printCosts(stdout io.Writer, rep costReport) {
 	} else {
 		fmt.Fprintln(stdout, "No EUR rate is stored, so there is no margin.")
 	}
-	fmt.Fprintln(stdout, "Ops: what Dibbla runs for the organization and pays for itself (the Maintenance Agent). ≈: partly estimated at today's catalog price.")
+	fmt.Fprintln(stdout, "Ops: what Dibbla runs for the organization and pays for itself (AI Maintenance). ≈: partly estimated at today's catalog price.")
 	if rep.Hosting.divided() {
 		fmt.Fprintln(stdout, "Hosting ≈ is an estimate: the cluster's monthly cost divided by what each app reserved (CPU, memory, stored bytes) in a daily snapshot, not what it used. The margin is against AI + hosting.")
 	}

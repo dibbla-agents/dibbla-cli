@@ -410,7 +410,7 @@ backlog to drain.
 
 ---
 
-## 8.8. Maintenance agent — the runtime model
+## 8.8. AI Maintenance — the runtime model
 
 An opt-in overnight agent per app. It reads the app's logs, the source that
 shipped, and recent application-check history, then leaves one of three typed
@@ -424,7 +424,7 @@ Commands: `dibbla apps maintenance status|enable|disable|run|runs` and
 
 ### Two switches, both off by default
 
-1. **Org capability: the Maintenance Agent add-on.** An owner or admin adds it
+1. **Org capability: the AI Maintenance add-on.** An owner or admin adds it
    on the console's Plan page (`/org-settings/plan`): 300 kr/month per
    organization, Business only, all AI inference included — runs never draw
    from AI credits and there is no own key to bring. When the organization

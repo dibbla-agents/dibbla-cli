@@ -115,13 +115,7 @@ func runAppsProposalsListCore(stdout, stderr io.Writer, apiURL, apiToken, alias 
 	fmt.Fprintf(stdout, "   %-24s %-18s %-22s %-20s %s\n", "ID", "STATUS", "SOURCE", "ACTOR", "TITLE")
 	for i := range page.Proposals {
 		p := &page.Proposals[i]
-		actor := p.AuthorName
-		if actor == "" {
-			actor = p.AuthorEmail
-		}
-		if actor == "" {
-			actor = p.AuthorID
-		}
+		actor := proposalActor(p.AuthorID, p.AuthorName, p.AuthorEmail)
 		fmt.Fprintf(stdout, "   %-24s %-18s %-22s %-20s %s\n", p.ID, p.Status, orDash(p.Source), actor, p.Title)
 	}
 	return 0
@@ -156,13 +150,7 @@ func runAppsProposalsShowCore(stdout, stderr io.Writer, apiURL, apiToken, alias,
 		})
 		return 0
 	}
-	actor := proposal.AuthorName
-	if actor == "" {
-		actor = proposal.AuthorEmail
-	}
-	if actor == "" {
-		actor = proposal.AuthorID
-	}
+	actor := proposalActor(proposal.AuthorID, proposal.AuthorName, proposal.AuthorEmail)
 	fmt.Fprintf(stdout, "%s %s — %s\n", platform.Icon("🔀", "[PROPOSAL]"), proposal.ID, proposal.Title)
 	fmt.Fprintf(stdout, "   status:   %s\n", proposal.Status)
 	fmt.Fprintf(stdout, "   source:   %s\n", orDash(proposal.Source))
@@ -263,4 +251,23 @@ func validateProposalTarget(stderr io.Writer, alias, proposalID string) int {
 		return 5
 	}
 	return 0
+}
+
+// maintenanceAgentAuthorID is the author id deploy-api stamps on proposals
+// written by AI Maintenance. Proposals from before the rename (DIB-1826)
+// carry an older author name; the id decides what the customer reads.
+const maintenanceAgentAuthorID = "agent.maintenance"
+
+// proposalActor names who wrote a proposal: its author name, else its email,
+// else its id — and AI Maintenance for the agent's own proposals.
+func proposalActor(id, name, email string) string {
+	switch {
+	case id == maintenanceAgentAuthorID:
+		return "AI Maintenance"
+	case name != "":
+		return name
+	case email != "":
+		return email
+	}
+	return id
 }

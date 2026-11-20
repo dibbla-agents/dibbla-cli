@@ -39,8 +39,8 @@ var (
 
 var appsMaintenanceCmd = &cobra.Command{
 	Use:   "maintenance",
-	Short: "Operate an app's maintenance agent",
-	Long: `Inspect, enable, disable and run the maintenance agent for one app.
+	Short: "Operate an app's AI Maintenance",
+	Long: `Inspect, enable, disable and run AI Maintenance for one app.
 
 Subcommands:
   status <alias>   effective settings and latest run

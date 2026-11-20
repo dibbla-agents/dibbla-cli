@@ -21,7 +21,7 @@ var appsGetCmd = &cobra.Command{
 	Long: `Show the deployment record for one app: URL, status, the git commit it
 runs, replicas, size, health check, login policy, the security section —
 guardrails review and which version it applies to, the build-time scan and
-when its findings last changed, the maintenance agent and whether anything
+when its findings last changed, AI Maintenance and whether anything
 changed since it last ran, proposals waiting — and, for multi-service
 deployments, the per-service breakdown.
 
@@ -285,15 +285,15 @@ func scanLine(s *apps.SecurityScan) string {
 func agentLine(m *apps.SecurityMaintenance) string {
 	switch {
 	case !m.Configured:
-		return "not set up for this organization"
+		return "AI Maintenance not set up for this organization"
 	case !m.Enabled:
-		return "off for this app"
+		return "AI Maintenance off for this app"
 	case m.LastRunAt == nil:
-		return "on — has not run for this app yet"
+		return "AI Maintenance on — has not run for this app yet"
 	case m.ChangedSinceLastRun:
-		return "on — something changed since it last looked"
+		return "AI Maintenance on — something changed since it last looked"
 	default:
-		return "on — nothing has changed since it last looked"
+		return "AI Maintenance on — nothing has changed since it last looked"
 	}
 }
 

@@ -401,7 +401,7 @@ file's schema and the runtime model see
 [`.claude/skills/dibbla/manifest.md` § 22](.claude/skills/dibbla/manifest.md) and
 [`.claude/skills/dibbla/platform.md` § 8.7](.claude/skills/dibbla/platform.md).
 
-### Operate the Maintenance Agent and Proposals
+### Operate AI Maintenance and Proposals
 
 The CLI exposes the same maintenance run, observation receipt, proposal diff,
 decision capability and audit fields as the console API. Approval eligibility
