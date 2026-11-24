@@ -1,9 +1,9 @@
 {
-  "contract_version": "1.2.0",
+  "contract_version": "1.2.1",
   "files": {
-    "v1/scopes.json": "sha256:b17a51b3f83415b853192bc5d2e87caf934ef56a84e50797e0287164353b8a5a",
-    "v1/errors.json": "sha256:5cdce4e60b9f7b0c8848921cb0aeab2095a923a2598830a540857479c4f734a0",
-    "v1/capabilities.json": "sha256:5b9da0119ef61eadfc4a3ddf31a0d1c7b479a9a72bdf25e4967afb9aff7e9e90"
+    "v1/scopes.json": "sha256:f0914f9e46c01b8a8046eb07a68f13e4a9ef423cb266ca2ecdde775f03b7b55c",
+    "v1/errors.json": "sha256:2c97724fec7a0d43e654b12a36db253cf5a2b5610a4780cb3b43ad071f582ee6",
+    "v1/capabilities.json": "sha256:6d6efec23ec6a4e0c496ded1b8398a5687abfe60b840a93a11acafc9bdebc6f5"
   },
-  "contract_digest": "sha256:b0b42ffd27ac6f2abdf07224c03de1f8841dcce56279e84e3f98d08df08cd7f3"
+  "contract_digest": "sha256:66d8739e8a944f4766f7d5211e347229891798fd6a9660f61a1c0afd7bbd720d"
 }

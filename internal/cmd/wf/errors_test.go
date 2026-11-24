@@ -206,3 +206,16 @@ func TestParseFileContent_ReportsMalformedInput(t *testing.T) {
 		t.Error("malformed YAML must be reported, not silently accepted")
 	}
 }
+
+// A failed execute carries the run's own error in "message"; it is the part
+// that says why (DIB-1894), so it must not be dropped.
+func TestRenderAPIError_KeepsFailedRunMessage(t *testing.T) {
+	err := renderAPIError(&apiclient.APIError{
+		StatusCode: 500,
+		Message:    `{"error":"Workflow execution failed","message":"The run cannot finish: no step is running any more (api_response.error ← agent.error)."}`,
+	})
+	want := "Workflow execution failed: The run cannot finish: no step is running any more (api_response.error ← agent.error). (HTTP 500)"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got  %v\nwant %s", err, want)
+	}
+}

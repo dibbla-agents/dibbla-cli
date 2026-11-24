@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.2.0",
+  "contract_version": "1.2.1",
   "kind": "dibbla.platform.scopes",
   "description": "The OAuth scopes the Dibbla platform connector grants. Composable and reviewable: one scope per capability class, never one scope per tool.",
   "rules": {

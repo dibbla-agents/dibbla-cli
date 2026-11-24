@@ -23,6 +23,9 @@ type validationError struct {
 type errorBody struct {
 	Error   string            `json:"error"`
 	Details []validationError `json:"details"`
+	// Message is why a run failed, on a failed execute:
+	// {"error":"Workflow execution failed","message":"<the run's error>"}.
+	Message string `json:"message"`
 }
 
 // renderValidationErrors formats validator output the way a person reads it:
@@ -136,6 +139,9 @@ func renderAPIError(err error) error {
 	msg := strings.TrimSpace(apiErr.Message)
 	if body.Error != "" {
 		msg = body.Error
+		if m := strings.TrimSpace(body.Message); m != "" && m != body.Error {
+			msg += ": " + m
+		}
 	}
 	// A delete refused while runs are in progress (DIB-453) arrives as a 409
 	// whose message already says what to do next; the generic "already exists
