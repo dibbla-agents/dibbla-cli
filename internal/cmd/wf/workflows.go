@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
@@ -558,17 +559,13 @@ var workflowsAPIDocsCmd = &cobra.Command{
 
 			if inputSchema, ok := e["input_schema"].(map[string]interface{}); ok && len(inputSchema) > 0 {
 				fmt.Println("Request body:")
-				for k, v := range inputSchema {
-					fmt.Printf("  %-30s %v\n", k, v)
-				}
+				printAPIFields(inputSchema, stringSet(e["optional_inputs"]))
 				fmt.Println()
 			}
 
 			if outputSchema, ok := e["output_schema"].(map[string]interface{}); ok && len(outputSchema) > 0 {
 				fmt.Println("Response:")
-				for k, v := range outputSchema {
-					fmt.Printf("  %-30s %v\n", k, v)
-				}
+				printAPIFields(outputSchema, stringSet(e["optional_outputs"]))
 				fmt.Println()
 			}
 
@@ -602,6 +599,36 @@ func joinStrings(strs []string, sep string) string {
 		result += s
 	}
 	return result
+}
+
+// printAPIFields prints an endpoint's fields sorted by name, marking the
+// ones the workflow declares optional: (a request field the caller may omit,
+// a response field the answer may lack).
+func printAPIFields(schema map[string]interface{}, optional map[string]bool) {
+	names := make([]string, 0, len(schema))
+	for k := range schema {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		if optional[k] {
+			fmt.Printf("  %-30s %v (optional)\n", k, schema[k])
+		} else {
+			fmt.Printf("  %-30s %v\n", k, schema[k])
+		}
+	}
+}
+
+// stringSet turns a JSON array of strings into a set; anything else is empty.
+func stringSet(v interface{}) map[string]bool {
+	set := map[string]bool{}
+	list, _ := v.([]interface{})
+	for _, item := range list {
+		if s, ok := item.(string); ok {
+			set[s] = true
+		}
+	}
+	return set
 }
 
 func exampleValue(typeName string) interface{} {
