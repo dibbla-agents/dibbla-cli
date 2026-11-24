@@ -73,8 +73,8 @@ func renderValidationErrors(summary string, details []validationError) string {
 func ruleHint(rule string) string {
 	switch rule {
 	case "UNSATISFIED_INPUT":
-		return "give the input a value, or wire an edge into it. `dibbla fn get <server> <function>` lists which inputs are required"
-	case "UNKNOWN_PORT", "UNKNOWN_FUNCTION":
+		return "give the input a value, wire an edge into it, or list it under the node's `optional:`. `dibbla fn get <server> <function>` lists which inputs are required"
+	case "UNKNOWN_PORT", "UNKNOWN_FUNCTION", "UNKNOWN_INPUT":
 		return "check the names with `dibbla fn get <server> <function>`"
 	case "INVALID_ENUM_VALUE":
 		return "allowed values are listed under the input in `dibbla fn get <server> <function>`"
