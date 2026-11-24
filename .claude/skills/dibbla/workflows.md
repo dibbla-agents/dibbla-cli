@@ -543,11 +543,12 @@ Both ends pin to the workflow's HEAD revision unless you pass `--revision <id>`.
 - `wf execute <name> --async` returns immediately with `{"response_metadata":{"run","node","workflow"}}`. Use this when dispatching many runs or when the run is expected to take longer than the agent's terminal patience.
 - `wf execute <name> --follow` (`-f`) is `--async` plus an automatic log-tail. Live operational logs stream to stdout as the run progresses; on the server-emitted `run_completed` sentinel the CLI prints the api_response payload and exits 0. Best for interactive debugging.
 
-Once you have a `runID`, three commands address it:
+Once you have a `runID`, four commands address it:
 
 - `wf logs <runId>` — operational logs (workflow-server orchestration + go-toolserver function/agent calls), tagged with `run` / `workflow` / `node` / `level` / `src`. `--follow` for live; default is historic backfill from the persisted store. Persistence policy: WARN/ERROR + a single `run_completed` sentinel are persisted; INFO/DEBUG are live-only. A quiet finished run will tail to essentially just `run completed`.
 - `wf runs output <runId>` — the api_response payload, identical shape to what a sync execute would return.
-- `wf runs list [-w <name>] [-n <N>]` — find recent run ids without leaving the terminal. Server caps the page size at 500.
+- `wf runs list [-w <name>] [-n <N>]` — find recent run ids without leaving the terminal, with each run's STATUS (`running`, `succeeded`, `failed`, `cancelled`). Server caps the page size at 500.
+- `wf runs cancel <runId>` — stop a run that is still running: steps still executing are told to stop and nothing more of the run starts. Stopping an already stopped run is fine; a run that already finished says so and is left as it is.
 
 ```bash
 # Typical async loop
@@ -558,6 +559,8 @@ dibbla wf runs output 020b1341-…                # fetch the final payload
 ```
 
 For runs that error before the api_response node fires (or workflows with no api_response at all), `wf runs output` returns 404 — the operational `wf logs` view is the meaningful artefact in those cases.
+
+**A run that can never finish fails by itself.** When every step a run started has answered and `api_response` still waits for a value no step produced, the run fails after about 10 seconds with a message naming the waiting field and what it is connected to — e.g. `api_response.error ← agent.error`. The usual cause is a response field connected to an output that is only set on failure (an agent's `error`) on a run where the step succeeded. Fix: mark that field `optional:` on the `api_response` node, or connect it to an output every run sets. A step that is still working (an agent mid-turn, a slow function) keeps the run alive; to stop such a run, `wf runs cancel <runId>`.
 
 ### Use `--follow` for the first execution after any workflow change
 
@@ -580,7 +583,8 @@ Walk this in order — each step is cheap and rules out one class of cause:
 2. **Did pre-flight reject it?** A `422` response with `rule: CYCLE_DETECTED` means a cycle (often the tool+data-edge pattern in §6) — fix the topology. Pre-flight also returns `UNSATISFIABLE_INPUT`, `UNKNOWN_NODE`, `UNKNOWN_PORT`, `INVALID_HANDLE`, `EMPTY_WORKFLOW` for other static issues.
 3. **Did the watchdog fire?** `dibbla wf logs <runId>`. Look for a WARN `run is not making progress`. The attached `diagnosis` field tells you which input on which node is unsatisfied — fix the missing edge or default and retry.
 4. **`function execution failed`?** Function-side error. The most common cause is an input-type mismatch (string into bool, missing required field). The CLI message is the same regardless of panic, returned error, or input deserialization failure — the actual Go error is only in the go-toolserver pod's stdout (`kubectl logs <go-toolserver-pod>` in a Dibbla deployment, or the local console if running locally). Re-check the function's `dibbla fn get` schema and your YAML types.
-5. **None of the above?** Last resort: `wf delete --yes && wf create -f workflow.yaml` to refresh the URL id and clear any orphaned response-channel state. Update production callers' baked-in URL afterward (see §15 footgun).
+5. **Still running and no longer wanted?** `dibbla wf runs cancel <runId>` stops it.
+6. **None of the above?** Last resort: `wf delete --yes && wf create -f workflow.yaml` to refresh the URL id and clear any orphaned response-channel state. Update production callers' baked-in URL afterward (see §15 footgun).
 
 ### Calling a workflow from production code (HTTP)
 

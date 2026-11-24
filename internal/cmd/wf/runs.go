@@ -1,10 +1,13 @@
 package wf
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/dibbla-agents/dibbla-cli/internal/apiclient"
 	"github.com/dibbla-agents/dibbla-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -43,7 +46,7 @@ var runsListCmd = &cobra.Command{
 			return output.PrintYAML(result)
 		}
 
-		headers := []string{"ID", "WORKFLOW", "STARTED", "ORIGIN"}
+		headers := []string{"ID", "WORKFLOW", "STARTED", "STATUS", "ORIGIN"}
 		var rows [][]string
 		for _, r := range runs {
 			rm, ok := r.(map[string]interface{})
@@ -53,7 +56,9 @@ var runsListCmd = &cobra.Command{
 			id, _ := rm["id"].(string)
 			wf, _ := rm["workflow"].(string)
 			ts := formatRunTimestamp(rm["timestamp"])
-			rows = append(rows, []string{id, wf, ts, formatRunOrigin(rm)})
+			// phase is blank against a server that predates it.
+			phase, _ := rm["phase"].(string)
+			rows = append(rows, []string{id, wf, ts, phase, formatRunOrigin(rm)})
 		}
 		output.PrintTable(headers, rows)
 		return nil
@@ -80,6 +85,65 @@ var runsOutputCmd = &cobra.Command{
 		}
 		return output.PrintJSON(result)
 	},
+}
+
+// runsCancelCmd stops a run that is still running (DIB-1894) — one stuck
+// waiting for a value no step will produce, or simply no longer wanted.
+// Stopping an already stopped run is not an error; a run that finished some
+// other way cannot be stopped and says so.
+var runsCancelCmd = &cobra.Command{
+	Use:   "cancel <runId>",
+	Short: "Stop a running run",
+	Long: `Stop a run that is still running. Steps still executing are told to stop
+and nothing more of the run is started; the run then shows as cancelled.
+Find running runs with ` + "`dibbla wf runs list`" + ` (STATUS running).`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		runID := args[0]
+		resp, err := getClient().Post("/api/wf/slim/runs/"+url.PathEscape(runID)+"/cancel?format=json", nil)
+		if err != nil {
+			return cancelRunError(runID, err)
+		}
+		var result map[string]interface{}
+		if err := parseJSON(resp.Body, &result); err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return output.PrintJSON(result)
+		}
+		if flagOutput == "yaml" {
+			return output.PrintYAML(result)
+		}
+		if already, _ := result["already_cancelled"].(bool); already {
+			fmt.Printf("Run %s was already stopped.\n", runID)
+			return nil
+		}
+		fmt.Printf("Run %s stopped.\n", runID)
+		return nil
+	},
+}
+
+// cancelRunError turns the API's refusals into sentences: 409 is a run that
+// already finished, 404 one that does not exist (or is another org's).
+func cancelRunError(runID string, err error) error {
+	var apiErr *apiclient.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	switch apiErr.StatusCode {
+	case 409:
+		var body struct {
+			Phase string `json:"phase"`
+		}
+		_ = parseJSON([]byte(apiErr.Message), &body)
+		if body.Phase == "" {
+			body.Phase = "finished"
+		}
+		return fmt.Errorf("run %s has already %s; there is nothing to stop", runID, body.Phase)
+	case 404:
+		return fmt.Errorf("run %s not found", runID)
+	}
+	return err
 }
 
 // runsPurgeCmd is the ONLY destructive operation on run data (DIB-453):
@@ -168,6 +232,7 @@ func init() {
 
 	runsCmd.AddCommand(runsListCmd)
 	runsCmd.AddCommand(runsOutputCmd)
+	runsCmd.AddCommand(runsCancelCmd)
 	runsCmd.AddCommand(runsPurgeCmd)
 
 	// Nest runs under `dibbla wf runs ...` for consistency with `dibbla wf logs`.
