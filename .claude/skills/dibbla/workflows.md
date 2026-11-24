@@ -187,7 +187,7 @@ A node waits for its **required** inputs and runs without its **optional** ones.
 - **Make it required** when the node needs the value and it comes from another node. An optional input fed by a slower node is dropped if the node already ran on its other inputs — the classic "the agent ran without its context" bug.
 - **Make it optional** when the node should run without it (e.g. a caller may leave it out).
 - Names as in `inputs:` (`files`, not `files[]`). `tools`, `files` and engine-set inputs can't be required. An entry that matches the default is dropped; `wf get` lists only real deviations, including ones toggled on the canvas, and every write keeps them.
-- `api` and `api_response` nodes don't take these keys.
+- API fields: on `api` and `api_response` every field is required; `optional: [locale]` lets the caller omit it (or the answer lack it), and `wf api-docs` marks it optional. Whatever the omitted field feeds must be optional too, and a wired `response` is always waited for.
 
 ### `wf get` output is re-appliable as-is
 
@@ -496,7 +496,7 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `UNKNOWN_INPUT` | A name in `optional:` / `required:` is not an input of the node | Use the names from `inputs:` / `dibbla fn get` (`files`, not `files[]`; `<seat>.<port>` for a capability port) |
 | `CONFLICTING_INPUT_OVERRIDE` | The same input is in both `optional:` and `required:` | Keep it in one list |
 | `INPUT_NOT_REQUIRABLE` | `required:` names `tools`, `files` or an engine-set input — the node never waits for those | Remove it from `required:` |
-| `INPUT_OVERRIDE_NOT_SUPPORTED` | `optional:` / `required:` on an `api` or `api_response` node | Remove the key; it applies to `function` nodes only |
+| `OPTIONAL_FIELD_FEEDS_REQUIRED_INPUT` (warning) | An `api` field in `optional:` is wired into an input that still waits for it | Add that input to `optional:` on the consuming node, or the run hangs when the caller omits the field |
 | `CYCLE_DETECTED` | The graph contains a cycle | Restructure; the runtime won't execute cycles. If you need iteration, model it as a sub-workflow called repeatedly |
 
 ### Exit codes — script against these, not against stderr
