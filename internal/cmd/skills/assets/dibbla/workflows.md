@@ -26,7 +26,7 @@ A workflow is a **directed acyclic graph of typed function calls**.
 
 - **Nodes are function calls.** Each non-trivial node names a `function` from the registry (e.g. `handlebars_template`, `reasoning_agent_function`, `get_weather_function`); when invoked, the workflow server calls that function with input values and stores the outputs.
 - **Edges carry typed data, port-to-port.** An edge says "feed this output of node A into that input of node B." Edges have **no conditions** — data always flows when it's available.
-- **Activation is push-based.** A node fires the moment all its non-optional inputs have a value (either from an edge, a hardcoded value, or an API request body). There is no scheduler, no orchestrator. If an input has no provider, the node never fires — that's the most common silent failure.
+- **Activation is push-based.** A node fires the moment all its required inputs have a value (either from an edge, a hardcoded value, or an API request body). There is no scheduler, no orchestrator. If an input has no provider, the node never fires — that's the most common silent failure.
 - **No cycles.** The validator rejects cycles outright; the runtime would hang on them anyway.
 - **HTTP shape: API in, API out.** A workflow is exposed as an HTTP endpoint by including an `api` node (the request body) and an `api_response` node linked back to it (the response body).
 - **Versioned snapshots.** Every workflow has a mutable `HEAD` revision plus zero or more immutable named revisions. Patches and updates target HEAD; production callers can pin to a named revision.
@@ -155,6 +155,7 @@ That's all there is. Three top-level keys (`nodes`, `edges`, plus metadata); edg
 | `memory` | agent `function` | `{history_policy?, history_policy_n?}`. History is keyed by the node's `thread_id` **input** — wire it from the `api` node so each caller/conversation gets its own thread; a hardcoded literal shares one thread across all callers (leaks history between users; validator warns `SHARED_THREAD_ACROSS_API_CALLERS`). The related `memory_op` input, when set to `reset`, deletes the thread's stored history before the turn (sending the prompt `/clear` is the back-compat equivalent). Note: decay policies (`tiered`, `last-N`, …) trim stored *tool results*, not what the assistant said — assistant text that restated a tool result keeps it in history, so decay is **not** redaction; a PII redactor must rewrite text parts too. |
 | `tool_search` | agent `function` | `{allow?, persist?, scope?}` |
 | `capability_providers` | agent `function` | Capability seat → provider name |
+| `optional`, `required` | `function` | Input names the node runs without / waits for, overriding the function's default — see [Required vs optional inputs](#required-vs-optional-inputs) |
 
 The agent keys are only accepted on a function that declares the matching capability; otherwise you get `CAPABILITY_NOT_SUPPORTED` (or `TOOLS_NOT_SUPPORTED` for `tools:`) rather than a setting that is saved and then ignored.
 
@@ -168,7 +169,25 @@ The agent keys are only accepted on a function that declares the matching capabi
 
 `outputs:` is always a list of names. For `function` nodes you only need to list outputs when you want to override or augment what the registry declares.
 
-**You only have to write the inputs that are required.** `dibbla fn get` reports which those are under `required_inputs`; everything else is optional and can be omitted entirely. Optional inputs are still settable — a value or an edge works fine — they just don't have to be. Engine-injected inputs (`_capability_providers`, `has_credentials`, `_original_system_message`) and the agent's internal `tools` array are not authorable at all and never appear in `wf get` output.
+**You only have to write the inputs that are required.** `dibbla fn get` reports which those are under `required_inputs`; everything else is optional and can be omitted entirely. Optional inputs are still settable — a value or an edge works fine — they just don't have to be. Engine-injected inputs (`_capability_providers`, `has_credentials`, `_original_system_message`) and the agent's internal `tools` array are not authorable at all and never appear in `wf get` output. Which inputs the node actually waits for can be changed per node — next section.
+
+### Required vs optional inputs
+
+A node waits for its **required** inputs and runs without its **optional** ones. The function sets the default (`required_inputs`); two node keys change it, listing only the deviations:
+
+```yaml
+- id: agent
+  type: function
+  function: reasoning_agent_with_toolbox
+  server: function-server
+  optional: [context]        # run without it, even though the function requires it
+  required: [memory.user]    # wait for it, even though it is optional (capability port: <seat>.<port>)
+```
+
+- **Make it required** when the node needs the value and it comes from another node. An optional input fed by a slower node is dropped if the node already ran on its other inputs — the classic "the agent ran without its context" bug.
+- **Make it optional** when the node should run without it (e.g. a caller may leave it out).
+- Names as in `inputs:` (`files`, not `files[]`). `tools`, `files` and engine-set inputs can't be required. An entry that matches the default is dropped; `wf get` lists only real deviations, including ones toggled on the canvas, and every write keeps them.
+- `api` and `api_response` nodes don't take these keys.
 
 ### `wf get` output is re-appliable as-is
 
@@ -364,7 +383,7 @@ dibbla fn get function-server reasoning_agent_function   # full schema for one
 
 | Field | Use |
 |---|---|
-| `required_inputs` | The only inputs you must satisfy. Write these; omit the rest. |
+| `required_inputs` | The inputs a node waits for by default. Write these; omit the rest. Change it per node with `optional:` / `required:`. |
 | `inputs.<name>.required` | Same thing per-input, alongside `type` and `allowed_values` |
 | `inputs.<name>.capability` | Which optional capability an input belongs to |
 | `capabilities` | The agent keys this function accepts (`tools`, `mcp`, `memory`, …) |
@@ -463,7 +482,7 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `INVALID_ENUM_VALUE` | An input value is constrained by an `enum:` tag (e.g. valid models) and the value isn't in the allowed list | `dibbla fn get <server> <name>` — the allowed values are listed under each input's `allowed_values` |
 | `UNKNOWN_TOOL_NODE` | An agent's `tools: [foo]` references a node id that doesn't exist | Add the tool node, or fix the id reference |
 | `INVALID_LINK` | `api_response.linked_to` points at a missing node, or at a node that isn't `type: api` | Point it at the corresponding `api` node |
-| `UNSATISFIED_INPUT` | A **required** input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Only inputs in the function's `required_inputs` are checked — optional and capability inputs are not. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
+| `UNSATISFIED_INPUT` | A **required** input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Checked on what the node waits for: the function's `required_inputs`, plus the node's `required:`, minus its `optional:`. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
 | `TOOLS_NOT_SUPPORTED` | `tools:` on a function that isn't tagged `accepts_tools` | Pick an agent function — `dibbla fn list --tag accepts_tools`. (Previously this was accepted and the tools were silently ignored at runtime.) |
 | `CAPABILITY_NOT_SUPPORTED` | `toolbox_tools:` / `mcp_servers:` / `data_sources:` / `memory:` / `tool_search:` on a function that doesn't declare that capability — or a `capability_providers:` binding on an unsupported seat or a function without that seat | `dibbla fn get <server> <name>` lists the capabilities the function has; provider bindings only work on `memory` / `tool_search` seats |
 | `CAPABILITY_PROVIDER_CONFLICT` | A memory provider is bound and `history_policy` is set to something other than `custom` | Remove the `history_policy` line (binding implies `custom`) or the binding |
@@ -474,6 +493,10 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `UNKNOWN_NODE` | Edge references a node id that doesn't exist | Fix the id |
 | `UNKNOWN_PORT` | Edge port name isn't in the node's declared inputs/outputs (registry-declared inputs/outputs count too) | Use `dibbla fn get` to confirm the right names |
 | `DUPLICATE_INPUT_EDGE` | Two edges target the same input port | Remove one — an input only takes one feed |
+| `UNKNOWN_INPUT` | A name in `optional:` / `required:` is not an input of the node | Use the names from `inputs:` / `dibbla fn get` (`files`, not `files[]`; `<seat>.<port>` for a capability port) |
+| `CONFLICTING_INPUT_OVERRIDE` | The same input is in both `optional:` and `required:` | Keep it in one list |
+| `INPUT_NOT_REQUIRABLE` | `required:` names `tools`, `files` or an engine-set input — the node never waits for those | Remove it from `required:` |
+| `INPUT_OVERRIDE_NOT_SUPPORTED` | `optional:` / `required:` on an `api` or `api_response` node | Remove the key; it applies to `function` nodes only |
 | `CYCLE_DETECTED` | The graph contains a cycle | Restructure; the runtime won't execute cycles. If you need iteration, model it as a sub-workflow called repeatedly |
 
 ### Exit codes — script against these, not against stderr
