@@ -327,6 +327,9 @@ var workflowsValidateCmd = &cobra.Command{
 		nodes, edges := result["node_count"], result["edge_count"]
 		output.Stderr("Valid — %v nodes, %v edges", nodes, edges)
 		printWarnings(result)
+		for _, line := range inputGatingLines(result) {
+			output.Stderr("%s", line)
+		}
 		return nil
 	},
 }
@@ -562,6 +565,13 @@ var workflowsAPIDocsCmd = &cobra.Command{
 				printAPIFields(inputSchema, stringSet(e["optional_inputs"]))
 				fmt.Println()
 			}
+			if lines := omissionLines(e["omissions"]); len(lines) > 0 {
+				fmt.Println("Leaving out an optional field:")
+				for _, l := range lines {
+					fmt.Println(l)
+				}
+				fmt.Println()
+			}
 
 			if outputSchema, ok := e["output_schema"].(map[string]interface{}); ok && len(outputSchema) > 0 {
 				fmt.Println("Response:")
@@ -682,4 +692,74 @@ func init() {
 	workflowsCmd.AddCommand(workflowsExecuteCmd)
 	workflowsCmd.AddCommand(workflowsURLCmd)
 	workflowsCmd.AddCommand(workflowsAPIDocsCmd)
+}
+
+// inputGatingLines renders which inputs wait and why (DIB-1907) from a valid
+// `wf validate` answer: every input whose waiting is worth knowing — Required
+// inputs a step runs without when the call leaves a field out, inputs that
+// hold a step back or never wait — and a count of the Required inputs that
+// simply wait for their wire. Then what a call without each optional API
+// field does.
+func inputGatingLines(result map[string]interface{}) []string {
+	items, _ := result["input_gating"].([]interface{})
+	var lines []string
+	plain := 0
+	for _, it := range items {
+		g, ok := it.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if g["mode"] == "required" && g["waits"] == "always" {
+			plain++
+			continue
+		}
+		if msg, _ := g["message"].(string); msg != "" {
+			lines = append(lines, "  "+msg)
+		}
+	}
+	if plain > 0 {
+		lines = append(lines, fmt.Sprintf("  %d other wired %s Required and %s for %s wire on every call",
+			plain, pluralWord(plain, "input is", "inputs are"), pluralWord(plain, "waits", "wait"), pluralWord(plain, "its", "their")))
+	}
+	eps, _ := result["api_endpoints"].([]interface{})
+	for _, ep := range eps {
+		e, ok := ep.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		node, _ := e["node"].(string)
+		omissions, _ := e["omissions"].([]interface{})
+		for _, it := range omissions {
+			o, _ := it.(map[string]interface{})
+			field, _ := o["field"].(string)
+			effect, _ := o["effect"].(string)
+			if field != "" && effect != "" {
+				lines = append(lines, fmt.Sprintf("  %s.%s (optional): %s", node, field, effect))
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return append([]string{"Inputs:"}, lines...)
+}
+
+// omissionLines renders an endpoint's omissions: per optional request field,
+// what a call without it does.
+func omissionLines(v interface{}) []string {
+	items, _ := v.([]interface{})
+	var lines []string
+	for _, it := range items {
+		o, ok := it.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		field, _ := o["field"].(string)
+		effect, _ := o["effect"].(string)
+		if field == "" || effect == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("  %-30s %s", field+" (optional)", effect))
+	}
+	return lines
 }
