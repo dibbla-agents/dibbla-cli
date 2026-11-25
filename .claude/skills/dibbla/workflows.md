@@ -68,7 +68,7 @@ nodes:
     function: reasoning_agent_function  # tagged accepts_tools in the registry
     server: function-server
     inputs:
-      model: "claude-sonnet-4-5"   # hardcoded constant
+      model: "claude-sonnet-5-5"   # hardcoded constant
       prompt_message: ~                     # ~ = null → must be supplied by an edge
       system_message: ~
     tools:
@@ -84,7 +84,7 @@ nodes:
     function: reasoning_agent_with_toolbox
     server: function-server
     inputs:
-      model: "claude-sonnet-4-5"
+      model: "claude-sonnet-5-5"
       prompt_message: ~
       system_message: ~
       thread_id: ~                  # wired from the api node — memory selects history per thread.
@@ -165,7 +165,7 @@ The agent keys are only accepted on a function that declares the matching capabi
 |---|---|---|
 | `api` | List of names | `inputs: [question, locale]` |
 | `api_response` | List of names | `inputs: [response]` |
-| `function` | Map of name → value (use `~` for null) | `inputs: { model: "claude-sonnet-4-5", prompt: ~ }` |
+| `function` | Map of name → value (use `~` for null) | `inputs: { model: "claude-sonnet-5-5", prompt: ~ }` |
 
 `outputs:` is always a list of names. For `function` nodes you only need to list outputs when you want to override or augment what the registry declares.
 
@@ -240,7 +240,7 @@ The most-used pattern in production: one `api` input, one or more `function`-as-
   type: function
   function: reasoning_agent_function
   server: function-server
-  inputs: { model: "claude-sonnet-4-5", prompt_message: ~, system_message: ~ }
+  inputs: { model: "claude-sonnet-5-5", prompt_message: ~, system_message: ~ }
   tools: [weather_tool, time_tool]   # ← node IDs
 
 - id: weather_tool
@@ -331,7 +331,7 @@ Bind a registered provider on an agent node by seat name:
   type: function
   function: reasoning_agent_with_toolbox
   server: function-server
-  inputs: { model: "claude-sonnet-4-5", prompt_message: ~, system_message: ~ }
+  inputs: { model: "claude-sonnet-5-5", prompt_message: ~, system_message: ~ }
   capability_providers:
     memory: org-memory-ranker     # seat -> provider name, as registered by the worker
     # NOTE: no history_policy line — binding a memory provider implies "custom"
@@ -441,7 +441,7 @@ dibbla nodes add my_new_workflow --inline '{"id":"date_tool","type":"function","
 dibbla edges add my_new_workflow "date_tool.date -> agent.system_message"
 
 # Set a hardcoded input value
-dibbla inputs set my_new_workflow agent model "claude-sonnet-4-5"
+dibbla inputs set my_new_workflow agent model "claude-sonnet-5-5"
 
 # Attach a tool to an agent
 dibbla tools add my_new_workflow agent date_tool
