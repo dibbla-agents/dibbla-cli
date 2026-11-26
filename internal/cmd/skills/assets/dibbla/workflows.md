@@ -155,7 +155,7 @@ That's all there is. Three top-level keys (`nodes`, `edges`, plus metadata); edg
 | `memory` | agent `function` | `{history_policy?, history_policy_n?}`. History is keyed by the node's `thread_id` **input** — wire it from the `api` node so each caller/conversation gets its own thread; a hardcoded literal shares one thread across all callers (leaks history between users; validator warns `SHARED_THREAD_ACROSS_API_CALLERS`). The related `memory_op` input, when set to `reset`, deletes the thread's stored history before the turn (sending the prompt `/clear` is the back-compat equivalent). Note: decay policies (`tiered`, `last-N`, …) trim stored *tool results*, not what the assistant said — assistant text that restated a tool result keeps it in history, so decay is **not** redaction; a PII redactor must rewrite text parts too. |
 | `tool_search` | agent `function` | `{allow?, persist?, scope?}` |
 | `capability_providers` | agent `function` | Capability seat → provider name |
-| `optional`, `required` | `function` | Input names the node runs without / waits for, overriding the function's default — see [Required vs optional inputs](#required-vs-optional-inputs) |
+| `optional`, `required` | `function` | Input names the node never waits for / waits for, overriding the function's default — see [Required and Optional inputs](#required-and-optional-inputs) |
 
 The agent keys are only accepted on a function that declares the matching capability; otherwise you get `CAPABILITY_NOT_SUPPORTED` (or `TOOLS_NOT_SUPPORTED` for `tools:`) rather than a setting that is saved and then ignored.
 
@@ -169,25 +169,71 @@ The agent keys are only accepted on a function that declares the matching capabi
 
 `outputs:` is always a list of names. For `function` nodes you only need to list outputs when you want to override or augment what the registry declares.
 
-**You only have to write the inputs that are required.** `dibbla fn get` reports which those are under `required_inputs`; everything else is optional and can be omitted entirely. Optional inputs are still settable — a value or an edge works fine — they just don't have to be. Engine-injected inputs (`_capability_providers`, `has_credentials`, `_original_system_message`) and the agent's internal `tools` array are not authorable at all and never appear in `wf get` output. Which inputs the node actually waits for can be changed per node — next section.
+**You only have to write the inputs that are required.** `dibbla fn get` reports which those are under `required_inputs`; everything else is optional and can be omitted entirely. Optional inputs are still settable — a value or an edge works fine — they just don't have to be. Engine-injected inputs (`_capability_providers`, `has_credentials`, `_original_system_message`) and the agent's internal `tools` array are not authorable at all and never appear in `wf get` output. Whether the node waits for an input is its input mode — next section.
 
-### Required vs optional inputs
+### Required and Optional inputs
 
-A node waits for its **required** inputs and runs without its **optional** ones. The function sets the default (`required_inputs`); two node keys change it, listing only the deviations:
+Every input of a node has an **input mode**:
+
+- **Required** — the node waits for its value, but only for a value that can come. When the call leaves out an optional API field that feeds it, a node the answer depends on runs without it instead of waiting forever. A node off the way to the answer (a side branch, an error handler) does not run without it — that is how "only when the call sends it" works.
+- **Optional** — never waits; the node uses the value only if it has already arrived.
+
+Without a choice, an input follows the function (`dibbla fn get` → `required_inputs` are Required, the rest Optional).
+
+**Optional follows the source.** An input fed by an optional API field needs no flag of its own: mark the field `optional:` on the `api` node and nothing on the node it feeds. The template below runs with `task` when the caller sends it and without it when the caller does not:
+
+```yaml
+nodes:
+  - id: api_input
+    type: api
+    inputs: [question, task]
+    optional: [task]                 # the caller may leave out task
+  - id: template
+    type: function
+    server: function-server
+    function: handlebars_template
+    inputs:
+      script: "Q: {{question}}{{#if task}} / task: {{task}}{{/if}}"
+    # nothing about task here — it follows api_input.task
+  - id: api_response
+    type: api_response
+    linked_to: api_input
+    inputs: [response]
+edges:
+  - api_input.question -> template.question
+  - api_input.task -> template.task   # the edge declares the template variable
+  - template.output -> api_response.response
+```
+
+A template variable needs no `inputs:` line: the edge into it declares it, and `wf get` prints none for it.
+
+Write `optional:` / `required:` only to change what the function says:
 
 ```yaml
 - id: agent
   type: function
   function: reasoning_agent_with_toolbox
   server: function-server
-  optional: [context]        # run without it, even though the function requires it
-  required: [memory.user]    # wait for it, even though it is optional (capability port: <seat>.<port>)
+  optional: [context]        # never wait for it, even when a value is on its way
+  required: [memory.user]    # wait for it (capability port: <seat>.<port>)
 ```
 
-- **Make it required** when the node needs the value and it comes from another node. An optional input fed by a slower node is dropped if the node already ran on its other inputs — the classic "the agent ran without its context" bug.
-- **Make it optional** when the node should run without it (e.g. a caller may leave it out).
-- Names as in `inputs:` (`files`, not `files[]`). `tools`, `files` and engine-set inputs can't be required. An entry that matches the default is dropped; `wf get` lists only real deviations, including ones toggled on the canvas, and every write keeps them.
-- API fields: on `api` and `api_response` every field is required; `optional: [locale]` lets the caller omit it (or the answer lack it), and `wf api-docs` marks it optional. Whatever the omitted field feeds must be optional too, and a wired `response` is always waited for.
+- **Make it Optional** only when the node should start without waiting even though a value may come — a value that arrives after the node ran is dropped (the classic "the agent ran without its context").
+- **Make it Required** when the node needs a value a slower node sends and the function calls it optional.
+- Names as in `inputs:` (`files`, not `files[]`). `tools`, `files` and engine-set inputs can't be required. `wf get` lists exactly the choices that were written (also ones made on the canvas), and every write keeps them.
+- API fields: on `api` and `api_response` every field is required; `optional: [locale]` lets the caller omit it (or the answer lack it). A wired `response` is always waited for.
+
+**See which inputs wait, and why.** `dibbla wf validate` (and `platform_workflow_validate` on the connector) lists, under `Inputs:`, every input whose waiting is worth knowing, with its mode and the reason, and what a call without each optional field does:
+
+```
+Valid — 3 nodes, 3 edges
+Inputs:
+  template.task: Required – waits for api_input.task; runs without it when the call omits 'task'
+  2 other wired inputs are Required and wait for their wire on every call
+  api_input.task (optional): A call without 'task' runs template.task without it.
+```
+
+`dibbla wf api-docs <name>` shows the same per endpoint under *Leaving out an optional field*. `-o json` gives the full list (`input_gating`: node, input, mode, sources, waits = `always` | `never` | `unless_omitted` | `holds` | `skips`, omitted_by). `holds` means a call without the field does not run that node — right for a side branch that should only run when the field is sent.
 
 ### `wf get` output is re-appliable as-is
 
@@ -358,7 +404,7 @@ For any input to be satisfied (and the node to fire), it needs a value from one 
 
 **Optional vs collects_values.** Two registry tags change input behavior:
 - `accepts_tools`: function may have `tools:`; the converter injects synthetic `tools[].*` inputs that are auto-populated — don't try to satisfy them yourself.
-- `collects_values`: function accepts dynamic, unregistered inputs (e.g. `handlebars_template` collects whatever variable names the script references). The validator skips `UNSATISFIED_INPUT` checks for these functions.
+- `collects_values`: function accepts dynamic, unregistered inputs (e.g. `handlebars_template` collects whatever variable names the script references). An edge into such a variable declares it — no `inputs:` line needed. The validator skips `UNSATISFIED_INPUT` checks for these functions.
 
 You can introspect a function's tags with `dibbla fn get <server> <name>`.
 
@@ -482,7 +528,7 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `INVALID_ENUM_VALUE` | An input value is constrained by an `enum:` tag (e.g. valid models) and the value isn't in the allowed list | `dibbla fn get <server> <name>` — the allowed values are listed under each input's `allowed_values` |
 | `UNKNOWN_TOOL_NODE` | An agent's `tools: [foo]` references a node id that doesn't exist | Add the tool node, or fix the id reference |
 | `INVALID_LINK` | `api_response.linked_to` points at a missing node, or at a node that isn't `type: api` | Point it at the corresponding `api` node |
-| `UNSATISFIED_INPUT` | A **required** input has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Checked on what the node waits for: the function's `required_inputs`, plus the node's `required:`, minus its `optional:`. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
+| `UNSATISFIED_INPUT` | An input the node waits for has no edge feeding it AND no hardcoded value | Add an edge into that input, or set a value in the node's `inputs:` map. Checked on what the node waits for: the function's `required_inputs`, plus the node's `required:`, minus its `optional:`. Tool-node inputs are exempt (filled by the agent at runtime); `collects_values` functions are exempt (handlebars templates) |
 | `TOOLS_NOT_SUPPORTED` | `tools:` on a function that isn't tagged `accepts_tools` | Pick an agent function — `dibbla fn list --tag accepts_tools`. (Previously this was accepted and the tools were silently ignored at runtime.) |
 | `CAPABILITY_NOT_SUPPORTED` | `toolbox_tools:` / `mcp_servers:` / `data_sources:` / `memory:` / `tool_search:` on a function that doesn't declare that capability — or a `capability_providers:` binding on an unsupported seat or a function without that seat | `dibbla fn get <server> <name>` lists the capabilities the function has; provider bindings only work on `memory` / `tool_search` seats |
 | `CAPABILITY_PROVIDER_CONFLICT` | A memory provider is bound and `history_policy` is set to something other than `custom` | Remove the `history_policy` line (binding implies `custom`) or the binding |
@@ -496,7 +542,7 @@ dibbla wf update my_new_workflow -f /tmp/wf.yaml
 | `UNKNOWN_INPUT` | A name in `optional:` / `required:` is not an input of the node | Use the names from `inputs:` / `dibbla fn get` (`files`, not `files[]`; `<seat>.<port>` for a capability port) |
 | `CONFLICTING_INPUT_OVERRIDE` | The same input is in both `optional:` and `required:` | Keep it in one list |
 | `INPUT_NOT_REQUIRABLE` | `required:` names `tools`, `files` or an engine-set input — the node never waits for those | Remove it from `required:` |
-| `OPTIONAL_FIELD_FEEDS_REQUIRED_INPUT` (warning) | An `api` field in `optional:` is wired into an input that still waits for it | Add that input to `optional:` on the consuming node, or the run hangs when the caller omits the field |
+| `OPTIONAL_FIELD_FEEDS_REQUIRED_INPUT` (warning) | An `api` field in `optional:` feeds a node off the way to the answer, so a call without the field does not run that node | Fine when the node should only run when the field is sent; otherwise make the input `optional:` or give the API field a default |
 | `CYCLE_DETECTED` | The graph contains a cycle | Restructure; the runtime won't execute cycles. If you need iteration, model it as a sub-workflow called repeatedly |
 
 ### Exit codes — script against these, not against stderr
