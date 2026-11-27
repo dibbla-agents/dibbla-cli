@@ -340,7 +340,23 @@ func runSecretsSetCore(stdout, stderr io.Writer, in secretsSetInput) int {
 	if res.Secret.ServiceName != "" {
 		fmt.Fprintf(stdout, "  Service:    %s\n", res.Secret.ServiceName)
 	}
+	fmt.Fprintf(stdout, "  %s\n", secretTakesEffect(in.Deployment, in.Service))
 	return 0
+}
+
+// secretTakesEffect says when a saved secret reaches the running app
+// (DIB-1797). An app's secret is written into its live Secret at once, so a
+// restart applies it; a global one is folded into each app's Secret by its
+// next deploy.
+func secretTakesEffect(deployment, service string) string {
+	if deployment == "" {
+		return "Reaches each app on its next deploy."
+	}
+	restart := "dibbla apps restart " + deployment
+	if service != "" {
+		restart += " --service " + service
+	}
+	return "Takes effect on restart: " + restart
 }
 
 // scopeFlags renders " -d shop -s web" for a hint that repeats the command.
@@ -492,5 +508,6 @@ func runSecretsImportCore(stdout, stderr io.Writer, file string, envFlags []stri
 	}
 
 	fmt.Fprintf(stdout, "%s imported %d secret(s) into %s: %s\n", platform.Icon("✅", "[OK]"), len(done), scope, strings.Join(done, ", "))
+	fmt.Fprintf(stdout, "  %s\n", secretTakesEffect(deployment, service))
 	return 0
 }

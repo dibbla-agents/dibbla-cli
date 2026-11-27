@@ -1425,6 +1425,7 @@ Precedence at deploy time (highest wins): per-service > deployment-wide > global
 | **The value** | Leave the argument out. At a terminal the CLI asks `Value for NAME (input hidden): paste it, then press Enter on an empty line:` and reads without echo, line by line up to the empty line — so a pasted multi-line key is read whole and nothing is left for the shell. Without a terminal it reads stdin to its end: a pipe, or a file — `dibbla secrets set TLS_KEY -d myapp < tls.key`. Surrounding whitespace is trimmed. A value given as the argument still works but prints a warning on stderr: it is in the shell history, and if an AI assistant ran the command, in its transcript. The value is never printed. |
 | **Who runs it** | The person, in their own terminal — or the console's Secrets page. An agent never supplies the value: it runs `secrets request` and hands the person the link. |
 | **Example** | `dibbla secrets set STRIPE_API_KEY -d myapp` · `dibbla secrets set NPM_TOKEN -d myapp -s web` |
+| **When it takes effect** | The running app gets the value on its next restart; the output ends with `Takes effect on restart: dibbla apps restart <alias>` (with `--service` for a service's secret). A global secret reaches each app on its next deploy: `Reaches each app on its next deploy.` The same goes for `secrets import`. |
 | **Notes** | Per-service secrets stack on top of deployment-wide and global; the higher-precedence value wins inside the service container. |
 
 ### secrets request

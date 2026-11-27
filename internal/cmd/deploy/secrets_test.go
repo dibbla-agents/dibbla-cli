@@ -355,3 +355,21 @@ func TestSecretsListAppShowsInheritedGlobals(t *testing.T) {
 		t.Errorf("a variable reached the secrets list:\n%s", out)
 	}
 }
+
+// DIB-1797: import says when the values reach the app, as set does.
+func TestSecretsImportCore_SaysWhenItTakesEffect(t *testing.T) {
+	file := writeEnvFile(t, "API_KEY=x\n")
+	for deployment, want := range map[string]string{
+		"shop": "Takes effect on restart: dibbla apps restart shop\n",
+		"":     "Reaches each app on its next deploy.\n",
+	} {
+		var stdout, stderr bytes.Buffer
+		rec := &recordingSetter{}
+		if code := runSecretsImportCore(&stdout, &stderr, file, nil, deployment, "", false, rec.set); code != 0 {
+			t.Fatalf("exit %d: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("deployment %q: stdout lacks %q:\n%s", deployment, want, stdout.String())
+		}
+	}
+}
