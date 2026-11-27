@@ -593,3 +593,28 @@ func TestSecretsSetFailureNamesNoValue(t *testing.T) {
 		t.Errorf("exit %d\n%s%s", code, out.String(), errb.String())
 	}
 }
+
+// DIB-1797: set says when the value reaches the app — an app's secret on its
+// next restart, a global one on each app's next deploy.
+func TestSecretsSet_SaysWhenItTakesEffect(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		deployment, service string
+		want                string
+	}{
+		{"app", "shop", "", "Takes effect on restart: dibbla apps restart shop\n"},
+		{"service", "shop", "web", "Takes effect on restart: dibbla apps restart shop --service web\n"},
+		{"global", "", "", "Reaches each app on its next deploy.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr, _ := runSet(t, secretsSetInput{Args: []string{"STRIPE_API_KEY"},
+				Stdin: strings.NewReader(setValue), Deployment: tc.deployment, Service: tc.service})
+			if code != 0 {
+				t.Fatalf("exit %d: %s", code, stderr)
+			}
+			if !strings.Contains(stdout, tc.want) {
+				t.Errorf("stdout lacks %q:\n%s", tc.want, stdout)
+			}
+		})
+	}
+}
